@@ -58,13 +58,23 @@
                 <form method="POST" action="{{ route('register') }}" class="space-y-5">
                     @csrf
 
-                    <div>
-                        <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2">Full Name</label>
-                        <input class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 transition-all outline-none @error('name') border-red-500 @enderror"
-                            type="text" name="name" value="{{ old('name') }}" placeholder="John Doe" required autofocus />
-                        @error('name')
-                            <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
-                        @enderror
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2">First Name</label>
+                            <input class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 transition-all outline-none @error('first_name') border-red-500 @enderror"
+                                type="text" name="first_name" value="{{ old('first_name') }}" placeholder="John" required autofocus />
+                            @error('first_name')
+                                <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2">Last Name</label>
+                            <input class="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 transition-all outline-none @error('last_name') border-red-500 @enderror"
+                                type="text" name="last_name" value="{{ old('last_name') }}" placeholder="Doe" required />
+                            @error('last_name')
+                                <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
                     </div>
 
                     <div>
@@ -106,7 +116,7 @@
 
                     <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4">
                         <p class="text-xs text-slate-600">
-                            Password must contain at least 8 characters with uppercase, lowercase, numbers, and symbols.
+                            <strong class="text-slate-700">Legal Name Required:</strong> Please use your official name as it appears on your ID. This will be used for certificates and documentation.
                         </p>
                     </div>
 

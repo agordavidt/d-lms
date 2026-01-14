@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -40,9 +42,13 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
 
     // Admin Routes
     Route::middleware(['check.role:admin,superadmin'])->prefix('admin')->name('admin.')->group(function () {
-        Route::get('/dashboard', function () {
-            return view('admin.dashboard');
-        })->name('dashboard');
+        // Dashboard
+        Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+
+        // User Management
+        Route::get('/users/data', [UserController::class, 'getUsersData'])->name('users.data');
+        Route::post('/users/{id}/status', [UserController::class, 'updateStatus'])->name('users.update-status');
+        Route::resource('users', UserController::class);
     });
 
     // Mentor Routes

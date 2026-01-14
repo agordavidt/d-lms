@@ -13,7 +13,8 @@ class User extends Authenticatable
     use HasFactory, Notifiable, SoftDeletes;
 
     protected $fillable = [
-        'name',
+        'first_name',
+        'last_name',
         'email',
         'password',
         'phone',
@@ -35,6 +36,17 @@ class User extends Authenticatable
         'locked_until' => 'datetime',
         'password' => 'hashed',
     ];
+
+    // Accessor for full name
+    public function getNameAttribute(): string
+    {
+        return $this->first_name . ' ' . $this->last_name;
+    }
+
+    public function getFullNameAttribute(): string
+    {
+        return $this->first_name . ' ' . $this->last_name;
+    }
 
     // Role checking methods
     public function isSuperAdmin(): bool
@@ -117,14 +129,7 @@ class User extends Authenticatable
     // Accessors
     public function getInitialsAttribute(): string
     {
-        $names = explode(' ', $this->name);
-        $initials = '';
-        
-        foreach ($names as $name) {
-            $initials .= strtoupper(substr($name, 0, 1));
-        }
-        
-        return substr($initials, 0, 2);
+        return strtoupper(substr($this->first_name, 0, 1) . substr($this->last_name, 0, 1));
     }
 
     public function getAvatarUrlAttribute(): string
@@ -133,6 +138,6 @@ class User extends Authenticatable
             return asset('storage/' . $this->avatar);
         }
         
-        return "https://ui-avatars.com/api/?name=" . urlencode($this->name) . "&color=4f46e5&background=EBF4FF";
+        return "https://ui-avatars.com/api/?name=" . urlencode($this->full_name) . "&color=4f46e5&background=EBF4FF";
     }
 }
