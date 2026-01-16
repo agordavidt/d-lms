@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Mail\AccountStatusChanged;
+use App\Mail\MentorAccountCreated;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
@@ -20,17 +23,14 @@ class UserController extends Controller
     {
         $query = User::query();
 
-        // Filter by role if provided
         if ($request->has('role') && $request->role != '') {
             $query->where('role', $request->role);
         }
 
-        // Filter by status if provided
         if ($request->has('status') && $request->status != '') {
             $query->where('status', $request->status);
         }
 
-        // Search functionality
         if ($request->has('search') && $request->search['value'] != '') {
             $search = $request->search['value'];
             $query->where(function($q) use ($search) {
@@ -44,7 +44,6 @@ class UserController extends Controller
         $totalRecords = User::count();
         $filteredRecords = $query->count();
 
-        // Sorting
         if ($request->has('order')) {
             $columnIndex = $request->order[0]['column'];
             $columnName = $request->columns[$columnIndex]['data'];
@@ -57,7 +56,6 @@ class UserController extends Controller
             $query->latest();
         }
 
-        // Pagination
         $start = $request->start ?? 0;
         $length = $request->length ?? 10;
         
@@ -116,7 +114,6 @@ class UserController extends Controller
                 'email_verified_at' => now(),
             ]);
 
-            // Log the action
             AuditLog::log('user_created', auth()->user(), [
                 'description' => 'Admin created new user',
                 'model_type' => User::class,
@@ -124,8 +121,17 @@ class UserController extends Controller
                 'new_values' => $user->only(['first_name', 'last_name', 'email', 'role', 'status'])
             ]);
 
+            // Send email notification for mentors
+            if ($user->role === 'mentor') {
+                try {
+                    Mail::to($user->email)->send(new MentorAccountCreated($user));
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send mentor creation email: ' . $e->getMessage());
+                }
+            }
+
             $notification = [
-                'message' => 'User created successfully!',
+                'message' => 'User created successfully!' . ($user->role === 'mentor' ? ' Setup email sent.' : ''),
                 'alert-type' => 'success'
             ];
 
@@ -145,7 +151,6 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
         
-        // Prevent editing super admin by regular admin
         if ($user->role === 'superadmin' && !auth()->user()->isSuperAdmin()) {
             abort(403, 'Unauthorized action.');
         }
@@ -157,7 +162,6 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
 
-        // Prevent editing super admin by regular admin
         if ($user->role === 'superadmin' && !auth()->user()->isSuperAdmin()) {
             abort(403, 'Unauthorized action.');
         }
@@ -184,14 +188,12 @@ class UserController extends Controller
                 'status' => $request->status,
             ]);
 
-            // Update password if provided
             if ($request->filled('password')) {
                 $user->update(['password' => Hash::make($request->password)]);
             }
 
             $newValues = $user->only(['first_name', 'last_name', 'email', 'phone', 'role', 'status']);
 
-            // Log the action
             AuditLog::log('user_updated', auth()->user(), [
                 'description' => 'Admin updated user information',
                 'model_type' => User::class,
@@ -222,7 +224,6 @@ class UserController extends Controller
         try {
             $user = User::findOrFail($id);
 
-            // Prevent deleting super admin
             if ($user->role === 'superadmin') {
                 return response()->json([
                     'success' => false,
@@ -230,7 +231,6 @@ class UserController extends Controller
                 ], 403);
             }
 
-            // Prevent self-deletion
             if ($user->id === auth()->id()) {
                 return response()->json([
                     'success' => false,
@@ -238,7 +238,6 @@ class UserController extends Controller
                 ], 403);
             }
 
-            // Log before deletion
             AuditLog::log('user_deleted', auth()->user(), [
                 'description' => 'Admin deleted user',
                 'model_type' => User::class,
@@ -266,7 +265,6 @@ class UserController extends Controller
         try {
             $user = User::findOrFail($id);
 
-            // Prevent changing super admin status
             if ($user->role === 'superadmin') {
                 return response()->json([
                     'success' => false,
@@ -281,7 +279,6 @@ class UserController extends Controller
             $oldStatus = $user->status;
             $user->update(['status' => $request->status]);
 
-            // Log the action
             AuditLog::log('user_status_changed', auth()->user(), [
                 'description' => "Admin changed user status from {$oldStatus} to {$request->status}",
                 'model_type' => User::class,
@@ -289,6 +286,13 @@ class UserController extends Controller
                 'old_values' => ['status' => $oldStatus],
                 'new_values' => ['status' => $request->status]
             ]);
+
+            // Send email notification
+            try {
+                Mail::to($user->email)->send(new AccountStatusChanged($user, $oldStatus));
+            } catch (\Exception $e) {
+                \Log::error('Failed to send status change email: ' . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,

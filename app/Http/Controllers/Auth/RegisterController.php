@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Mail\WelcomeLearner;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
 
 class RegisterController extends Controller
@@ -47,7 +49,7 @@ class RegisterController extends Controller
                 'last_name' => $request->last_name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
-                'role' => 'learner', // Default role
+                'role' => 'learner',
                 'status' => 'active',
                 'last_login_ip' => $request->ip(),
             ]);
@@ -57,8 +59,16 @@ class RegisterController extends Controller
                 'description' => 'New user registered'
             ]);
 
-            // Fire registered event (for email verification if needed)
+            // Fire registered event
             event(new Registered($user));
+
+            // Send welcome email
+            try {
+                Mail::to($user->email)->send(new WelcomeLearner($user));
+            } catch (\Exception $e) {
+                // Log email failure but don't stop registration
+                \Log::error('Failed to send welcome email: ' . $e->getMessage());
+            }
 
             // Auto-login the user
             Auth::login($user);
