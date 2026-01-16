@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\ProgramController;
+use App\Http\Controllers\Admin\CohortController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -49,6 +52,16 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('/users/data', [UserController::class, 'getUsersData'])->name('users.data');
         Route::post('/users/{id}/status', [UserController::class, 'updateStatus'])->name('users.update-status');
         Route::resource('users', UserController::class);
+
+        // Admin Routes (inside admin middleware group)
+        Route::resource('programs', ProgramController::class);
+        Route::resource('cohorts', CohortController::class);
+
+        // Payment Routes (inside auth middleware)
+        Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment'])->name('payment.initiate');
+        Route::get('/payment/callback', [PaymentController::class, 'callback'])->name('payment.callback');
+        Route::post('/payment/installment', [PaymentController::class, 'payInstallment'])->name('payment.installment');
+
     });
 
     // Mentor Routes

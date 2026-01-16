@@ -140,4 +140,14 @@ class User extends Authenticatable
         
         return "https://ui-avatars.com/api/?name=" . urlencode($this->full_name) . "&color=4f46e5&background=EBF4FF";
     }
+
+    public function enrollments()
+    {
+        return $this->hasMany(Enrollment::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
 }

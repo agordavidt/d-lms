@@ -1,139 +1,113 @@
 @extends('layouts.admin')
 
 @section('title', 'Dashboard')
-@section('page-title', 'Dashboard Overview')
-@section('page-subtitle', 'Welcome back, ' . auth()->user()->first_name . '!')
+@section('breadcrumb-parent', 'Dashboard')
+@section('breadcrumb-current', 'Home')
 
 @section('content')
 
 <!-- Stats Cards -->
-<div class="row g-4 mb-4">
-    <div class="col-xl-3 col-md-6">
-        <div class="card stats-card">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <p class="mb-2 opacity-75" style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">Total Users</p>
-                    <h3>{{ $stats['total_users'] }}</h3>
-                    <p class="mb-0 opacity-75 small">All registered users</p>
+<div class="row">
+    <div class="col-lg-3 col-sm-6">
+        <div class="card gradient-1">
+            <div class="card-body">
+                <h3 class="card-title text-white">Total Users</h3>
+                <div class="d-inline-block">
+                    <h2 class="text-white">{{ $stats['total_users'] }}</h2>
+                    <p class="text-white mb-0">All Registered</p>
                 </div>
-                <div class="p-3 bg-white bg-opacity-25 rounded-3">
-                    <i class="bi bi-people fs-3"></i>
-                </div>
+                <span class="float-right display-5 opacity-5"><i class="icon-people"></i></span>
             </div>
         </div>
     </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
-            <div class="p-4">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="mb-2 opacity-75" style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">Learners</p>
-                        <h3 class="mb-2">{{ $stats['total_learners'] }}</h3>
-                        <p class="mb-0 opacity-75 small">Active students</p>
-                    </div>
-                    <div class="p-3 bg-white bg-opacity-25 rounded-3">
-                        <i class="bi bi-mortarboard fs-3"></i>
-                    </div>
+    
+    <div class="col-lg-3 col-sm-6">
+        <div class="card gradient-4">
+            <div class="card-body">
+                <h3 class="card-title text-white">Learners</h3>
+                <div class="d-inline-block">
+                    <h2 class="text-white">{{ $stats['total_learners'] }}</h2>
+                    <p class="text-white mb-0">Active Students</p>
                 </div>
+                <span class="float-right display-5 opacity-5"><i class="icon-graduation"></i></span>
             </div>
         </div>
     </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;">
-            <div class="p-4">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="mb-2 opacity-75" style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">Mentors</p>
-                        <h3 class="mb-2">{{ $stats['total_mentors'] }}</h3>
-                        <p class="mb-0 opacity-75 small">Teaching staff</p>
-                    </div>
-                    <div class="p-3 bg-white bg-opacity-25 rounded-3">
-                        <i class="bi bi-person-badge fs-3"></i>
-                    </div>
+    
+    <div class="col-lg-3 col-sm-6">
+        <div class="card gradient-7">
+            <div class="card-body">
+                <h3 class="card-title text-white">Mentors</h3>
+                <div class="d-inline-block">
+                    <h2 class="text-white">{{ $stats['total_mentors'] }}</h2>
+                    <p class="text-white mb-0">Teaching Staff</p>
                 </div>
+                <span class="float-right display-5 opacity-5"><i class="icon-user"></i></span>
             </div>
         </div>
     </div>
-
-    <div class="col-xl-3 col-md-6">
-        <div class="card" style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white;">
-            <div class="p-4">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="mb-2 opacity-75" style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px;">New This Month</p>
-                        <h3 class="mb-2">{{ $stats['new_users_this_month'] }}</h3>
-                        <p class="mb-0 opacity-75 small">Recent signups</p>
-                    </div>
-                    <div class="p-3 bg-white bg-opacity-25 rounded-3">
-                        <i class="bi bi-graph-up-arrow fs-3"></i>
-                    </div>
+    
+    <div class="col-lg-3 col-sm-6">
+        <div class="card gradient-8">
+            <div class="card-body">
+                <h3 class="card-title text-white">New This Month</h3>
+                <div class="d-inline-block">
+                    <h2 class="text-white">{{ $stats['new_users_this_month'] }}</h2>
+                    <p class="text-white mb-0">Recent Signups</p>
                 </div>
+                <span class="float-right display-5 opacity-5"><i class="icon-graph"></i></span>
             </div>
         </div>
     </div>
 </div>
 
 <!-- Additional Stats -->
-<div class="row g-4 mb-4">
-    <div class="col-md-4">
+<div class="row">
+    <div class="col-lg-4">
         <div class="card">
             <div class="card-body">
+                <h4 class="card-title">Active Users</h4>
                 <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <p class="text-muted mb-1 text-uppercase fw-bold" style="font-size: 11px; letter-spacing: 1px;">Active Users</p>
-                        <h4 class="mb-0 fw-bold">{{ $stats['active_users'] }}</h4>
-                    </div>
-                    <div class="p-3 bg-success bg-opacity-10 rounded-3">
-                        <i class="bi bi-check-circle text-success fs-3"></i>
-                    </div>
+                    <h2 class="mb-0">{{ $stats['active_users'] }}</h2>
+                    <span class="ml-auto badge badge-success badge-pill">Active</span>
                 </div>
             </div>
         </div>
     </div>
-
-    <div class="col-md-4">
+    
+    <div class="col-lg-4">
         <div class="card">
             <div class="card-body">
+                <h4 class="card-title">Suspended</h4>
                 <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <p class="text-muted mb-1 text-uppercase fw-bold" style="font-size: 11px; letter-spacing: 1px;">Suspended</p>
-                        <h4 class="mb-0 fw-bold">{{ $stats['suspended_users'] }}</h4>
-                    </div>
-                    <div class="p-3 bg-danger bg-opacity-10 rounded-3">
-                        <i class="bi bi-x-circle text-danger fs-3"></i>
-                    </div>
+                    <h2 class="mb-0">{{ $stats['suspended_users'] }}</h2>
+                    <span class="ml-auto badge badge-danger badge-pill">Suspended</span>
                 </div>
             </div>
         </div>
     </div>
-
-    <div class="col-md-4">
+    
+    <div class="col-lg-4">
         <div class="card">
             <div class="card-body">
+                <h4 class="card-title">Admins</h4>
                 <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <p class="text-muted mb-1 text-uppercase fw-bold" style="font-size: 11px; letter-spacing: 1px;">Admins</p>
-                        <h4 class="mb-0 fw-bold">{{ $stats['total_admins'] }}</h4>
-                    </div>
-                    <div class="p-3 bg-primary bg-opacity-10 rounded-3">
-                        <i class="bi bi-shield-check text-primary fs-3"></i>
-                    </div>
+                    <h2 class="mb-0">{{ $stats['total_admins'] }}</h2>
+                    <span class="ml-auto badge badge-primary badge-pill">Staff</span>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<div class="row g-4">
+<div class="row">
     <!-- Recent Users -->
     <div class="col-lg-6">
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title mb-4">Recent Users</h5>
+                <h4 class="card-title">Recent Users</h4>
                 <div class="table-responsive">
-                    <table class="table table-hover">
+                    <table class="table table-striped">
                         <thead>
                             <tr>
                                 <th>User</th>
@@ -146,44 +120,44 @@
                             @forelse($recent_users as $user)
                             <tr>
                                 <td>
-                                    <div class="d-flex align-items-center gap-2">
-                                        <img src="{{ $user->avatar_url }}" alt="{{ $user->name }}" class="rounded" style="width: 32px; height: 32px;">
+                                    <div class="d-flex align-items-center">
+                                        <img src="{{ $user->avatar_url }}" class="rounded-circle mr-2" width="30" height="30" alt="">
                                         <div>
-                                            <div class="fw-semibold">{{ $user->name }}</div>
-                                            <div class="text-muted small">{{ $user->email }}</div>
+                                            <strong>{{ $user->name }}</strong><br>
+                                            <small class="text-muted">{{ $user->email }}</small>
                                         </div>
                                     </div>
                                 </td>
                                 <td>
                                     <span class="badge 
-                                        @if($user->role === 'admin' || $user->role === 'superadmin') bg-primary
-                                        @elseif($user->role === 'mentor') bg-warning
-                                        @else bg-info
+                                        @if($user->role === 'admin' || $user->role === 'superadmin') badge-primary
+                                        @elseif($user->role === 'mentor') badge-info
+                                        @else badge-success
                                         @endif">
                                         {{ ucfirst($user->role) }}
                                     </span>
                                 </td>
                                 <td>
                                     <span class="badge 
-                                        @if($user->status === 'active') bg-success
-                                        @elseif($user->status === 'suspended') bg-danger
-                                        @else bg-secondary
+                                        @if($user->status === 'active') badge-success
+                                        @elseif($user->status === 'suspended') badge-danger
+                                        @else badge-secondary
                                         @endif">
                                         {{ ucfirst($user->status) }}
                                     </span>
                                 </td>
-                                <td class="text-muted small">{{ $user->created_at->diffForHumans() }}</td>
+                                <td><small>{{ $user->created_at->diffForHumans() }}</small></td>
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="4" class="text-center text-muted">No users found</td>
+                                <td colspan="4" class="text-center">No users found</td>
                             </tr>
                             @endforelse
                         </tbody>
                     </table>
                 </div>
                 <div class="text-center mt-3">
-                    <a href="{{ route('admin.users.index') }}" class="btn btn-outline-primary btn-sm">View All Users</a>
+                    <a href="{{ route('admin.users.index') }}" class="btn btn-primary">View All Users</a>
                 </div>
             </div>
         </div>
@@ -193,31 +167,17 @@
     <div class="col-lg-6">
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title mb-4">Recent Activity</h5>
-                <div class="activity-list">
+                <h4 class="card-title">Recent Activity</h4>
+                <div id="activity">
                     @forelse($recent_activities as $activity)
-                    <div class="activity-item d-flex gap-3 mb-3 pb-3 border-bottom">
-                        <div class="activity-icon">
-                            @if(str_contains($activity->action, 'login'))
-                                <i class="bi bi-box-arrow-in-right text-success fs-5"></i>
-                            @elseif(str_contains($activity->action, 'logout'))
-                                <i class="bi bi-box-arrow-right text-muted fs-5"></i>
-                            @elseif(str_contains($activity->action, 'created'))
-                                <i class="bi bi-plus-circle text-primary fs-5"></i>
-                            @elseif(str_contains($activity->action, 'updated'))
-                                <i class="bi bi-pencil text-warning fs-5"></i>
-                            @elseif(str_contains($activity->action, 'deleted'))
-                                <i class="bi bi-trash text-danger fs-5"></i>
-                            @else
-                                <i class="bi bi-info-circle text-info fs-5"></i>
-                            @endif
-                        </div>
-                        <div class="flex-grow-1">
-                            <p class="mb-1 fw-semibold">{{ $activity->user ? $activity->user->name : 'System' }}</p>
-                            <p class="mb-1 small text-muted">{{ $activity->description }}</p>
-                            <p class="mb-0 small text-muted">
-                                <i class="bi bi-clock me-1"></i>{{ $activity->created_at->diffForHumans() }}
-                            </p>
+                    <div class="media border-bottom-1 pt-3 pb-3">
+                        @if($activity->user)
+                        <img width="35" src="{{ $activity->user->avatar_url }}" class="mr-3 rounded-circle">
+                        @endif
+                        <div class="media-body">
+                            <h6>{{ $activity->user ? $activity->user->name : 'System' }}</h6>
+                            <p class="mb-0">{{ $activity->description }}</p>
+                            <span class="text-muted small">{{ $activity->created_at->diffForHumans() }}</span>
                         </div>
                     </div>
                     @empty
