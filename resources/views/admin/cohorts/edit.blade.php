@@ -2,7 +2,7 @@
 
 @section('title', 'Create Cohort')
 @section('breadcrumb-parent', 'Cohorts')
-@section('breadcrumb-current', 'Create')
+@section('breadcrumb-current', 'Edit')
 
 @section('content')
 <div class="row">

@@ -144,6 +144,30 @@
                         </a>
                     </li>
                     @endif
+
+                    @if(auth()->user()->isAdmin())
+                    <li class="{{ request()->routeIs('admin.sessions.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.sessions.calendar') }}">
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Calendar</span>
+                        </a>
+                    </li>
+                    @endif
+
+                    @if(auth()->user()->isLearner())
+                    <li class="{{ request()->routeIs('learner.calendar') ? 'active' : '' }}">
+                        <a href="{{ route('learner.calendar') }}">
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">My Schedule</span>
+                        </a>
+                    </li>
+                    @endif
+
+                    @if(auth()->user()->isMentor())
+                    <li class="{{ request()->routeIs('mentor.sessions.*') ? 'active' : '' }}">
+                        <a href="{{ route('mentor.sessions.calendar') }}">
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">My Classes</span>
+                        </a>
+                    </li>
+                    @endif
                 </ul>
             </div>
         </div>
