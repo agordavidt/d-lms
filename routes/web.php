@@ -2,10 +2,16 @@
 
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController;
-use App\Http\Controllers\Admin\ProgramController;
+use App\Http\Controllers\Admin\ProgramController as AdminProgramController;
 use App\Http\Controllers\Admin\CohortController;
-use App\Http\Controllers\Admin\SessionController; 
+use App\Http\Controllers\Admin\SessionController as AdminSessionController;
+use App\Http\Controllers\Learner\DashboardController as LearnerDashboardController;
 use App\Http\Controllers\Learner\CalendarController;
+use App\Http\Controllers\Learner\ProgramController as LearnerProgramController;
+use App\Http\Controllers\Learner\ProfileController;
+use App\Http\Controllers\Mentor\DashboardController as MentorDashboardController;
+use App\Http\Controllers\Mentor\SessionController as MentorSessionController;
+use App\Http\Controllers\Mentor\StudentController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
@@ -60,37 +66,49 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::post('/users/{id}/status', [UserController::class, 'updateStatus'])->name('users.update-status');
         Route::resource('users', UserController::class);
 
-        // Admin Routes (inside admin middleware group)
-        Route::resource('programs', ProgramController::class);
+        // Program Management
+        Route::resource('programs', AdminProgramController::class);
         Route::resource('cohorts', CohortController::class);
 
         // Sessions/Calendar
-        Route::get('/sessions/calendar', [SessionController::class, 'calendar'])->name('sessions.calendar');
-        Route::get('/sessions/events', [SessionController::class, 'getEvents'])->name('sessions.events');
-        Route::resource('sessions', SessionController::class);
-
-
-
+        Route::get('/sessions/calendar', [AdminSessionController::class, 'calendar'])->name('sessions.calendar');
+        Route::get('/sessions/events', [AdminSessionController::class, 'getEvents'])->name('sessions.events');
+        Route::resource('sessions', AdminSessionController::class);
     });
 
     // Mentor Routes
     Route::middleware(['check.role:mentor'])->prefix('mentor')->name('mentor.')->group(function () {
-        Route::get('/dashboard', function () {
-            return view('mentor.dashboard');
-        })->name('dashboard');
+        // Dashboard
+        Route::get('/dashboard', [MentorDashboardController::class, 'index'])->name('dashboard');
 
-        Route::get('/sessions/calendar', [SessionController::class, 'calendar'])->name('sessions.calendar');
-        Route::get('/sessions/events', [SessionController::class, 'getEvents'])->name('sessions.events');
-        Route::resource('sessions', SessionController::class);
+        // Sessions Management
+        Route::get('/sessions/calendar', [MentorSessionController::class, 'calendar'])->name('sessions.calendar');
+        Route::get('/sessions/events', [MentorSessionController::class, 'getEvents'])->name('sessions.events');
+        Route::post('/sessions/{session}/attendance', [MentorSessionController::class, 'markAttendance'])->name('sessions.attendance');
+        Route::resource('sessions', MentorSessionController::class);
+
+        // Student Management
+        Route::get('/students', [StudentController::class, 'index'])->name('students.index');
+        Route::get('/students/{id}', [StudentController::class, 'show'])->name('students.show');
     });
 
     // Learner Routes
     Route::middleware(['check.role:learner'])->prefix('learner')->name('learner.')->group(function () {
-        Route::get('/dashboard', function () {
-            return view('learner.dashboard');
-        })->name('dashboard');
+        // Dashboard
+        Route::get('/dashboard', [LearnerDashboardController::class, 'index'])->name('dashboard');
 
+        // Programs
+        Route::get('/programs', [LearnerProgramController::class, 'index'])->name('programs.index');
+        Route::get('/programs/{slug}', [LearnerProgramController::class, 'show'])->name('programs.show');
+        Route::get('/programs/{slug}/enroll', [LearnerProgramController::class, 'enroll'])->name('programs.enroll');
+
+        // Calendar
         Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
         Route::get('/sessions/events', [CalendarController::class, 'getEvents'])->name('sessions.events');
+
+        // Profile
+        Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+        Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
     });
 });

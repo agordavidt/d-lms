@@ -28,7 +28,7 @@
         <!-- Nav Header -->
         <div class="nav-header">
             <div class="brand-logo">
-                <a href="{{ route('admin.dashboard') }}">
+                <a href="{{ auth()->user()->isAdmin() ? route('admin.dashboard') : (auth()->user()->isMentor() ? route('mentor.dashboard') : route('learner.dashboard')) }}">
                     <b class="logo-abbr">
                         <span style="font-size: 24px; font-weight: 900; color: #7571f9;">G</span>
                     </b>
@@ -59,21 +59,75 @@
                 
                 <div class="header-right">
                     <ul class="clearfix">
+                        <!-- Notifications -->
+                        <li class="icons dropdown">
+                            <a href="javascript:void(0)" data-toggle="dropdown">
+                                <i class="mdi mdi-bell"></i>
+                                <span class="badge badge-pill gradient-2">3</span>
+                            </a>
+                            <div class="drop-down animated fadeIn dropdown-menu dropdown-notfication">
+                                <div class="dropdown-content-heading d-flex justify-content-between">
+                                    <span>3 New Notifications</span>  
+                                </div>
+                                <div class="dropdown-content-body">
+                                    <ul>
+                                        <li>
+                                            <a href="javascript:void()">
+                                                <span class="mr-3 avatar-icon bg-success-lighten-2"><i class="icon-calendar"></i></span>
+                                                <div class="notification-content">
+                                                    <h6 class="notification-heading">Upcoming Session</h6>
+                                                    <span class="notification-text">You have a session in 2 hours</span> 
+                                                </div>
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </li>
+
+                        <!-- User Profile -->
                         <li class="icons dropdown">
                             <div class="user-img c-pointer position-relative" data-toggle="dropdown">
                                 <span class="activity active"></span>
-                                <img src="{{ auth()->user()->avatar_url }}" height="40" width="40" alt="">
+                                <img src="{{ auth()->user()->avatar_url }}" height="40" width="40" alt="" style="border-radius: 50%;">
                             </div>
                             <div class="drop-down dropdown-profile dropdown-menu">
                                 <div class="dropdown-content-body">
                                     <ul>
-                                        <li><a href="#"><i class="icon-user"></i> <span>{{ auth()->user()->name }}</span></a></li>
-                                        <li><a href="#"><i class="icon-envelope-open"></i> <span>{{ auth()->user()->email }}</span></a></li>
+                                        <li>
+                                            <a href="javascript:void()">
+                                                <i class="icon-user"></i> 
+                                                <span>{{ auth()->user()->name }}</span>
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a href="javascript:void()">
+                                                <i class="icon-envelope-open"></i> 
+                                                <span>{{ auth()->user()->email }}</span>
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a href="javascript:void()">
+                                                <i class="icon-badge"></i> 
+                                                <span class="badge badge-primary">{{ ucfirst(auth()->user()->role) }}</span>
+                                            </a>
+                                        </li>
                                         <hr class="my-2">
+                                        @if(auth()->user()->isLearner())
+                                        <li>
+                                            <a href="{{ route('learner.profile.edit') }}">
+                                                <i class="icon-settings"></i> 
+                                                <span>Settings</span>
+                                            </a>
+                                        </li>
+                                        @endif
                                         <li>
                                             <form action="{{ route('logout') }}" method="POST">
                                                 @csrf
-                                                <button type="submit" class="dropdown-item"><i class="icon-key"></i> <span>Logout</span></button>
+                                                <button type="submit" class="dropdown-item">
+                                                    <i class="icon-key"></i> 
+                                                    <span>Logout</span>
+                                                </button>
                                             </form>
                                         </li>
                                     </ul>
@@ -92,6 +146,7 @@
                     <li class="nav-label">Main Menu</li>
                     
                     @if(auth()->user()->isAdmin())
+                    <!-- Admin Menu -->
                     <li class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
                         <a href="{{ route('admin.dashboard') }}">
                             <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
@@ -112,7 +167,13 @@
                     
                     <li class="{{ request()->routeIs('admin.cohorts.*') ? 'active' : '' }}">
                         <a href="{{ route('admin.cohorts.index') }}">
-                            <i class="icon-people menu-icon"></i><span class="nav-text">Cohorts</span>
+                            <i class="icon-layers menu-icon"></i><span class="nav-text">Cohorts</span>
+                        </a>
+                    </li>
+                    
+                    <li class="{{ request()->routeIs('admin.sessions.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.sessions.calendar') }}">
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Sessions</span>
                         </a>
                     </li>
                     
@@ -124,50 +185,59 @@
                     @endif
                     
                     @if(auth()->user()->isMentor())
+                    <!-- Mentor Menu -->
                     <li class="{{ request()->routeIs('mentor.dashboard') ? 'active' : '' }}">
                         <a href="{{ route('mentor.dashboard') }}">
                             <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
                         </a>
                     </li>
+                    
+                    <li class="{{ request()->routeIs('mentor.sessions.*') ? 'active' : '' }}">
+                        <a href="{{ route('mentor.sessions.calendar') }}">
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">My Classes</span>
+                        </a>
+                    </li>
+                    
+                    <li class="{{ request()->routeIs('mentor.students.*') ? 'active' : '' }}">
+                        <a href="{{ route('mentor.students.index') }}">
+                            <i class="icon-people menu-icon"></i><span class="nav-text">My Students</span>
+                        </a>
+                    </li>
                     @endif
                     
                     @if(auth()->user()->isLearner())
+                    <!-- Learner Menu -->
                     <li class="{{ request()->routeIs('learner.dashboard') ? 'active' : '' }}">
                         <a href="{{ route('learner.dashboard') }}">
                             <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
                         </a>
                     </li>
                     
-                    <li>
-                        <a href="#">
-                            <i class="icon-book-open menu-icon"></i><span class="nav-text">My Programs</span>
+                    <li class="{{ request()->routeIs('learner.programs.*') ? 'active' : '' }}">
+                        <a href="{{ route('learner.programs.index') }}">
+                            <i class="icon-book-open menu-icon"></i><span class="nav-text">Browse Programs</span>
                         </a>
                     </li>
-                    @endif
-
-                    @if(auth()->user()->isAdmin())
-                    <li class="{{ request()->routeIs('admin.sessions.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.sessions.calendar') }}">
-                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Calendar</span>
-                        </a>
-                    </li>
-                    @endif
-
-                    @if(auth()->user()->isLearner())
+                    
                     <li class="{{ request()->routeIs('learner.calendar') ? 'active' : '' }}">
                         <a href="{{ route('learner.calendar') }}">
                             <i class="icon-calendar menu-icon"></i><span class="nav-text">My Schedule</span>
                         </a>
                     </li>
-                    @endif
-
-                    @if(auth()->user()->isMentor())
-                    <li class="{{ request()->routeIs('mentor.sessions.*') ? 'active' : '' }}">
-                        <a href="{{ route('mentor.sessions.calendar') }}">
-                            <i class="icon-calendar menu-icon"></i><span class="nav-text">My Classes</span>
+                    
+                    <li class="{{ request()->routeIs('learner.profile.*') ? 'active' : '' }}">
+                        <a href="{{ route('learner.profile.edit') }}">
+                            <i class="icon-user menu-icon"></i><span class="nav-text">My Profile</span>
                         </a>
                     </li>
                     @endif
+
+                    <li class="nav-label">Support</li>
+                    <li>
+                        <a href="#">
+                            <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
+                        </a>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -191,7 +261,7 @@
         <!-- Footer -->
         <div class="footer">
             <div class="copyright">
-                <p>Copyright &copy; {{ date('Y') }} G-Luper Learning Management System</p>
+                <p>Copyright &copy; {{ date('Y') }} G-Luper Learning Management System. All rights reserved.</p>
             </div>
         </div>
     </div>
