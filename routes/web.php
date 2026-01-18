@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\ProgramController as AdminProgramController;
 use App\Http\Controllers\Admin\CohortController;
+use App\Http\Controllers\Admin\ActivityLogController;
 use App\Http\Controllers\Admin\SessionController as AdminSessionController;
 use App\Http\Controllers\Learner\DashboardController as LearnerDashboardController;
 use App\Http\Controllers\Learner\CalendarController;
@@ -60,6 +61,10 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
     Route::middleware(['check.role:admin,superadmin'])->prefix('admin')->name('admin.')->group(function () {
         // Dashboard
         Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+
+        // Activity Log
+        Route::get('/activity-log', [ActivityLogController::class, 'index'])->name('activity-log');
+        Route::get('/activity-log/{id}', [ActivityLogController::class, 'show'])->name('activity-log.show');
 
         // User Management
         Route::get('/users/data', [UserController::class, 'getUsersData'])->name('users.data');

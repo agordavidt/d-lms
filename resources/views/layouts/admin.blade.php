@@ -100,27 +100,9 @@
                                                 <span>{{ auth()->user()->name }}</span>
                                             </a>
                                         </li>
-                                        <li>
-                                            <a href="javascript:void()">
-                                                <i class="icon-envelope-open"></i> 
-                                                <span>{{ auth()->user()->email }}</span>
-                                            </a>
-                                        </li>
-                                        <li>
-                                            <a href="javascript:void()">
-                                                <i class="icon-badge"></i> 
-                                                <span class="badge badge-primary">{{ ucfirst(auth()->user()->role) }}</span>
-                                            </a>
-                                        </li>
+                                       
                                         <hr class="my-2">
-                                        @if(auth()->user()->isLearner())
-                                        <li>
-                                            <a href="{{ route('learner.profile.edit') }}">
-                                                <i class="icon-settings"></i> 
-                                                <span>Settings</span>
-                                            </a>
-                                        </li>
-                                        @endif
+                                        
                                         <li>
                                             <form action="{{ route('logout') }}" method="POST">
                                                 @csrf
@@ -180,6 +162,12 @@
                     <li>
                         <a href="#">
                             <i class="icon-credit-card menu-icon"></i><span class="nav-text">Payments</span>
+                        </a>
+                    </li>
+                    
+                    <li class="{{ request()->routeIs('admin.activity-log*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.activity-log') }}">
+                            <i class="icon-docs menu-icon"></i><span class="nav-text">Activity Log</span>
                         </a>
                     </li>
                     @endif
