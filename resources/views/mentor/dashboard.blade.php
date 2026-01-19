@@ -13,7 +13,7 @@
             <div class="card-body p-4">
                 <div class="row align-items-center">
                     <div class="col-lg-8">
-                        <h2 class="h3 font-weight-bold mb-2">Welcome, {{ auth()->user()->first_name }}! 👨‍🏫</h2>
+                        <h2 class="h3 font-weight-bold mb-2">Welcome, {{ auth()->user()->first_name }}!</h2>
                         <p class="mb-0 opacity-90">Manage your classes, track student progress, and deliver exceptional learning experiences.</p>
                     </div>
                     <div class="col-lg-4 text-lg-right mt-3 mt-lg-0">
