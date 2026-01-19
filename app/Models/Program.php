@@ -107,4 +107,44 @@ class Program extends Model
     {
         return $query->whereIn('status', ['active']);
     }
+
+    public function modules()
+    {
+        return $this->hasMany(ProgramModule::class)->orderBy('order');
+    }
+
+    public function publishedModules()
+    {
+        return $this->hasMany(ProgramModule::class)
+            ->where('status', 'published')
+            ->orderBy('order');
+    }
+
+    // Get total weeks across all modules
+    public function getTotalWeeksAttribute(): int
+    {
+        return $this->modules()->sum('duration_weeks');
+    }
+
+    // Get all weeks for the program
+    public function getAllWeeks()
+    {
+        return ModuleWeek::whereHas('programModule', function($query) {
+            $query->where('program_id', $this->id);
+        })->orderBy('week_number')->get();
+    }
+
+    // Get published weeks only
+    public function getPublishedWeeks()
+    {
+        return ModuleWeek::whereHas('programModule', function($query) {
+            $query->where('program_id', $this->id)
+                  ->where('status', 'published');
+        })
+        ->where('status', 'published')
+        ->orderBy('week_number')
+        ->get();
+    }
+
+
 }

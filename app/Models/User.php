@@ -150,4 +150,55 @@ class User extends Authenticatable
     {
         return $this->hasMany(Payment::class);
     }
+
+    public function createdContents()
+    {
+        return $this->hasMany(WeekContent::class, 'created_by');
+    }
+
+    public function contentProgress()
+    {
+        return $this->hasMany(ContentProgress::class);
+    }
+
+    public function weekProgress()
+    {
+        return $this->hasMany(WeekProgress::class);
+    }
+
+    // Get current week for active enrollment
+    public function getCurrentWeek(Enrollment $enrollment)
+    {
+        return WeekProgress::where('user_id', $this->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->where('is_unlocked', true)
+            ->where('is_completed', false)
+            ->with('moduleWeek')
+            ->orderBy('created_at')
+            ->first();
+    }
+
+    // Get overall learning progress for enrollment
+    public function getLearningProgress(Enrollment $enrollment)
+    {
+        $program = $enrollment->program;
+        $totalWeeks = $program->getPublishedWeeks()->count();
+        
+        if ($totalWeeks === 0) {
+            return 0;
+        }
+
+        $completedWeeks = WeekProgress::where('user_id', $this->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->where('is_completed', true)
+            ->count();
+
+        return round(($completedWeeks / $totalWeeks) * 100, 1);
+    }
+
+    // Mentor sessions relationship with user
+    public function mentorSessions()
+    {
+        return $this->hasMany(LiveSession::class, 'mentor_id');
+    }
 }

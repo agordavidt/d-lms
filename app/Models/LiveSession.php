@@ -14,6 +14,7 @@ class LiveSession extends Model
         'program_id',
         'cohort_id',
         'mentor_id',
+        'week_id',
         'title',
         'description',
         'session_type',
@@ -166,5 +167,10 @@ class LiveSession extends Model
     public function scopeForMentor($query, $mentorId)
     {
         return $query->where('mentor_id', $mentorId);
+    }
+    // Add relationship to week
+    public function week()
+    {
+        return $this->belongsTo(ModuleWeek::class, 'week_id');
     }
 }

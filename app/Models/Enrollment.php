@@ -28,19 +28,19 @@ class Enrollment extends Model
     ];
 
     // Auto-generate enrollment number
-    protected static function boot()
-    {
-        parent::boot();
+    // protected static function boot()
+    // {
+    //     parent::boot();
 
-        static::creating(function ($enrollment) {
-            if (empty($enrollment->enrollment_number)) {
-                $enrollment->enrollment_number = 'ENR-' . strtoupper(uniqid());
-            }
-            if (empty($enrollment->enrolled_at)) {
-                $enrollment->enrolled_at = now();
-            }
-        });
-    }
+    //     static::creating(function ($enrollment) {
+    //         if (empty($enrollment->enrollment_number)) {
+    //             $enrollment->enrollment_number = 'ENR-' . strtoupper(uniqid());
+    //         }
+    //         if (empty($enrollment->enrolled_at)) {
+    //             $enrollment->enrolled_at = now();
+    //         }
+    //     });
+    // }
 
     // Relationships
     public function user()
@@ -112,5 +112,72 @@ class Enrollment extends Model
     public function scopePending($query)
     {
         return $query->where('status', 'pending');
+    }
+
+    // Initialize week progress for new enrollment
+    public function initializeWeekProgress(): void
+    {
+        $firstWeek = $this->program->getPublishedWeeks()->first();
+
+        if ($firstWeek) {
+            WeekProgress::firstOrCreate([
+                'user_id' => $this->user_id,
+                'module_week_id' => $firstWeek->id,
+                'enrollment_id' => $this->id,
+            ], [
+                'is_unlocked' => true,
+                'unlocked_at' => now(),
+                'total_contents' => $firstWeek->required_contents_count,
+            ]);
+        }
+    }
+
+    // Get current active week
+    public function getCurrentWeek()
+    {
+        return WeekProgress::where('enrollment_id', $this->id)
+            ->where('is_unlocked', true)
+            ->where('is_completed', false)
+            ->with('moduleWeek')
+            ->orderBy('created_at')
+            ->first();
+    }
+
+    // Get all unlocked weeks
+    public function getUnlockedWeeks()
+    {
+        return WeekProgress::where('enrollment_id', $this->id)
+            ->where('is_unlocked', true)
+            ->with('moduleWeek')
+            ->get();
+    }
+
+    // Get learning progress percentage
+    public function getLearningProgressAttribute(): float
+    {
+        $totalWeeks = $this->program->getPublishedWeeks()->count();
+        
+        if ($totalWeeks === 0) {
+            return 0;
+        }
+
+        $completedWeeks = WeekProgress::where('enrollment_id', $this->id)
+            ->where('is_completed', true)
+            ->count();
+
+        return round(($completedWeeks / $totalWeeks) * 100, 1);
+    }
+
+    // Override the boot method to initialize progress
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::updated(function ($enrollment) {
+            // When enrollment becomes active, initialize week progress
+            if ($enrollment->status === 'active' && $enrollment->getOriginal('status') !== 'active') {
+                $enrollment->initializeWeekProgress();
+            }
+        });
     }
 }

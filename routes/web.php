@@ -6,13 +6,18 @@ use App\Http\Controllers\Admin\ProgramController as AdminProgramController;
 use App\Http\Controllers\Admin\CohortController;
 use App\Http\Controllers\Admin\ActivityLogController;
 use App\Http\Controllers\Admin\SessionController as AdminSessionController;
+use App\Http\Controllers\Admin\ModuleController;
+use App\Http\Controllers\Admin\WeekController;
+use App\Http\Controllers\Admin\ContentController as AdminContentController;
 use App\Http\Controllers\Learner\DashboardController as LearnerDashboardController;
 use App\Http\Controllers\Learner\CalendarController;
 use App\Http\Controllers\Learner\ProgramController as LearnerProgramController;
 use App\Http\Controllers\Learner\ProfileController;
+use App\Http\Controllers\Learner\LearningController;
 use App\Http\Controllers\Mentor\DashboardController as MentorDashboardController;
 use App\Http\Controllers\Mentor\SessionController as MentorSessionController;
 use App\Http\Controllers\Mentor\StudentController;
+use App\Http\Controllers\Mentor\ContentController as MentorContentController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
@@ -75,6 +80,19 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::resource('programs', AdminProgramController::class);
         Route::resource('cohorts', CohortController::class);
 
+        // Curriculum Management 
+        Route::resource('modules', ModuleController::class);
+        Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
+        
+        Route::resource('weeks', WeekController::class);
+        Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])
+            ->name('weeks.modules-by-program');
+
+        Route::resource('contents', AdminContentController::class);
+        Route::post('/contents/reorder', [AdminContentController::class, 'reorder'])->name('contents.reorder');
+        Route::get('/contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])
+            ->name('contents.weeks-by-module');
+
         // Sessions/Calendar
         Route::get('/sessions/calendar', [AdminSessionController::class, 'calendar'])->name('sessions.calendar');
         Route::get('/sessions/events', [AdminSessionController::class, 'getEvents'])->name('sessions.events');
@@ -95,19 +113,33 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         // Student Management
         Route::get('/students', [StudentController::class, 'index'])->name('students.index');
         Route::get('/students/{id}', [StudentController::class, 'show'])->name('students.show');
+
+        // Content Management
+        Route::resource('contents', MentorContentController::class);
     });
 
     // Learner Routes
     Route::middleware(['check.role:learner'])->prefix('learner')->name('learner.')->group(function () {
-        // Dashboard
+        // Dashboard (redirects to appropriate view)
         Route::get('/dashboard', [LearnerDashboardController::class, 'index'])->name('dashboard');
 
-        // Programs
+        // Programs (Browse and Enroll)
         Route::get('/programs', [LearnerProgramController::class, 'index'])->name('programs.index');
         Route::get('/programs/{slug}', [LearnerProgramController::class, 'show'])->name('programs.show');
-        Route::get('/programs/{slug}/enroll', [LearnerProgramController::class, 'enroll'])->name('programs.enroll');
 
-        // Calendar
+        // Learning Dashboard 
+        Route::get('/learning', [LearningController::class, 'index'])->name('learning.index');
+        Route::get('/learning/curriculum', [LearningController::class, 'curriculum'])->name('learning.curriculum');
+        Route::get('/learning/week/{week}', [LearningController::class, 'showWeek'])->name('learning.week');
+        Route::get('/learning/content/{content}', [LearningController::class, 'showContent'])->name('learning.content');
+        
+        // Content Progress 
+        Route::post('/learning/content/{content}/complete', [LearningController::class, 'markContentComplete'])
+            ->name('learning.content.complete');
+        Route::post('/learning/content/{content}/progress', [LearningController::class, 'updateContentProgress'])
+            ->name('learning.content.progress');
+
+        // Calendar (for viewing sessions)
         Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
         Route::get('/sessions/events', [CalendarController::class, 'getEvents'])->name('sessions.events');
 
