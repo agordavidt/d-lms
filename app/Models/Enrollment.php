@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
+
 
 class Enrollment extends Model
 {
@@ -28,19 +30,27 @@ class Enrollment extends Model
     ];
 
     // Auto-generate enrollment number
-    // protected static function boot()
-    // {
-    //     parent::boot();
+    protected static function boot()
+    {
+        parent::boot();
 
-    //     static::creating(function ($enrollment) {
-    //         if (empty($enrollment->enrollment_number)) {
-    //             $enrollment->enrollment_number = 'ENR-' . strtoupper(uniqid());
-    //         }
-    //         if (empty($enrollment->enrolled_at)) {
-    //             $enrollment->enrolled_at = now();
-    //         }
-    //     });
-    // }
+        static::creating(function ($enrollment) {
+            if (empty($enrollment->enrollment_number)) {
+                $enrollment->enrollment_number = 'ENR-' . strtoupper(Str::random(10));
+            }
+
+            if (empty($enrollment->enrolled_at)) {
+                $enrollment->enrolled_at = now();
+            }
+        });
+
+        static::updated(function ($enrollment) {
+            if ($enrollment->status === 'active' && $enrollment->getOriginal('status') !== 'active') {
+                $enrollment->initializeWeekProgress();
+            }
+        });
+    }
+
 
     // Relationships
     public function user()
@@ -167,17 +177,5 @@ class Enrollment extends Model
 
         return round(($completedWeeks / $totalWeeks) * 100, 1);
     }
-
-    // Override the boot method to initialize progress
-    protected static function boot()
-    {
-        parent::boot();
-
-        static::updated(function ($enrollment) {
-            // When enrollment becomes active, initialize week progress
-            if ($enrollment->status === 'active' && $enrollment->getOriginal('status') !== 'active') {
-                $enrollment->initializeWeekProgress();
-            }
-        });
-    }
+    
 }

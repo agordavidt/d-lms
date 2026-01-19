@@ -1,321 +1,262 @@
 @extends('layouts.admin')
 
-@section('title', 'Enroll in ' . $program->name)
+@section('title', $program->name)
 @section('breadcrumb-parent', 'Programs')
-@section('breadcrumb-current', 'Enrollment')
+@section('breadcrumb-current', $program->name)
+
+@push('styles')
+<style>
+.program-hero {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 3rem 0;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+.feature-icon {
+    width: 50px;
+    height: 50px;
+    background-color: #f0f4ff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    margin-bottom: 1rem;
+}
+.price-card {
+    border: 2px solid #7571f9;
+    transition: all 0.3s ease;
+}
+.price-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+.price-card.selected {
+    border-color: #7571f9;
+    background-color: #f0f4ff;
+}
+</style>
+@endpush
 
 @section('content')
-
-<div class="row justify-content-center">
-    <div class="col-lg-8">
-        <!-- Program Summary Card -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body p-4">
-                <a href="{{ route('learner.programs.show', $program->slug) }}" class="btn btn-sm btn-outline-secondary mb-3">
-                    <i class="icon-arrow-left mr-1"></i> Back to Program
-                </a>
-                
-                <h2 class="h4 font-weight-bold mb-3">Complete Your Enrollment</h2>
-                <p class="text-muted mb-4">You're enrolling in <strong>{{ $program->name }}</strong></p>
-
-                <div class="alert alert-info border-0">
-                    <div class="d-flex">
-                        <i class="icon-info-alt mr-3 mt-1"></i>
-                        <div>
-                            <strong>What happens next?</strong>
-                            <ul class="mb-0 mt-2">
-                                <li>Select your preferred cohort and payment plan</li>
-                                <li>Complete payment securely</li>
-                                <li>Get instant access to program materials and WhatsApp community</li>
-                                <li>Join live sessions starting on your cohort's start date</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Enrollment Form -->
-        <form action="{{ route('payment.initiate') }}" method="POST" id="enrollmentForm">
-            @csrf
-            <input type="hidden" name="program_id" value="{{ $program->id }}">
-
-            <!-- Select Cohort -->
-            <div class="card border-0 shadow-sm mb-4">
-                <div class="card-body p-4">
-                    <h5 class="font-weight-bold mb-4">
-                        <i class="icon-calendar text-primary mr-2"></i>Select Your Cohort
-                    </h5>
-
-                    @if($program->cohorts->count() > 0)
-                    <div class="row">
-                        @foreach($program->cohorts as $cohort)
-                        <div class="col-md-12 mb-3">
-                            <div class="custom-control custom-radio border rounded p-3 cohort-option">
-                                <input type="radio" 
-                                    class="custom-control-input" 
-                                    id="cohort{{ $cohort->id }}" 
-                                    name="cohort_id" 
-                                    value="{{ $cohort->id }}"
-                                    @if(!$cohort->canEnroll()) disabled @endif
-                                    required>
-                                <label class="custom-control-label w-100" for="cohort{{ $cohort->id }}">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div>
-                                            <strong class="d-block mb-2">{{ $cohort->name }}</strong>
-                                            <span class="text-muted small d-block mb-1">
-                                                <i class="icon-calendar mr-1"></i>
-                                                Starts: {{ $cohort->start_date->format('M d, Y') }}
-                                            </span>
-                                            <span class="text-muted small d-block">
-                                                <i class="icon-people mr-1"></i>
-                                                {{ $cohort->spots_remaining }} spots remaining
-                                            </span>
-                                        </div>
-                                        <div>
-                                            @if($cohort->canEnroll())
-                                            <span class="badge badge-success">Available</span>
-                                            @else
-                                            <span class="badge badge-secondary">Full</span>
-                                            @endif
-                                        </div>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-                        @endforeach
-                    </div>
-                    @else
-                    <div class="alert alert-warning">
-                        <i class="icon-info mr-2"></i>
-                        No cohorts available for enrollment at this time. Please check back later.
-                    </div>
+<div class="row">
+    <div class="col-12">
+        <!-- Program Hero Section -->
+        <div class="program-hero text-center">
+            <div class="container">
+                <h1 class="mb-3">{{ $program->name }}</h1>
+                <p class="lead mb-0">{{ $program->description }}</p>
+                <div class="mt-3">
+                    <span class="badge badge-light mr-2">⏱️ {{ $program->duration }}</span>
+                    <span class="badge badge-light mr-2">👥 {{ $program->enrollments_count }} enrolled</span>
+                    @if($program->discount_percentage > 0)
+                        <span class="badge badge-warning">💰 {{ $program->discount_percentage }}% off one-time payment</span>
                     @endif
                 </div>
             </div>
+        </div>
+    </div>
+</div>
 
-            <!-- Payment Plan Selection -->
-            <div class="card border-0 shadow-sm mb-4">
-                <div class="card-body p-4">
-                    <h5 class="font-weight-bold mb-4">
-                        <i class="icon-credit-card text-primary mr-2"></i>Choose Payment Plan
-                    </h5>
+<div class="row">
+    <!-- Program Details (60%) -->
+    <div class="col-lg-7">
+        <!-- Overview -->
+        @if($program->overview)
+        <div class="card mb-3">
+            <div class="card-body">
+                <h4 class="mb-3">Program Overview</h4>
+                <p>{{ $program->overview }}</p>
+            </div>
+        </div>
+        @endif
 
-                    <div class="row">
-                        <!-- One-Time Payment -->
-                        <div class="col-md-6 mb-3">
-                            <div class="custom-control custom-radio border rounded p-4 payment-option position-relative">
-                                <input type="radio" 
-                                    class="custom-control-input" 
-                                    id="oneTime" 
-                                    name="payment_plan" 
-                                    value="one-time"
-                                    required>
-                                <label class="custom-control-label w-100" for="oneTime">
-                                    @if($program->discount_percentage > 0)
-                                    <span class="badge badge-success position-absolute" style="top: 10px; right: 10px;">
-                                        Save {{ $program->discount_percentage }}%
-                                    </span>
-                                    @endif
-                                    
-                                    <strong class="d-block mb-3">One-Time Payment</strong>
-                                    
-                                    <div class="mb-3">
-                                        @if($program->discount_percentage > 0)
-                                        <small class="text-muted text-decoration-line-through d-block">
-                                            ₦{{ number_format($program->price, 2) }}
-                                        </small>
-                                        <h3 class="text-success mb-0">
-                                            ₦{{ number_format($program->discounted_price, 2) }}
-                                        </h3>
-                                        @else
-                                        <h3 class="text-primary mb-0">
-                                            ₦{{ number_format($program->price, 2) }}
-                                        </h3>
-                                        @endif
-                                    </div>
-
-                                    <ul class="list-unstyled text-muted small mb-0">
-                                        <li class="mb-2">
-                                            <i class="icon-check text-success mr-2"></i>Pay once, access everything
-                                        </li>
-                                        @if($program->discount_percentage > 0)
-                                        <li class="mb-2">
-                                            <i class="icon-check text-success mr-2"></i>
-                                            Save ₦{{ number_format($program->price - $program->discounted_price, 2) }}
-                                        </li>
-                                        @endif
-                                        <li>
-                                            <i class="icon-check text-success mr-2"></i>Recommended option
-                                        </li>
-                                    </ul>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Installment Payment -->
-                        <div class="col-md-6 mb-3">
-                            <div class="custom-control custom-radio border rounded p-4 payment-option">
-                                <input type="radio" 
-                                    class="custom-control-input" 
-                                    id="installment" 
-                                    name="payment_plan" 
-                                    value="installment"
-                                    required>
-                                <label class="custom-control-label w-100" for="installment">
-                                    <strong class="d-block mb-3">Installment Plan (50/50)</strong>
-                                    
-                                    <div class="mb-3">
-                                        <h3 class="text-primary mb-0">
-                                            ₦{{ number_format($program->installment_amount, 2) }}
-                                        </h3>
-                                        <small class="text-muted">x 2 payments</small>
-                                    </div>
-
-                                    <ul class="list-unstyled text-muted small mb-0">
-                                        <li class="mb-2">
-                                            <i class="icon-check text-success mr-2"></i>Pay 50% now
-                                        </li>
-                                        <li class="mb-2">
-                                            <i class="icon-check text-success mr-2"></i>Pay 50% later (before completion)
-                                        </li>
-                                        <li>
-                                            <i class="icon-info text-primary mr-2"></i>Total: ₦{{ number_format($program->price, 2) }}
-                                        </li>
-                                    </ul>
-                                </label>
-                            </div>
+        <!-- What You'll Learn -->
+        @if($program->features && count($program->features) > 0)
+        <div class="card mb-3">
+            <div class="card-body">
+                <h4 class="mb-4">What You'll Learn</h4>
+                <div class="row">
+                    @foreach($program->features as $feature)
+                    <div class="col-md-6 mb-3">
+                        <div class="d-flex align-items-start">
+                            <span style="color: #28a745; font-size: 18px; margin-right: 10px;">✓</span>
+                            <p class="mb-0">{{ $feature }}</p>
                         </div>
                     </div>
+                    @endforeach
                 </div>
             </div>
+        </div>
+        @endif
 
-            <!-- Payment Summary -->
-            <div class="card border-0 shadow-sm mb-4" id="paymentSummary" style="display: none;">
-                <div class="card-body p-4 bg-light">
-                    <h5 class="font-weight-bold mb-4">Payment Summary</h5>
-                    
-                    <div class="d-flex justify-content-between mb-3">
-                        <span class="text-muted">Program Fee:</span>
-                        <span class="font-weight-semibold" id="programFee">₦{{ number_format($program->price, 2) }}</span>
-                    </div>
+        <!-- Requirements -->
+        @if($program->requirements && count($program->requirements) > 0)
+        <div class="card mb-3">
+            <div class="card-body">
+                <h4 class="mb-4">Requirements</h4>
+                <ul class="pl-3">
+                    @foreach($program->requirements as $requirement)
+                        <li class="mb-2">{{ $requirement }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        </div>
+        @endif
+    </div>
 
-                    <div class="d-flex justify-content-between mb-3" id="discountRow" style="display: none;">
-                        <span class="text-success">Discount ({{ $program->discount_percentage }}%):</span>
-                        <span class="text-success font-weight-semibold" id="discountAmount">
-                            -₦{{ number_format($program->price - $program->discounted_price, 2) }}
-                        </span>
-                    </div>
+    <!-- Enrollment Form (40%) -->
+    <div class="col-lg-5">
+        <div class="card" style="position: sticky; top: 20px;">
+            <div class="card-body">
+                <h4 class="mb-4">Enroll in This Program</h4>
 
-                    <div class="d-flex justify-content-between mb-3" id="installmentNote" style="display: none;">
-                        <span class="text-muted small">First Installment (50%):</span>
-                        <span class="font-weight-semibold">₦{{ number_format($program->installment_amount, 2) }}</span>
+                <form action="{{ route('payment.initiate') }}" method="POST" id="enrollmentForm">
+                    @csrf
+                    <input type="hidden" name="program_id" value="{{ $program->id }}">
+
+                    <!-- Cohort Selection -->
+                    <div class="form-group">
+                        <label>Select Your Cohort <span class="text-danger">*</span></label>
+                        <select class="form-control" name="cohort_id" required>
+                            <option value="">Choose a cohort...</option>
+                            @foreach($program->cohorts as $cohort)
+                                <option value="{{ $cohort->id }}">
+                                    {{ $cohort->name }} - 
+                                    Starts {{ $cohort->start_date->format('M d, Y') }}
+                                    ({{ $cohort->spots_remaining }} spots left)
+                                </option>
+                            @endforeach
+                        </select>
+                        <small class="text-muted">Choose when you'd like to start</small>
                     </div>
 
                     <hr>
 
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="h5 mb-0">Amount Due Now:</span>
-                        <span class="h4 text-primary font-weight-bold mb-0" id="totalAmount">₦0.00</span>
-                    </div>
-                </div>
-            </div>
+                    <!-- Payment Options -->
+                    <div class="form-group">
+                        <label class="mb-3">Choose Payment Option <span class="text-danger">*</span></label>
+                        
+                        <!-- One-Time Payment -->
+                        <div class="price-card p-3 mb-3 rounded" onclick="selectPaymentPlan('one-time')" style="cursor: pointer;">
+                            <div class="custom-control custom-radio">
+                                <input type="radio" class="custom-control-input" id="oneTime" 
+                                       name="payment_plan" value="one-time" required>
+                                <label class="custom-control-label" for="oneTime">
+                                    <strong>Pay in Full</strong>
+                                    @if($program->discount_percentage > 0)
+                                        <span class="badge badge-success ml-2">{{ $program->discount_percentage }}% OFF</span>
+                                    @endif
+                                </label>
+                            </div>
+                            <div class="mt-2">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        @if($program->discount_percentage > 0)
+                                            <del class="text-muted">₦{{ number_format($program->price, 2) }}</del>
+                                        @endif
+                                        <h3 class="mb-0" style="color: #7571f9;">₦{{ number_format($program->discounted_price, 2) }}</h3>
+                                        <small class="text-muted">One-time payment</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
-            <!-- Submit Button -->
-            <div class="card border-0 shadow-sm">
-                <div class="card-body p-4">
-                    <button type="submit" class="btn btn-primary btn-lg btn-block" id="submitBtn" disabled>
-                        <i class="icon-lock mr-2"></i>Proceed to Secure Payment
+                        <!-- Installment Payment -->
+                        <div class="price-card p-3 rounded" onclick="selectPaymentPlan('installment')" style="cursor: pointer;">
+                            <div class="custom-control custom-radio">
+                                <input type="radio" class="custom-control-input" id="installment" 
+                                       name="payment_plan" value="installment" required>
+                                <label class="custom-control-label" for="installment">
+                                    <strong>Pay in 2 Installments</strong>
+                                </label>
+                            </div>
+                            <div class="mt-2">
+                                <h3 class="mb-0" style="color: #7571f9;">₦{{ number_format($program->installment_amount, 2) }}</h3>
+                                <small class="text-muted">First payment, then ₦{{ number_format($program->installment_amount, 2) }} later</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Price Summary -->
+                    <div class="p-3 mb-3" style="background-color: #f8f9fa; border-radius: 4px;">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Program Price:</span>
+                            <strong>₦{{ number_format($program->price, 2) }}</strong>
+                        </div>
+                        <div id="discountRow" style="display: none;">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-success">Discount ({{ $program->discount_percentage }}%):</span>
+                                <strong class="text-success">-₦{{ number_format(($program->price * $program->discount_percentage) / 100, 2) }}</strong>
+                            </div>
+                        </div>
+                        <hr>
+                        <div class="d-flex justify-content-between">
+                            <strong>You Pay Today:</strong>
+                            <strong id="totalAmount" style="color: #7571f9; font-size: 24px;">₦0.00</strong>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" class="btn btn-primary btn-lg btn-block">
+                        Proceed to Payment
                     </button>
-                    
-                    <p class="text-center text-muted small mt-3 mb-0">
-                        <i class="icon-shield mr-1"></i>
-                        Your payment is secure and encrypted
-                    </p>
-                </div>
+
+                    <small class="text-muted d-block text-center mt-3">
+                        Secure payment powered by Flutterwave
+                    </small>
+                </form>
             </div>
-        </form>
+        </div>
     </div>
 </div>
-
 @endsection
 
 @push('scripts')
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('enrollmentForm');
-    const cohortRadios = document.querySelectorAll('input[name="cohort_id"]');
-    const paymentRadios = document.querySelectorAll('input[name="payment_plan"]');
-    const submitBtn = document.getElementById('submitBtn');
-    const paymentSummary = document.getElementById('paymentSummary');
-    const discountRow = document.getElementById('discountRow');
-    const installmentNote = document.getElementById('installmentNote');
-    const totalAmount = document.getElementById('totalAmount');
+function selectPaymentPlan(plan) {
+    // Update radio selection
+    if (plan === 'one-time') {
+        document.getElementById('oneTime').checked = true;
+    } else {
+        document.getElementById('installment').checked = true;
+    }
+    
+    // Update visual selection
+    document.querySelectorAll('.price-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+    event.currentTarget.classList.add('selected');
+    
+    // Update price display
+    updatePriceSummary(plan);
+}
 
-    const programPrice = {{ $program->price }};
+function updatePriceSummary(plan) {
+    const fullPrice = {{ $program->price }};
     const discountedPrice = {{ $program->discounted_price }};
     const installmentAmount = {{ $program->installment_amount }};
-
-    function updatePaymentSummary() {
-        const cohortSelected = document.querySelector('input[name="cohort_id"]:checked');
-        const paymentSelected = document.querySelector('input[name="payment_plan"]:checked');
-
-        if (cohortSelected && paymentSelected) {
-            paymentSummary.style.display = 'block';
-            submitBtn.disabled = false;
-
-            if (paymentSelected.value === 'one-time') {
-                discountRow.style.display = 'flex';
-                installmentNote.style.display = 'none';
-                totalAmount.textContent = '₦' + discountedPrice.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            } else {
-                discountRow.style.display = 'none';
-                installmentNote.style.display = 'flex';
-                totalAmount.textContent = '₦' + installmentAmount.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            }
-        } else {
-            paymentSummary.style.display = 'none';
-            submitBtn.disabled = true;
-        }
+    const discountRow = document.getElementById('discountRow');
+    const totalAmount = document.getElementById('totalAmount');
+    
+    if (plan === 'one-time') {
+        discountRow.style.display = 'block';
+        totalAmount.textContent = '₦' + discountedPrice.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    } else {
+        discountRow.style.display = 'none';
+        totalAmount.textContent = '₦' + installmentAmount.toLocaleString('en-NG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
+}
 
-    cohortRadios.forEach(radio => radio.addEventListener('change', updatePaymentSummary));
-    paymentRadios.forEach(radio => radio.addEventListener('change', updatePaymentSummary));
-
-    // Add visual feedback for selected options
-    document.querySelectorAll('.cohort-option, .payment-option').forEach(option => {
-        option.addEventListener('click', function() {
-            const radio = this.querySelector('input[type="radio"]');
-            if (!radio.disabled) {
-                radio.checked = true;
-                updatePaymentSummary();
-            }
+// Update price when payment plan changes
+document.addEventListener('DOMContentLoaded', function() {
+    const paymentPlanRadios = document.querySelectorAll('input[name="payment_plan"]');
+    paymentPlanRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            updatePriceSummary(this.value);
         });
     });
 });
 </script>
-@endpush
-
-@push('styles')
-<style>
-    .cohort-option:hover:not(:has(input:disabled)),
-    .payment-option:hover {
-        background-color: #f8f9fa;
-        cursor: pointer;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        transition: all 0.2s;
-    }
-
-    .cohort-option:has(input:checked),
-    .payment-option:has(input:checked) {
-        border-color: #7571f9 !important;
-        background-color: #f0f0ff;
-    }
-
-    .cohort-option:has(input:disabled) {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-</style>
 @endpush

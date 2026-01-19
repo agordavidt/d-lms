@@ -125,94 +125,134 @@
         <div class="nk-sidebar">           
             <div class="nk-nav-scroll">
                 <ul class="metismenu" id="menu">
-                    <li class="nav-label">Main Menu</li>
-                    
+                    <!-- Admin Sidebar -->
                     @if(auth()->user()->isAdmin())
-                    <!-- Admin Menu -->
+                    <li class="nav-label">Main Menu</li>
+
                     <li class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
                         <a href="{{ route('admin.dashboard') }}">
                             <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
                         </a>
                     </li>
-                    
+
                     <li class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                         <a href="{{ route('admin.users.index') }}">
                             <i class="icon-people menu-icon"></i><span class="nav-text">Users</span>
                         </a>
                     </li>
-                    
+
+                    <li class="nav-label">Curriculum Management</li>
+
                     <li class="{{ request()->routeIs('admin.programs.*') ? 'active' : '' }}">
                         <a href="{{ route('admin.programs.index') }}">
                             <i class="icon-book-open menu-icon"></i><span class="nav-text">Programs</span>
                         </a>
                     </li>
-                    
-                    <li class="{{ request()->routeIs('admin.cohorts.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.cohorts.index') }}">
-                            <i class="icon-layers menu-icon"></i><span class="nav-text">Cohorts</span>
+
+                    <li class="{{ request()->routeIs('admin.modules.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.modules.index') }}">
+                            <i class="icon-layers menu-icon"></i><span class="nav-text">Modules</span>
                         </a>
                     </li>
-                    
+
+                    <li class="{{ request()->routeIs('admin.weeks.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.weeks.index') }}">
+                            <i class="icon-grid menu-icon"></i><span class="nav-text">Weeks</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('admin.contents.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.contents.index') }}">
+                            <i class="icon-docs menu-icon"></i><span class="nav-text">Contents</span>
+                        </a>
+                    </li>
+
+                    <li class="nav-label">Operations</li>
+
+                    <li class="{{ request()->routeIs('admin.cohorts.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.cohorts.index') }}">
+                            <i class="icon-people menu-icon"></i><span class="nav-text">Cohorts</span>
+                        </a>
+                    </li>
+
                     <li class="{{ request()->routeIs('admin.sessions.*') ? 'active' : '' }}">
                         <a href="{{ route('admin.sessions.calendar') }}">
                             <i class="icon-calendar menu-icon"></i><span class="nav-text">Sessions</span>
                         </a>
                     </li>
-                    
+
                     <li>
                         <a href="#">
                             <i class="icon-credit-card menu-icon"></i><span class="nav-text">Payments</span>
                         </a>
                     </li>
-                    
+
                     <li class="{{ request()->routeIs('admin.activity-log*') ? 'active' : '' }}">
                         <a href="{{ route('admin.activity-log') }}">
-                            <i class="icon-docs menu-icon"></i><span class="nav-text">Activity Log</span>
+                            <i class="icon-note menu-icon"></i><span class="nav-text">Activity Log</span>
                         </a>
                     </li>
                     @endif
-                    
+
+                    <!-- Mentor Sidebar -->
                     @if(auth()->user()->isMentor())
-                    <!-- Mentor Menu -->
+                    <li class="nav-label">Main Menu</li>
+
                     <li class="{{ request()->routeIs('mentor.dashboard') ? 'active' : '' }}">
                         <a href="{{ route('mentor.dashboard') }}">
                             <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
                         </a>
                     </li>
-                    
+
                     <li class="{{ request()->routeIs('mentor.sessions.*') ? 'active' : '' }}">
                         <a href="{{ route('mentor.sessions.calendar') }}">
                             <i class="icon-calendar menu-icon"></i><span class="nav-text">My Classes</span>
                         </a>
                     </li>
-                    
+
                     <li class="{{ request()->routeIs('mentor.students.*') ? 'active' : '' }}">
                         <a href="{{ route('mentor.students.index') }}">
                             <i class="icon-people menu-icon"></i><span class="nav-text">My Students</span>
                         </a>
                     </li>
+
+                    <li class="{{ request()->routeIs('mentor.contents.*') ? 'active' : '' }}">
+                        <a href="{{ route('mentor.contents.index') }}">
+                            <i class="icon-docs menu-icon"></i><span class="nav-text">My Content</span>
+                        </a>
+                    </li>
                     @endif
-                    
+
+                    <!-- Learner Sidebar -->
                     @if(auth()->user()->isLearner())
-                    <!-- Learner Menu -->
+                    <li class="nav-label">Learning</li>
+
+                    <li class="{{ request()->routeIs('learner.learning.*') ? 'active' : '' }}">
+                        <a href="{{ route('learner.learning.index') }}">
+                            <i class="icon-graduation menu-icon"></i><span class="nav-text">My Learning</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('learner.calendar') ? 'active' : '' }}">
+                        <a href="{{ route('learner.calendar') }}">
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Live Sessions</span>
+                        </a>
+                    </li>
+
+                    <li class="nav-label">My Account</li>
+
                     <li class="{{ request()->routeIs('learner.dashboard') ? 'active' : '' }}">
                         <a href="{{ route('learner.dashboard') }}">
                             <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
                         </a>
                     </li>
-                    
+
                     <li class="{{ request()->routeIs('learner.programs.*') ? 'active' : '' }}">
                         <a href="{{ route('learner.programs.index') }}">
                             <i class="icon-book-open menu-icon"></i><span class="nav-text">Browse Programs</span>
                         </a>
                     </li>
-                    
-                    <li class="{{ request()->routeIs('learner.calendar') ? 'active' : '' }}">
-                        <a href="{{ route('learner.calendar') }}">
-                            <i class="icon-calendar menu-icon"></i><span class="nav-text">My Schedule</span>
-                        </a>
-                    </li>
-                    
+
                     <li class="{{ request()->routeIs('learner.profile.*') ? 'active' : '' }}">
                         <a href="{{ route('learner.profile.edit') }}">
                             <i class="icon-user menu-icon"></i><span class="nav-text">My Profile</span>
