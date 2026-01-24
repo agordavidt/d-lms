@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\LearnerController;
+use App\Http\Controllers\Admin\MentorManagementController;
 use App\Http\Controllers\Admin\ProgramController as AdminProgramController;
 use App\Http\Controllers\Admin\CohortController;
 use App\Http\Controllers\Admin\ActivityLogController;
@@ -36,7 +38,7 @@ Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
     Route::post('/login', [LoginController::class, 'login']);
 
-    // Register
+    // Register (Learners Only)
     Route::get('/register', [RegisterController::class, 'showRegistrationForm'])->name('register');
     Route::post('/register', [RegisterController::class, 'register']);
 
@@ -71,10 +73,28 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('/activity-log', [ActivityLogController::class, 'index'])->name('activity-log');
         Route::get('/activity-log/{id}', [ActivityLogController::class, 'show'])->name('activity-log.show');
 
-        // User Management
-        Route::get('/users/data', [UserController::class, 'getUsersData'])->name('users.data');
-        Route::post('/users/{id}/status', [UserController::class, 'updateStatus'])->name('users.update-status');
-        Route::resource('users', UserController::class);
+        // Learner Management
+        Route::get('/learners', [LearnerController::class, 'index'])->name('learners.index');
+        Route::get('/learners/data', [LearnerController::class, 'getData'])->name('learners.data');
+        Route::get('/learners/{id}', [LearnerController::class, 'show'])->name('learners.show');
+        Route::post('/learners/{id}/status', [LearnerController::class, 'updateStatus'])->name('learners.update-status');
+
+        // Mentor Management
+        Route::get('/mentors', [MentorManagementController::class, 'index'])->name('mentors.index');
+        Route::get('/mentors/data', [MentorManagementController::class, 'getData'])->name('mentors.data');
+        Route::get('/mentors/create', [MentorManagementController::class, 'create'])->name('mentors.create');
+        Route::post('/mentors', [MentorManagementController::class, 'store'])->name('mentors.store');
+        Route::get('/mentors/{id}/edit', [MentorManagementController::class, 'edit'])->name('mentors.edit');
+        Route::put('/mentors/{id}', [MentorManagementController::class, 'update'])->name('mentors.update');
+        Route::delete('/mentors/{id}', [MentorManagementController::class, 'destroy'])->name('mentors.destroy');
+        Route::post('/mentors/{id}/status', [MentorManagementController::class, 'updateStatus'])->name('mentors.update-status');
+
+        // User Management (SuperAdmin only - for creating admins)
+        Route::middleware(['check.role:superadmin'])->group(function () {
+            Route::get('/users/data', [UserController::class, 'getUsersData'])->name('users.data');
+            Route::post('/users/{id}/status', [UserController::class, 'updateStatus'])->name('users.update-status');
+            Route::resource('users', UserController::class);
+        });
 
         // Program Management
         Route::resource('programs', AdminProgramController::class);
@@ -126,6 +146,7 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         // Programs (Browse and Enroll)
         Route::get('/programs', [LearnerProgramController::class, 'index'])->name('programs.index');
         Route::get('/programs/{slug}', [LearnerProgramController::class, 'show'])->name('programs.show');
+        Route::post('/programs/{program}/enroll', [LearnerProgramController::class, 'enroll'])->name('programs.enroll');
 
         // Learning Dashboard 
         Route::get('/learning', [LearningController::class, 'index'])->name('learning.index');

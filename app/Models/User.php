@@ -201,4 +201,11 @@ class User extends Authenticatable
     {
         return $this->hasMany(LiveSession::class, 'mentor_id');
     }
+
+   
+
+    public function cohorts()
+    {
+        return $this->hasMany(Cohort::class, 'mentor_id');
+    }
 }

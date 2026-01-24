@@ -135,9 +135,19 @@
                         </a>
                     </li>
 
-                    <li class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.users.index') }}">
-                            <i class="icon-people menu-icon"></i><span class="nav-text">Users</span>
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('admin.learners.*') ? 'active' : '' }}" 
+                        href="{{ route('admin.learners.index') }}">
+                            <i class="bi bi-people-fill"></i>
+                            <span>Learners</span>
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('admin.mentors.*') ? 'active' : '' }}" 
+                        href="{{ route('admin.mentors.index') }}">
+                            <i class="bi bi-person-badge-fill"></i>
+                            <span>Mentors</span>
                         </a>
                     </li>
 

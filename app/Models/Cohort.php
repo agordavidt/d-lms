@@ -100,4 +100,9 @@ class Cohort extends Model
     {
         return $query->where('status', 'upcoming');
     }
+
+    public function mentor()
+    {
+        return $this->belongsTo(User::class, 'mentor_id');
+    }
 }
