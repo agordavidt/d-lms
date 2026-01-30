@@ -127,8 +127,6 @@
                 <ul class="metismenu" id="menu">
                     <!-- Admin Sidebar -->
                     @if(auth()->user()->isAdmin())
-                    <li class="nav-label">Main Menu</li>
-
                     <li class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
                         <a href="{{ route('admin.dashboard') }}">
                             <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
@@ -150,8 +148,6 @@
                             <span>Mentors</span>
                         </a>
                     </li>
-
-                    <li class="nav-label">Curriculum Management</li>
 
                     <li class="{{ request()->routeIs('admin.programs.*') ? 'active' : '' }}">
                         <a href="{{ route('admin.programs.index') }}">
@@ -177,8 +173,6 @@
                         </a>
                     </li>
 
-                    <li class="nav-label">Operations</li>
-
                     <li class="{{ request()->routeIs('admin.cohorts.*') ? 'active' : '' }}">
                         <a href="{{ route('admin.cohorts.index') }}">
                             <i class="icon-people menu-icon"></i><span class="nav-text">Cohorts</span>
@@ -191,23 +185,28 @@
                         </a>
                     </li>
 
-                    <li>
-                        <a href="#">
+                   <li class="{{ request()->routeIs('admin.payments.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.payments.index') }}">
                             <i class="icon-credit-card menu-icon"></i><span class="nav-text">Payments</span>
                         </a>
                     </li>
+
 
                     <li class="{{ request()->routeIs('admin.activity-log*') ? 'active' : '' }}">
                         <a href="{{ route('admin.activity-log') }}">
                             <i class="icon-note menu-icon"></i><span class="nav-text">Activity Log</span>
                         </a>
                     </li>
+
+                    <li>
+                        <a href="#">
+                            <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
+                        </a>
+                    </li>
                     @endif
 
                     <!-- Mentor Sidebar -->
                     @if(auth()->user()->isMentor())
-                    <li class="nav-label">Main Menu</li>
-
                     <li class="{{ request()->routeIs('mentor.dashboard') ? 'active' : '' }}">
                         <a href="{{ route('mentor.dashboard') }}">
                             <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
@@ -216,66 +215,75 @@
 
                     <li class="{{ request()->routeIs('mentor.sessions.*') ? 'active' : '' }}">
                         <a href="{{ route('mentor.sessions.calendar') }}">
-                            <i class="icon-calendar menu-icon"></i><span class="nav-text">My Classes</span>
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Classes</span>
                         </a>
                     </li>
 
                     <li class="{{ request()->routeIs('mentor.students.*') ? 'active' : '' }}">
                         <a href="{{ route('mentor.students.index') }}">
-                            <i class="icon-people menu-icon"></i><span class="nav-text">My Students</span>
+                            <i class="icon-people menu-icon"></i><span class="nav-text">Students</span>
                         </a>
                     </li>
 
                     <li class="{{ request()->routeIs('mentor.contents.*') ? 'active' : '' }}">
                         <a href="{{ route('mentor.contents.index') }}">
-                            <i class="icon-docs menu-icon"></i><span class="nav-text">My Content</span>
+                            <i class="icon-docs menu-icon"></i><span class="nav-text">Content</span>
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="#">
+                            <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
                         </a>
                     </li>
                     @endif
 
                     <!-- Learner Sidebar -->
                     @if(auth()->user()->isLearner())
-                    <li class="nav-label">Learning</li>
+                        @php
+                            $hasActiveEnrollment = auth()->user()->enrollments()->where('status', 'active')->exists();
+                        @endphp
 
-                    <li class="{{ request()->routeIs('learner.learning.*') ? 'active' : '' }}">
-                        <a href="{{ route('learner.learning.index') }}">
-                            <i class="icon-graduation menu-icon"></i><span class="nav-text">My Learning</span>
-                        </a>
-                    </li>
+                        @if(!$hasActiveEnrollment)
+                            <!-- Pre-Enrollment Navigation -->
+                            <li class="{{ request()->routeIs('learner.programs.*') ? 'active' : '' }}">
+                                <a href="{{ route('learner.programs.index') }}">
+                                    <i class="icon-book-open menu-icon"></i><span class="nav-text">Programs</span>
+                                </a>
+                            </li>
+                        @else
+                            <!-- Post-Enrollment Navigation -->
+                            <li class="{{ request()->routeIs('learner.learning.*') ? 'active' : '' }}">
+                                <a href="{{ route('learner.learning.index') }}">
+                                    <i class="icon-graduation menu-icon"></i><span class="nav-text">Learning</span>
+                                </a>
+                            </li>
 
-                    <li class="{{ request()->routeIs('learner.calendar') ? 'active' : '' }}">
-                        <a href="{{ route('learner.calendar') }}">
-                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Live Sessions</span>
-                        </a>
-                    </li>
+                            <li class="{{ request()->routeIs('learner.curriculum') ? 'active' : '' }}">
+                                <a href="{{ route('learner.curriculum') }}">
+                                    <i class="icon-layers menu-icon"></i><span class="nav-text">Curriculum</span>
+                                </a>
+                            </li>
 
-                    <li class="nav-label">My Account</li>
+                            <li class="{{ request()->routeIs('learner.calendar') ? 'active' : '' }}">
+                                <a href="{{ route('learner.calendar') }}">
+                                    <i class="icon-calendar menu-icon"></i><span class="nav-text">Calendar</span>
+                                </a>
+                            </li>
+                        @endif
 
-                    <li class="{{ request()->routeIs('learner.dashboard') ? 'active' : '' }}">
-                        <a href="{{ route('learner.dashboard') }}">
-                            <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
-                        </a>
-                    </li>
+                        <li class="{{ request()->routeIs('learner.profile.*') ? 'active' : '' }}">
+                            <a href="{{ route('learner.profile.edit') }}">
+                                <i class="icon-user menu-icon"></i><span class="nav-text">Profile</span>
+                            </a>
+                        </li>
 
-                    <li class="{{ request()->routeIs('learner.programs.*') ? 'active' : '' }}">
-                        <a href="{{ route('learner.programs.index') }}">
-                            <i class="icon-book-open menu-icon"></i><span class="nav-text">Browse Programs</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('learner.profile.*') ? 'active' : '' }}">
-                        <a href="{{ route('learner.profile.edit') }}">
-                            <i class="icon-user menu-icon"></i><span class="nav-text">My Profile</span>
-                        </a>
-                    </li>
+                        <li>
+                            <a href="#">
+                                <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
+                            </a>
+                        </li>
                     @endif
-
-                    <li class="nav-label">Support</li>
-                    <li>
-                        <a href="#">
-                            <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
-                        </a>
-                    </li>
                 </ul>
             </div>
         </div>

@@ -8,24 +8,23 @@ use Illuminate\Http\Request;
 class DashboardController extends Controller
 {
     /**
-     * Main dashboard now redirects to learning dashboard
-     * This keeps backward compatibility while focusing on learning
+     * Simplified dashboard - redirects based on enrollment status
      */
     public function index()
     {
         $user = auth()->user();
 
-        // Check if user has active enrollment
+        // Check for active enrollment
         $activeEnrollment = $user->enrollments()
             ->where('status', 'active')
             ->first();
 
         if ($activeEnrollment) {
-            // Redirect to learning dashboard
+            // Has active enrollment - redirect to learning
             return redirect()->route('learner.learning.index');
         }
 
-        // Check if user has pending enrollment (payment not completed)
+        // Check for pending enrollment (payment not completed)
         $pendingEnrollment = $user->enrollments()
             ->with(['program', 'payments'])
             ->where('status', 'pending')
@@ -35,7 +34,7 @@ class DashboardController extends Controller
             return view('learner.dashboard.pending', compact('pendingEnrollment'));
         }
 
-        // No enrollment, show programs
+        // No enrollment - redirect to programs page
         return redirect()->route('learner.programs.index')
             ->with(['message' => 'Welcome! Choose a program to begin your learning journey.', 'alert-type' => 'info']);
     }

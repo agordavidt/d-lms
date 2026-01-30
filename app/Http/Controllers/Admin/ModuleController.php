@@ -91,8 +91,9 @@ class ModuleController extends Controller
     {
         $programs = Program::active()->get();
         
-        return view('admin.modules.edit', compact('module', 'programs'));
+        return view('admin.modules.edit_partial', compact('module', 'programs'));
     }
+  
 
     public function update(Request $request, ProgramModule $module)
     {

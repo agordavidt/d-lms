@@ -1,3 +1,4 @@
+{{-- File Path: resources/views/learner/learning/content.blade.php --}}
 @extends('layouts.admin')
 
 @section('title', $content->title)
@@ -249,7 +250,7 @@
                 <a href="{{ route('learner.learning.index') }}" class="btn btn-outline-primary btn-block btn-sm mb-2">
                     Back to Week
                 </a>
-                <a href="{{ route('learner.learning.curriculum') }}" class="btn btn-outline-primary btn-block btn-sm">
+                <a href="{{ route('learner.curriculum') }}" class="btn btn-outline-primary btn-block btn-sm">
                     View Curriculum
                 </a>
             </div>

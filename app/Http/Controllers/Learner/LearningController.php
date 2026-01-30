@@ -1,4 +1,5 @@
 <?php
+// File Path: app/Http/Controllers/Learner/LearningController.php
 
 namespace App\Http\Controllers\Learner;
 
@@ -13,25 +14,24 @@ use Illuminate\Http\Request;
 class LearningController extends Controller
 {
     /**
-     * Main learning dashboard - focused on current week's content
+     * Main learning page - shows current week's content only
      */
     public function index()
     {
         $user = auth()->user();
 
-        // Get active enrollment (only one allowed)
+        // Get active enrollment
         $enrollment = $user->enrollments()
             ->with(['program', 'cohort'])
             ->where('status', 'active')
             ->first();
 
         if (!$enrollment) {
-            // No active enrollment, redirect to programs
             return redirect()->route('learner.programs.index')
                 ->with(['message' => 'Please enroll in a program to start learning.', 'alert-type' => 'info']);
         }
 
-        // Get current week progress
+        // Get current week progress (unlocked but not completed)
         $currentWeekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
             ->where('is_unlocked', true)
             ->where('is_completed', false)
@@ -49,7 +49,6 @@ class LearningController extends Controller
                 return view('learner.learning.completed', compact('enrollment'));
             }
 
-            // No current week, something went wrong
             return view('learner.learning.no-content', compact('enrollment'));
         }
 
@@ -61,35 +60,37 @@ class LearningController extends Controller
                 $query->where('user_id', $user->id)
                       ->where('enrollment_id', $enrollment->id);
             }])
+            ->orderBy('order')
             ->get();
 
-        // Get live sessions for current week
-        $upcomingSessions = LiveSession::where('cohort_id', $enrollment->cohort_id)
-            ->where('week_id', $currentWeek->id)
-            ->where('start_time', '>', now())
-            ->where('status', 'scheduled')
-            ->orderBy('start_time')
-            ->get();
+        // Prepare content data for JavaScript (moved from view)
+        $contentsJson = $contents->map(function($content) {
+            $progress = $content->contentProgress->first();
+            
+            return [
+                'id' => $content->id,
+                'title' => $content->title,
+                'type' => $content->content_type,
+                'description' => $content->description,
+                'video_url' => $content->video_url,
+                'video_duration' => $content->video_duration_minutes,
+                'file_url' => $content->file_url,
+                'external_url' => $content->external_url,
+                'text_content' => $content->text_content,
+                'is_completed' => $progress ? $progress->is_completed : false
+            ];
+        });
 
-        // Overall learning stats
+        // Calculate learning stats
         $stats = $this->calculateLearningStats($user, $enrollment);
-
-        // Recent activity
-        $recentContents = ContentProgress::where('user_id', $user->id)
-            ->where('enrollment_id', $enrollment->id)
-            ->with('weekContent.moduleWeek')
-            ->latest('last_accessed_at')
-            ->limit(5)
-            ->get();
 
         return view('learner.learning.index', compact(
             'enrollment',
             'currentWeek',
             'currentWeekProgress',
             'contents',
-            'upcomingSessions',
-            'stats',
-            'recentContents'
+            'contentsJson',
+            'stats'
         ));
     }
 
@@ -123,6 +124,7 @@ class LearningController extends Controller
                 $query->where('user_id', $user->id)
                       ->where('enrollment_id', $enrollment->id);
             }])
+            ->orderBy('order')
             ->get();
 
         // Get live sessions for this week
@@ -167,7 +169,7 @@ class LearningController extends Controller
         // Get or create progress
         $progress = $content->getProgressFor($user, $enrollment);
         
-        // Mark as started
+        // Mark as started and update last accessed
         $progress->markAsStarted();
 
         return view('learner.learning.content', compact('enrollment', 'content', 'progress', 'weekProgress'));
@@ -190,10 +192,13 @@ class LearningController extends Controller
 
         $progress->markAsCompleted();
 
+        // Get updated week progress
+        $weekProgress = $progress->weekContent->moduleWeek->getProgressFor($user, $enrollment);
+
         return response()->json([
             'success' => true,
             'message' => 'Content marked as complete!',
-            'week_progress' => $progress->weekContent->moduleWeek->getProgressFor($user, $enrollment)
+            'week_completion' => $weekProgress->completion_percentage
         ]);
     }
 
@@ -227,33 +232,6 @@ class LearningController extends Controller
             'success' => true,
             'is_completed' => $progress->is_completed,
         ]);
-    }
-
-    /**
-     * Show all weeks (curriculum overview)
-     */
-    public function curriculum()
-    {
-        $user = auth()->user();
-        $enrollment = $user->enrollments()->where('status', 'active')->first();
-
-        if (!$enrollment) {
-            return redirect()->route('learner.programs.index');
-        }
-
-        // Get all modules with weeks
-        $modules = $enrollment->program->publishedModules()
-            ->with(['weeks' => function($query) use ($user, $enrollment) {
-                $query->published()
-                      ->with(['weekProgress' => function($q) use ($user, $enrollment) {
-                          $q->where('user_id', $user->id)
-                            ->where('enrollment_id', $enrollment->id);
-                      }])
-                      ->orderBy('week_number');
-            }])
-            ->get();
-
-        return view('learner.learning.curriculum', compact('enrollment', 'modules'));
     }
 
     /**

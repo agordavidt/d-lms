@@ -11,7 +11,7 @@
             <div class="card-body">
                 <h4 class="card-title">Edit Program: {{ $program->name }}</h4>
                 
-                <form action="{{ route('admin.programs.update', $program) }}" method="PUT">
+                <form action="{{ route('admin.programs.update', $program) }}" method="POST">
                     @csrf
                     @method('PUT')
                     

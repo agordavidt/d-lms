@@ -123,7 +123,8 @@ class WeekController extends Controller
             ->orderBy('order')
             ->get();
 
-        return view('admin.weeks.edit', compact('week', 'programs', 'modules'));
+        // Return partial view for AJAX modal
+        return view('admin.weeks.edit_partial', compact('week', 'programs', 'modules'));
     }
 
     public function update(Request $request, ModuleWeek $week)
@@ -171,31 +172,44 @@ class WeekController extends Controller
     public function destroy(ModuleWeek $week)
     {
         try {
+            DB::beginTransaction();
+
             // Check if week has contents
-            if ($week->contents()->exists()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot delete week with existing content. Delete content first.'
-                ], 400);
+            $contentsCount = $week->contents()->count();
+            
+            if ($contentsCount > 0) {
+                // Delete all contents first (cascade delete)
+                $week->contents()->each(function($content) {
+                    // Delete file if exists
+                    if ($content->file_path) {
+                        \Storage::disk('public')->delete($content->file_path);
+                    }
+                    $content->delete();
+                });
             }
 
             AuditLog::log('week_deleted', auth()->user(), [
-                'description' => 'Deleted week: ' . $week->title,
+                'description' => 'Deleted week: ' . $week->title . ($contentsCount > 0 ? " and {$contentsCount} contents" : ''),
                 'model_type' => ModuleWeek::class,
                 'model_id' => $week->id,
             ]);
 
             $week->delete();
 
+            DB::commit();
+
             return response()->json([
                 'success' => true,
-                'message' => 'Week deleted successfully!'
+                'message' => $contentsCount > 0 
+                    ? "Week and {$contentsCount} contents deleted successfully!" 
+                    : 'Week deleted successfully!'
             ]);
 
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete week.'
+                'message' => 'Failed to delete week: ' . $e->getMessage()
             ], 500);
         }
     }

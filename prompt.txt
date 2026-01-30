@@ -1,0 +1,44 @@
+
+
+
+===
+
+
+
+the weeks view is giving error:
+Internal Server Error
+
+Copy as Markdown
+ErrorException
+resources\views\admin\weeks\show.blade.php:80
+Undefined variable $contents
+
+LARAVEL
+12.47.0
+PHP
+8.2.28
+UNHANDLED
+CODE 0
+500
+GET
+http://127.0.0.1:8000/admin/weeks/1
+
+Exception trace
+
+
+
+==== weeks edit
+Internal Server Error
+InvalidArgumentException
+vendor\laravel\framework\src\Illuminate\View\FileViewFinder.php:138
+View [admin.weeks.edit] not found.
+
+LARAVEL
+12.47.0
+PHP
+8.2.28
+UNHANDLED
+CODE 0
+500
+GET
+http://127.0.0.1:8000/admin/weeks/2/edit

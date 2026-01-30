@@ -266,7 +266,7 @@ class ContentController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete content.'
+                'message' => 'Failed to delete content: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -303,6 +303,21 @@ class ContentController extends Controller
         }
     }
 
+    /**
+     * Get modules by program (for AJAX)
+     */
+    public function getModulesByProgram(Request $request)
+    {
+        $modules = ProgramModule::where('program_id', $request->program_id)
+            ->orderBy('order')
+            ->get(['id', 'title']);
+
+        return response()->json($modules);
+    }
+
+    /**
+     * Get weeks by module (for AJAX)
+     */
     public function getWeeksByModule(Request $request)
     {
         $weeks = ModuleWeek::where('program_module_id', $request->module_id)

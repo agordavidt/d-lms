@@ -1,288 +1,712 @@
 @extends('layouts.admin')
 
-@section('title', 'My Learning')
-@section('breadcrumb-parent', 'Dashboard')
-@section('breadcrumb-current', 'Learning')
+@section('title', 'Learning')
 
 @push('styles')
 <style>
-.content-item {
-    border-left: 4px solid #7571f9;
-    transition: all 0.3s ease;
-}
-.content-item:hover {
-    background-color: #f8f9fa;
-    border-left-color: #4c49d4;
-}
-.content-item.completed {
-    border-left-color: #28a745;
-    opacity: 0.9;
-}
-.content-item.completed .content-title {
-    color: #6c757d;
-}
-.content-icon {
-    font-size: 32px;
-    width: 50px;
-    text-align: center;
-}
-.progress-ring {
-    width: 120px;
-    height: 120px;
-}
-.stat-card {
-    border-left: 4px solid #7571f9;
-}
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    .learning-container {
+        display: flex;
+        height: 100vh;
+        background: #f8f9fa;
+    }
+    
+    /* Left Panel - Content List */
+    .content-sidebar {
+        width: 350px;
+        background: #fff;
+        border-right: 1px solid #e0e0e0;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+    }
+    
+    .week-header {
+        padding: 24px 20px;
+        background: #fff;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .week-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 8px;
+    }
+    
+    .week-meta {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 12px;
+    }
+    
+    .week-progress {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .progress-bar {
+        flex: 1;
+        height: 6px;
+        background: #f0f0f0;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #7571f9 0%, #9c98ff 100%);
+        transition: width 0.3s ease;
+    }
+    
+    .progress-text {
+        font-size: 12px;
+        font-weight: 600;
+        color: #7571f9;
+        white-space: nowrap;
+    }
+    
+    .content-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px 0;
+    }
+    
+    .content-item {
+        padding: 16px 20px;
+        border-bottom: 1px solid #f5f5f5;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .content-item:hover {
+        background: #f8f8ff;
+    }
+    
+    .content-item.active {
+        background: #f8f8ff;
+        border-left: 3px solid #7571f9;
+    }
+    
+    .content-item.completed {
+        opacity: 0.7;
+    }
+    
+    .content-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+    
+    .icon-video { background: #e3f2fd; color: #1976d2; }
+    .icon-reading { background: #f3e5f5; color: #7b1fa2; }
+    .icon-link { background: #fff3e0; color: #f57c00; }
+    
+    .content-info {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .content-name {
+        font-size: 14px;
+        font-weight: 500;
+        color: #333;
+        margin-bottom: 4px;
+        line-height: 1.4;
+    }
+    
+    .content-meta {
+        font-size: 12px;
+        color: #999;
+    }
+    
+    .content-status {
+        flex-shrink: 0;
+        margin-top: 4px;
+    }
+    
+    .status-check {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #e0e0e0;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+    }
+    
+    .content-item.completed .status-check {
+        background: #4caf50;
+        border-color: #4caf50;
+        color: white;
+    }
+    
+    /* Right Panel - Content Viewer */
+    .content-viewer {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+    }
+    
+    .viewer-header {
+        padding: 24px 32px;
+        background: #fff;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .viewer-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    .viewer-actions {
+        display: flex;
+        gap: 12px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s ease;
+    }
+    
+    .btn-complete {
+        background: #4caf50;
+        color: white;
+    }
+    
+    .btn-complete:hover {
+        background: #43a047;
+    }
+    
+    .btn-complete:disabled {
+        background: #e0e0e0;
+        color: #999;
+        cursor: not-allowed;
+    }
+    
+    .btn-next {
+        background: #7571f9;
+        color: white;
+    }
+    
+    .btn-next:hover {
+        background: #5f5bd1;
+    }
+    
+    .viewer-body {
+        flex: 1;
+        overflow-y: auto;
+        background: #fff;
+    }
+    
+    .content-display {
+        padding: 32px;
+    }
+    
+    .video-container {
+        position: relative;
+        padding-bottom: 56.25%;
+        height: 0;
+        overflow: hidden;
+        background: #000;
+        border-radius: 8px;
+    }
+    
+    .video-container iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+    
+    .pdf-viewer {
+        width: 100%;
+        height: 600px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+    }
+    
+    .text-content {
+        line-height: 1.8;
+        font-size: 16px;
+        color: #333;
+    }
+    
+    .text-content h1, .text-content h2, .text-content h3 {
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .text-content p {
+        margin-bottom: 1rem;
+    }
+    
+    .external-link-display {
+        text-align: center;
+        padding: 60px 20px;
+    }
+    
+    .external-link-display .icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+    
+    .external-link-display h3 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 12px;
+    }
+    
+    .external-link-display p {
+        color: #666;
+        margin-bottom: 24px;
+    }
+    
+    .btn-external {
+        background: #7571f9;
+        color: white;
+        padding: 14px 32px;
+        border-radius: 8px;
+        text-decoration: none;
+        display: inline-block;
+        font-weight: 500;
+    }
+    
+    .btn-external:hover {
+        background: #5f5bd1;
+        color: white;
+    }
+    
+    /* Completion State */
+    .completion-message {
+        text-align: center;
+        padding: 80px 20px;
+    }
+    
+    .completion-message .icon {
+        font-size: 80px;
+        margin-bottom: 24px;
+    }
+    
+    .completion-message h2 {
+        font-size: 28px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 12px;
+    }
+    
+    .completion-message p {
+        font-size: 16px;
+        color: #666;
+        margin-bottom: 32px;
+    }
+    
+    .completion-actions {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    /* Loading State */
+    .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 400px;
+        color: #999;
+    }
+    
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+        color: #999;
+    }
+    
+    .empty-state .icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+    
+    /* Responsive */
+    @media (max-width: 968px) {
+        .learning-container {
+            flex-direction: column;
+        }
+        
+        .content-sidebar {
+            width: 100%;
+            height: 40vh;
+            border-right: none;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .content-viewer {
+            height: 60vh;
+        }
+    }
 </style>
 @endpush
 
 @section('content')
-<div class="row">
-    <!-- Main Learning Area (70%) -->
-    <div class="col-lg-8">
-        <!-- Current Week Header -->
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                        <h6 class="text-muted mb-1">{{ $currentWeek->programModule->title }}</h6>
-                        <h3 class="mb-0">{{ $currentWeek->title }}</h3>
-                        <p class="text-muted mt-2 mb-0">Week {{ $currentWeek->week_number }} of {{ $enrollment->program->total_weeks }}</p>
-                    </div>
-                    <div class="text-center">
-                        <div class="mb-2">
-                            <h2 class="mb-0" style="color: #7571f9;">{{ $currentWeekProgress->progress_percentage }}%</h2>
-                            <small class="text-muted">Complete</small>
-                        </div>
-                        <div class="progress" style="height: 8px; width: 120px;">
-                            <div class="progress-bar" role="progressbar" 
-                                 style="width: {{ $currentWeekProgress->progress_percentage }}%; background-color: #7571f9;"
-                                 aria-valuenow="{{ $currentWeekProgress->progress_percentage }}" 
-                                 aria-valuemin="0" aria-valuemax="100">
-                            </div>
-                        </div>
-                    </div>
+<div class="learning-container">
+    <!-- Left Panel - Content List -->
+    <div class="content-sidebar">
+        <div class="week-header">
+            <div class="week-title">{{ $currentWeek->title }}</div>
+            <div class="week-meta">
+                {{ $currentWeek->programModule->name }} • Week {{ $currentWeek->week_number }}
+            </div>
+            <div class="week-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ $currentWeekProgress->completion_percentage }}%"></div>
                 </div>
-
-                @if($currentWeek->description)
-                <p class="mb-0">{{ $currentWeek->description }}</p>
-                @endif
-
-                @if($currentWeek->learning_outcomes && count($currentWeek->learning_outcomes) > 0)
-                <div class="mt-3">
-                    <strong class="text-muted" style="font-size: 12px;">WHAT YOU'LL LEARN:</strong>
-                    <ul class="pl-3 mb-0 mt-2">
-                        @foreach($currentWeek->learning_outcomes as $outcome)
-                            <li style="font-size: 14px;">{{ $outcome }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-                @endif
+                <div class="progress-text">{{ $currentWeekProgress->completion_percentage }}%</div>
             </div>
         </div>
-
-        <!-- Week Contents -->
-        <div class="card mt-3">
-            <div class="card-body">
-                <h5 class="mb-4">Week Content</h5>
-
-                @if($contents->count() > 0)
-                    <div class="list-group list-group-flush">
-                        @foreach($contents as $content)
-                            @php
-                                $progress = $content->contentProgress->first();
-                                $isCompleted = $progress && $progress->is_completed;
-                            @endphp
-                            <div class="list-group-item content-item {{ $isCompleted ? 'completed' : '' }} mb-3 rounded">
-                                <div class="d-flex align-items-start">
-                                    <div class="content-icon mr-3">{{ $content->icon }}</div>
-                                    <div class="flex-grow-1">
-                                        <div class="d-flex justify-content-between align-items-start">
-                                            <div>
-                                                <h6 class="mb-1 content-title">
-                                                    {{ $content->title }}
-                                                    @if($content->is_required)
-                                                        <span class="badge badge-primary">Required</span>
-                                                    @endif
-                                                    @if($isCompleted)
-                                                        <span class="badge badge-success">✓ Completed</span>
-                                                    @endif
-                                                </h6>
-                                                <div class="mb-2">
-                                                    <span class="badge badge-light">{{ $content->type_display }}</span>
-                                                    @if($content->content_type === 'video' && $content->video_duration_minutes)
-                                                        <span class="text-muted" style="font-size: 12px;">• {{ $content->video_duration_minutes }} min</span>
-                                                    @endif
-                                                </div>
-                                                @if($content->description)
-                                                    <p class="text-muted mb-2" style="font-size: 13px;">{{ $content->description }}</p>
-                                                @endif
-                                            </div>
-                                        </div>
-
-                                        <div class="mt-2">
-                                            @if($isCompleted)
-                                                <a href="{{ route('learner.learning.content', $content->id) }}" 
-                                                   class="btn btn-sm btn-outline-primary">
-                                                    Review Again
-                                                </a>
-                                            @else
-                                                <a href="{{ route('learner.learning.content', $content->id) }}" 
-                                                   class="btn btn-sm btn-primary">
-                                                    @if($content->content_type === 'video')
-                                                        Watch Video
-                                                    @elseif($content->content_type === 'pdf')
-                                                        Read Document
-                                                    @elseif($content->content_type === 'link')
-                                                        Open Resource
-                                                    @else
-                                                        Read Article
-                                                    @endif
-                                                </a>
-                                                @if($progress && $progress->progress_percentage > 0)
-                                                    <span class="text-muted ml-2" style="font-size: 12px;">
-                                                        {{ $progress->progress_percentage }}% complete
-                                                    </span>
-                                                @endif
-                                            @endif
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                @else
-                    <div class="text-center py-4">
-                        <p class="text-muted">No content available for this week yet.</p>
-                    </div>
-                @endif
-            </div>
-        </div>
-
-        <!-- Live Sessions This Week -->
-        @if($upcomingSessions->count() > 0)
-        <div class="card mt-3">
-            <div class="card-body">
-                <h5 class="mb-4">Live Sessions This Week</h5>
-                @foreach($upcomingSessions as $session)
-                    <div class="d-flex align-items-center p-3 mb-2 rounded" style="background-color: #f8f9fa; border-left: 4px solid #7571f9;">
-                        <div class="mr-3" style="font-size: 32px;">🎓</div>
-                        <div class="flex-grow-1">
-                            <h6 class="mb-1">{{ $session->title }}</h6>
-                            <p class="text-muted mb-0" style="font-size: 13px;">
-                                {{ $session->start_time->format('l, M d') }} • 
-                                {{ $session->start_time->format('g:i A') }} - {{ $session->end_time->format('g:i A') }}
-                                @if($session->mentor)
-                                    • {{ $session->mentor->name }}
-                                @endif
-                            </p>
-                        </div>
-                        @if($session->meet_link)
-                            <a href="{{ $session->meet_link }}" target="_blank" class="btn btn-primary btn-sm">
-                                Join Meeting
-                            </a>
-                        @endif
-                    </div>
-                @endforeach
-            </div>
-        </div>
-        @endif
-    </div>
-
-    <!-- Sidebar (30%) -->
-    <div class="col-lg-4">
-        <!-- Overall Progress -->
-        <div class="card stat-card">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">OVERALL PROGRESS</h6>
-                <div class="text-center mb-3">
-                    <h1 style="color: #7571f9;">{{ $stats['overall_progress'] }}%</h1>
-                    <p class="text-muted mb-0">{{ $stats['completed_weeks'] }} of {{ $stats['total_weeks'] }} weeks complete</p>
-                </div>
-                <div class="progress" style="height: 10px;">
-                    <div class="progress-bar" role="progressbar" 
-                         style="width: {{ $stats['overall_progress'] }}%; background-color: #7571f9;"
-                         aria-valuenow="{{ $stats['overall_progress'] }}" 
-                         aria-valuemin="0" aria-valuemax="100">
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Quick Stats -->
-        <div class="card mt-3">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">STATISTICS</h6>
+        
+        <div class="content-list" id="contentList">
+            @forelse($contents as $content)
+                @php
+                    $progress = $content->contentProgress->first();
+                    $isCompleted = $progress && $progress->is_completed;
+                    
+                    $iconClass = 'icon-reading';
+                    $iconSymbol = '📄';
+                    switch($content->content_type) {
+                        case 'video':
+                            $iconClass = 'icon-video';
+                            $iconSymbol = '▶️';
+                            break;
+                        case 'link':
+                            $iconClass = 'icon-link';
+                            $iconSymbol = '🔗';
+                            break;
+                    }
+                @endphp
                 
-                <div class="mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
-                    <div class="d-flex justify-content-between">
-                        <span class="text-muted">Contents Completed</span>
-                        <strong style="color: #7571f9;">{{ $stats['completed_contents'] }}/{{ $stats['total_contents'] }}</strong>
+                <div class="content-item {{ $loop->first ? 'active' : '' }} {{ $isCompleted ? 'completed' : '' }}" 
+                     data-content-id="{{ $content->id }}"
+                     onclick="loadContent({{ $content->id }})">
+                    <div class="content-icon {{ $iconClass }}">
+                        {{ $iconSymbol }}
+                    </div>
+                    <div class="content-info">
+                        <div class="content-name">{{ $content->title }}</div>
+                        <div class="content-meta">
+                            {{ ucfirst($content->content_type) }}
+                            @if($content->video_duration_minutes)
+                                • {{ $content->video_duration_minutes }} min
+                            @endif
+                        </div>
+                    </div>
+                    <div class="content-status">
+                        <div class="status-check">
+                            @if($isCompleted)
+                                ✓
+                            @endif
+                        </div>
                     </div>
                 </div>
-
-                <div class="mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
-                    <div class="d-flex justify-content-between">
-                        <span class="text-muted">Session Attendance</span>
-                        <strong style="color: #7571f9;">{{ $stats['attendance_rate'] }}%</strong>
-                    </div>
-                    <small class="text-muted">{{ $stats['attended_sessions'] }} of {{ $stats['total_sessions'] }} sessions</small>
+            @empty
+                <div class="empty-state">
+                    <div class="icon">📚</div>
+                    <p>No content available yet</p>
                 </div>
-
-                <div class="mb-0">
-                    <div class="d-flex justify-content-between">
-                        <span class="text-muted">Program</span>
-                        <strong style="color: #7571f9;">{{ $enrollment->program->name }}</strong>
-                    </div>
-                    <small class="text-muted">{{ $enrollment->cohort->name }}</small>
+            @endforelse
+        </div>
+    </div>
+    
+    <!-- Right Panel - Content Viewer -->
+    <div class="content-viewer">
+        <div class="viewer-header">
+            <div class="viewer-title" id="viewerTitle">
+                @if($contents->isNotEmpty())
+                    {{ $contents->first()->title }}
+                @else
+                    Select Content
+                @endif
+            </div>
+            <div class="viewer-actions">
+                <button class="btn btn-complete" id="btnComplete" onclick="markComplete()" style="display: none;">
+                    Mark Complete
+                </button>
+                <button class="btn btn-next" id="btnNext" onclick="nextContent()" style="display: none;">
+                    Next →
+                </button>
+            </div>
+        </div>
+        
+        <div class="viewer-body" id="viewerBody">
+            @if($contents->isNotEmpty())
+                <div class="loading">Loading content...</div>
+            @else
+                <div class="empty-state">
+                    <div class="icon">📝</div>
+                    <h3>No Content This Week</h3>
+                    <p>Check back later or view the calendar for upcoming sessions.</p>
                 </div>
-            </div>
+            @endif
         </div>
-
-        <!-- Quick Actions -->
-        <div class="card mt-3">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">QUICK ACTIONS</h6>
-                <a href="{{ route('learner.learning.curriculum') }}" class="btn btn-outline-primary btn-block mb-2">
-                    View Full Curriculum
-                </a>
-                <a href="{{ route('learner.calendar') }}" class="btn btn-outline-primary btn-block mb-2">
-                    View All Sessions
-                </a>
-                <a href="{{ route('learner.profile.edit') }}" class="btn btn-outline-primary btn-block">
-                    Update Profile
-                </a>
-            </div>
-        </div>
-
-        <!-- Recent Activity -->
-        @if($recentContents->count() > 0)
-        <div class="card mt-3">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">RECENT ACTIVITY</h6>
-                @foreach($recentContents->take(5) as $recent)
-                    <div class="mb-3">
-                        <small class="text-muted d-block">
-                            {{ $recent->last_accessed_at->diffForHumans() }}
-                        </small>
-                        <a href="{{ route('learner.learning.content', $recent->weekContent->id) }}" 
-                           style="font-size: 13px; color: #495057;">
-                            {{ $recent->weekContent->icon }} {{ Str::limit($recent->weekContent->title, 35) }}
-                        </a>
-                    </div>
-                @endforeach
-            </div>
-        </div>
-        @endif
     </div>
 </div>
-@endsection
 
-@push('scripts')
+@if($contents->isNotEmpty())
 <script>
-// Auto-refresh session status every 5 minutes
-setInterval(function() {
-    location.reload();
-}, 300000);
+    // Store all content data (prepared by controller)
+    const contentsData = {!! json_encode($contentsJson) !!};
+    
+    let currentContentIndex = 0;
+    let progressTrackingInterval = null;
+    let contentStartTime = null;
+    
+    // Load first content on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        if (contentsData.length > 0) {
+            loadContent(contentsData[0].id);
+        }
+    });
+    
+    function loadContent(contentId) {
+        // Find content index
+        currentContentIndex = contentsData.findIndex(c => c.id === contentId);
+        const content = contentsData[currentContentIndex];
+        
+        // Update active state
+        document.querySelectorAll('.content-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        document.querySelector(`[data-content-id="${contentId}"]`).classList.add('active');
+        
+        // Update title
+        document.getElementById('viewerTitle').textContent = content.title;
+        
+        // Show/hide buttons
+        const isCompleted = content.is_completed;
+        document.getElementById('btnComplete').style.display = isCompleted ? 'none' : 'block';
+        document.getElementById('btnNext').style.display = currentContentIndex < contentsData.length - 1 ? 'block' : 'none';
+        
+        // Render content
+        renderContent(content);
+        
+        // Start progress tracking
+        startProgressTracking(contentId);
+    }
+    
+    function renderContent(content) {
+        const viewerBody = document.getElementById('viewerBody');
+        let html = '<div class="content-display">';
+        
+        // Add description if available
+        if (content.description) {
+            html += `<p style="color: #666; margin-bottom: 24px;">${content.description}</p>`;
+        }
+        
+        // Render based on type
+        switch(content.type) {
+            case 'video':
+                html += renderVideo(content);
+                break;
+            case 'pdf':
+                html += renderPDF(content);
+                break;
+            case 'link':
+                html += renderLink(content);
+                break;
+            case 'text':
+                html += renderText(content);
+                break;
+        }
+        
+        html += '</div>';
+        viewerBody.innerHTML = html;
+    }
+    
+    function renderVideo(content) {
+        let embedUrl = '';
+        if (content.video_url.includes('youtube.com') || content.video_url.includes('youtu.be')) {
+            const videoId = content.video_url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/)?.[1];
+            embedUrl = `https://www.youtube.com/embed/${videoId}`;
+        } else if (content.video_url.includes('vimeo.com')) {
+            const videoId = content.video_url.match(/vimeo\.com\/(\d+)/)?.[1];
+            embedUrl = `https://player.vimeo.com/video/${videoId}`;
+        }
+        
+        if (embedUrl) {
+            return `
+                <div class="video-container">
+                    <iframe src="${embedUrl}" frameborder="0" allowfullscreen></iframe>
+                </div>
+                ${content.video_duration ? `<p style="margin-top: 12px; color: #999; font-size: 14px;">Duration: ${content.video_duration} minutes</p>` : ''}
+            `;
+        }
+        
+        return `<p style="color: #999;">Video format not supported. <a href="${content.video_url}" target="_blank">Watch on external site</a></p>`;
+    }
+    
+    function renderPDF(content) {
+        return `
+            <iframe src="${content.file_url}" class="pdf-viewer"></iframe>
+            <div style="text-align: center; margin-top: 16px;">
+                <a href="${content.file_url}" download class="btn btn-next">Download PDF</a>
+            </div>
+        `;
+    }
+    
+    function renderLink(content) {
+        return `
+            <div class="external-link-display">
+                <div class="icon">🔗</div>
+                <h3>External Resource</h3>
+                <p>This content is hosted on an external website.</p>
+                <a href="${content.external_url}" target="_blank" class="btn-external">
+                    Open Resource
+                </a>
+                <p style="margin-top: 16px; font-size: 13px; color: #999;">${content.external_url}</p>
+            </div>
+        `;
+    }
+    
+    function renderText(content) {
+        return `<div class="text-content">${content.text_content || ''}</div>`;
+    }
+    
+    function startProgressTracking(contentId) {
+        // Clear any existing interval
+        if (progressTrackingInterval) {
+            clearInterval(progressTrackingInterval);
+        }
+        
+        contentStartTime = Date.now();
+        
+        // Update progress every 30 seconds
+        progressTrackingInterval = setInterval(() => {
+            updateProgress(contentId);
+        }, 30000);
+    }
+    
+    function updateProgress(contentId) {
+        const timeSpent = Math.floor((Date.now() - contentStartTime) / 1000);
+        
+        fetch(`/learner/learning/content/${contentId}/progress`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                progress_percentage: 50, // Basic tracking
+                time_spent: timeSpent
+            })
+        });
+        
+        contentStartTime = Date.now();
+    }
+    
+    function markComplete() {
+        const content = contentsData[currentContentIndex];
+        
+        fetch(`/learner/learning/content/${content.id}/complete`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                toastr.success('Content marked as complete!');
+                
+                // Update UI
+                content.is_completed = true;
+                document.querySelector(`[data-content-id="${content.id}"]`).classList.add('completed');
+                document.getElementById('btnComplete').style.display = 'none';
+                
+                // Update progress bar
+                updateProgressBar(data.week_completion);
+                
+                // Auto-move to next or show completion
+                if (currentContentIndex < contentsData.length - 1) {
+                    setTimeout(() => nextContent(), 1000);
+                } else {
+                    setTimeout(() => showCompletion(), 1000);
+                }
+            }
+        })
+        .catch(error => {
+            toastr.error('Failed to mark as complete');
+        });
+    }
+    
+    function nextContent() {
+        if (currentContentIndex < contentsData.length - 1) {
+            loadContent(contentsData[currentContentIndex + 1].id);
+        }
+    }
+    
+    function updateProgressBar(percentage) {
+        document.querySelector('.progress-fill').style.width = percentage + '%';
+        document.querySelector('.progress-text').textContent = percentage + '%';
+    }
+    
+    function showCompletion() {
+        const viewerBody = document.getElementById('viewerBody');
+        viewerBody.innerHTML = `
+            <div class="completion-message">
+                <div class="icon">🎉</div>
+                <h2>Week Completed!</h2>
+                <p>Great job! You've completed all content for this week.</p>
+                <div class="completion-actions">
+                    <a href="{{ route('learner.curriculum') }}" class="btn btn-next">View Curriculum</a>
+                    <a href="{{ route('learner.calendar') }}" class="btn" style="background: #fff; color: #7571f9; border: 2px solid #7571f9;">Check Calendar</a>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('btnComplete').style.display = 'none';
+        document.getElementById('btnNext').style.display = 'none';
+    }
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (progressTrackingInterval) {
+            clearInterval(progressTrackingInterval);
+            if (contentsData[currentContentIndex]) {
+                updateProgress(contentsData[currentContentIndex].id);
+            }
+        }
+    });
 </script>
-@endpush
+@endif
+@endsection
