@@ -109,10 +109,9 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::resource('programs', AdminProgramController::class);
         Route::resource('cohorts', CohortController::class);
 
-        // Curriculum Management 
         Route::resource('modules', ModuleController::class);
         Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
-        
+
         Route::resource('weeks', WeekController::class);
         Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])
             ->name('weeks.modules-by-program');
@@ -121,6 +120,22 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::post('/contents/reorder', [AdminContentController::class, 'reorder'])->name('contents.reorder');
         Route::get('/contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])
             ->name('contents.weeks-by-module');
+        // Add this new route for getting modules by program (used in content filters)
+        Route::get('/contents/modules-by-program', [AdminContentController::class, 'getModulesByProgram'])
+            ->name('contents.modules-by-program');
+
+        // Curriculum Management 
+        // Route::resource('modules', ModuleController::class);
+        // Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
+        
+        // Route::resource('weeks', WeekController::class);
+        // Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])
+        //     ->name('weeks.modules-by-program');
+
+        // Route::resource('contents', AdminContentController::class);
+        // Route::post('/contents/reorder', [AdminContentController::class, 'reorder'])->name('contents.reorder');
+        // Route::get('/contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])
+        //     ->name('contents.weeks-by-module');
 
         // Sessions/Calendar
         Route::get('/sessions/calendar', [AdminSessionController::class, 'calendar'])->name('sessions.calendar');

@@ -6,117 +6,142 @@
 
 @section('content')
 <div class="row">
-    <!-- Week Info Card -->
-    <div class="col-lg-4">
+    <!-- Week Information -->
+    <div class="col-lg-8">
         <div class="card">
+            <div class="card-header">
+                <h4 class="card-title mb-0">Week {{ $week->week_number }}: {{ $week->title }}</h4>
+            </div>
             <div class="card-body">
-                <h4 class="card-title">Week {{ $week->week_number }}</h4>
-                <h5 class="mb-3">{{ $week->title }}</h5>
-                
-                <div class="mb-3">
-                    @if($week->status === 'published')
-                        <span class="badge badge-success">Published</span>
-                    @elseif($week->status === 'draft')
-                        <span class="badge badge-warning">Draft</span>
-                    @else
-                        <span class="badge badge-secondary">Archived</span>
-                    @endif
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h5 class="text-muted mb-3">Week Information</h5>
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Program:</strong></td>
+                                <td>{{ $week->programModule->program->name }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Module:</strong></td>
+                                <td>{{ $week->programModule->title }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Week Number:</strong></td>
+                                <td>{{ $week->week_number }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>
+                                    @if($week->status === 'published')
+                                        <span class="badge badge-success">Published</span>
+                                    @elseif($week->status === 'draft')
+                                        <span class="badge badge-warning">Draft</span>
+                                    @else
+                                        <span class="badge badge-secondary">Archived</span>
+                                    @endif
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="col-md-6">
+                        <h5 class="text-muted mb-3">Statistics</h5>
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Total Contents:</strong></td>
+                                <td><span class="badge badge-info">{{ $week->total_contents_count }}</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Required Contents:</strong></td>
+                                <td><span class="badge badge-primary">{{ $week->required_contents_count }}</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Has Assessment:</strong></td>
+                                <td>{{ $week->has_assessment ? 'Yes' : 'No' }}</td>
+                            </tr>
+                            @if($week->has_assessment)
+                            <tr>
+                                <td><strong>Pass Percentage:</strong></td>
+                                <td>{{ $week->assessment_pass_percentage }}%</td>
+                            </tr>
+                            @endif
+                        </table>
+                    </div>
                 </div>
 
-                <hr>
-
-                <p class="text-muted mb-2"><strong>Program:</strong></p>
-                <p>{{ $week->programModule->program->name }}</p>
-
-                <p class="text-muted mb-2"><strong>Module:</strong></p>
-                <p>{{ $week->programModule->title }}</p>
-
                 @if($week->description)
-                    <p class="text-muted mb-2"><strong>Description:</strong></p>
+                <div class="mb-4">
+                    <h5 class="text-muted">Description</h5>
                     <p>{{ $week->description }}</p>
+                </div>
                 @endif
 
                 @if($week->learning_outcomes && count($week->learning_outcomes) > 0)
-                    <p class="text-muted mb-2"><strong>Learning Outcomes:</strong></p>
-                    <ul class="pl-3">
+                <div class="mb-4">
+                    <h5 class="text-muted">Learning Outcomes</h5>
+                    <ul>
                         @foreach($week->learning_outcomes as $outcome)
                             <li>{{ $outcome }}</li>
                         @endforeach
                     </ul>
-                @endif
-
-                @if($week->has_assessment)
-                    <div class="alert alert-info mt-3">
-                        <strong>Assessment Required</strong><br>
-                        Pass percentage: {{ $week->assessment_pass_percentage }}%
-                    </div>
-                @endif
-
-                <div class="mt-4">
-                    <button type="button" class="btn btn-primary btn-block" 
-                            onclick="window.location.href='{{ route('admin.weeks.edit', $week->id) }}'">
-                        Edit Week
-                    </button>
-                    <a href="{{ route('admin.weeks.index') }}" class="btn btn-secondary btn-block">
-                        Back to Weeks
-                    </a>
                 </div>
+                @endif
             </div>
         </div>
-    </div>
 
-    <!-- Week Contents -->
-    <div class="col-lg-8">
-        <div class="card">
+        <!-- Week Contents -->
+        {{-- <div class="card mt-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="card-title mb-0">Week Contents</h4>
+                <a href="{{ route('admin.contents.create', ['week_id' => $week->id, 'module_id' => $week->program_module_id, 'program_id' => $week->programModule->program_id]) }}" 
+                   class="btn btn-sm btn-primary">
+                    <i class="icon-plus"></i> Add Content
+                </a>
+            </div>
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h4 class="card-title mb-0">Week Contents</h4>
-                    <a href="{{ route('admin.contents.create', ['week_id' => $week->id]) }}" 
-                       class="btn btn-primary">
-                        Add Content
-                    </a>
-                </div>
-
-                @if($contents->count() > 0)
-                    <div class="list-group">
-                        @foreach($contents as $content)
-                            <div class="list-group-item">
-                                <div class="d-flex justify-content-between align-items-start">
-                                    <div class="flex-grow-1">
-                                        <div class="d-flex align-items-center">
-                                            <span class="mr-2" style="font-size: 20px;">
-                                                @if($content->content_type === 'video')
-                                                    📹
-                                                @elseif($content->content_type === 'pdf')
-                                                    📄
-                                                @elseif($content->content_type === 'link')
-                                                    🔗
-                                                @else
-                                                    📝
-                                                @endif
-                                            </span>
-                                            <div>
-                                                <h6 class="mb-1">{{ $content->title }}</h6>
-                                                <div>
-                                                    <span class="badge badge-light">{{ $content->type_display }}</span>
-                                                    @if($content->is_required)
-                                                        <span class="badge badge-primary">Required</span>
-                                                    @endif
-                                                    @if($content->status === 'published')
-                                                        <span class="badge badge-success">Published</span>
-                                                    @else
-                                                        <span class="badge badge-warning">Draft</span>
-                                                    @endif
-                                                </div>
-                                                @if($content->description)
-                                                    <small class="text-muted d-block mt-1">
-                                                        {{ Str::limit($content->description, 80) }}
-                                                    </small>
-                                                @endif
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="ml-3">
+                @if($week->contents->count() > 0)
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th style="width: 50px;">Order</th>
+                                    <th style="width: 50px;"></th>
+                                    <th>Title</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($week->contents as $content)
+                                <tr>
+                                    <td>{{ $content->order }}</td>
+                                    <td style="font-size: 24px;">{{ $content->icon }}</td>
+                                    <td>
+                                        <strong>{{ $content->title }}</strong>
+                                        @if($content->is_required)
+                                            <span class="badge badge-primary badge-sm">Required</span>
+                                        @endif
+                                        @if($content->description)
+                                            <br><small class="text-muted">{{ Str::limit($content->description, 60) }}</small>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-light">{{ $content->type_display }}</span>
+                                        @if($content->content_type === 'video' && $content->video_duration_minutes)
+                                            <br><small class="text-muted">{{ $content->video_duration_minutes }} min</small>
+                                        @elseif($content->content_type === 'pdf' && $content->file_size)
+                                            <br><small class="text-muted">{{ $content->file_size }}</small>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if($content->status === 'published')
+                                            <span class="badge badge-success">Published</span>
+                                        @else
+                                            <span class="badge badge-warning">Draft</span>
+                                        @endif
+                                    </td>
+                                    <td>
                                         <a href="{{ route('admin.contents.edit', $content->id) }}" 
                                            class="btn btn-sm btn-primary">
                                             Edit
@@ -125,61 +150,72 @@
                                                 onclick="deleteContent({{ $content->id }})">
                                             Delete
                                         </button>
-                                    </div>
-                                </div>
-                            </div>
-                        @endforeach
+                                    </td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
                     </div>
                 @else
-                    <div class="text-center py-5">
-                        <p class="text-muted mb-3">No content added to this week yet.</p>
-                        <a href="{{ route('admin.contents.create', ['week_id' => $week->id]) }}" 
+                    <div class="text-center py-4">
+                        <p class="text-muted mb-3">No contents added yet</p>
+                        <a href="{{ route('admin.contents.create', ['week_id' => $week->id, 'module_id' => $week->program_module_id, 'program_id' => $week->programModule->program_id]) }}" 
                            class="btn btn-primary">
                             Add First Content
                         </a>
                     </div>
                 @endif
             </div>
-        </div>
+        </div> --}}
+    </div>
 
-        <!-- Live Sessions for this Week -->
-        @if($week->liveSessions && $week->liveSessions->count() > 0)
-        <div class="card mt-4">
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title mb-0">Actions</h4>
+            </div>
             <div class="card-body">
-                <h4 class="card-title mb-4">Scheduled Live Sessions</h4>
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Title</th>
-                                <th>Date & Time</th>
-                                <th>Mentor</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($week->liveSessions as $session)
-                            <tr>
-                                <td>{{ $session->title }}</td>
-                                <td>{{ $session->start_time->format('M d, Y - g:i A') }}</td>
-                                <td>{{ $session->mentor ? $session->mentor->name : 'TBA' }}</td>
-                                <td>
-                                    @if($session->status === 'scheduled')
-                                        <span class="badge badge-info">Scheduled</span>
-                                    @elseif($session->status === 'completed')
-                                        <span class="badge badge-success">Completed</span>
-                                    @elseif($session->status === 'cancelled')
-                                        <span class="badge badge-danger">Cancelled</span>
-                                    @endif
-                                </td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
+                <a href="{{ route('admin.weeks.index', ['module_id' => $week->program_module_id]) }}" 
+                   class="btn btn-secondary btn-block mb-2">
+                    <i class="icon-arrow-left"></i> Back to Weeks
+                </a>
+                
+                <a href="{{ route('admin.weeks.edit', $week->id) }}" 
+                   class="btn btn-primary btn-block mb-2">
+                    <i class="icon-pencil"></i> Edit Week
+                </a>
+
+                <a href="{{ route('admin.contents.create', ['week_id' => $week->id, 'module_id' => $week->program_module_id, 'program_id' => $week->programModule->program_id]) }}" 
+                   class="btn btn-success btn-block mb-2">
+                    <i class="icon-plus"></i> Add Content
+                </a>
+
+                <button type="button" class="btn btn-danger btn-block" onclick="deleteWeek()">
+                    <i class="icon-trash"></i> Delete Week
+                </button>
             </div>
         </div>
-        @endif
+
+        <!-- Week Timeline -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h4 class="card-title mb-0">Timestamps</h4>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless table-sm">
+                    <tr>
+                        <td><strong>Created:</strong></td>
+                        <td>{{ $week->created_at->format('M d, Y H:i') }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Updated:</strong></td>
+                        <td>{{ $week->updated_at->format('M d, Y H:i') }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 @endsection
@@ -187,7 +223,7 @@
 @push('scripts')
 <script>
 function deleteContent(id) {
-    if (confirm('Are you sure you want to delete this content? This action cannot be undone.')) {
+    if (confirm('Are you sure you want to delete this content?')) {
         fetch(`/admin/contents/${id}`, {
             method: 'DELETE',
             headers: {
@@ -200,6 +236,32 @@ function deleteContent(id) {
             if (data.success) {
                 toastr.success(data.message);
                 setTimeout(() => location.reload(), 1000);
+            } else {
+                toastr.error(data.message);
+            }
+        })
+        .catch(error => {
+            toastr.error('An error occurred. Please try again.');
+        });
+    }
+}
+
+function deleteWeek() {
+    if (confirm('Are you sure you want to delete this week? This will also delete all contents in this week.')) {
+        fetch(`/admin/weeks/{{ $week->id }}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                toastr.success(data.message);
+                setTimeout(() => {
+                    window.location.href = '{{ route("admin.weeks.index", ["module_id" => $week->program_module_id]) }}';
+                }, 1000);
             } else {
                 toastr.error(data.message);
             }

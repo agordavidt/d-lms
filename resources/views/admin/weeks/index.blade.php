@@ -9,17 +9,14 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap">
                     <h4 class="card-title mb-0">Module Weeks</h4>
-                    <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#createWeekModal">
-                        Create New Week
-                    </button>
                 </div>
 
                 <!-- Filters -->
                 <div class="row mb-3">
-                    <div class="col-md-3">
-                        <select class="form-control" id="filterProgram" onchange="loadModules()">
+                    <div class="col-md-4 col-sm-6 mb-2 mb-md-0">
+                        <select class="form-control form-control-sm" id="filterProgram" onchange="filterWeeks()">
                             <option value="">All Programs</option>
                             @foreach($programs as $program)
                                 <option value="{{ $program->id }}" {{ request('program_id') == $program->id ? 'selected' : '' }}>
@@ -28,61 +25,74 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="col-md-3">
-                        <select class="form-control" id="filterModule" onchange="filterWeeks()">
-                            <option value="">All Modules</option>
-                            @foreach($modules as $module)
-                                <option value="{{ $module->id }}" {{ request('module_id') == $module->id ? 'selected' : '' }}>
-                                    {{ $module->title }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <select class="form-control" id="filterStatus" onchange="filterWeeks()">
+                    <div class="col-md-4 col-sm-6 mb-2 mb-md-0">
+                        <select class="form-control form-control-sm" id="filterStatus" onchange="filterWeeks()">
                             <option value="">All Status</option>
                             <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>Draft</option>
                             <option value="published" {{ request('status') == 'published' ? 'selected' : '' }}>Published</option>
                             <option value="archived" {{ request('status') == 'archived' ? 'selected' : '' }}>Archived</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
-                        <input type="text" class="form-control" id="searchWeeks" placeholder="Search weeks..." 
+                    <div class="col-md-4 col-sm-12 mb-2 mb-md-0">
+                        <input type="text" class="form-control form-control-sm" id="searchWeeks" placeholder="Search weeks..." 
                                value="{{ request('search') }}" onkeyup="debounceSearch()">
                     </div>
                 </div>
 
+                <!-- Info Alert when filtered by program -->
+                @if(request('program_id'))
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <strong>Filtered by Program:</strong> {{ $programs->find(request('program_id'))->name ?? 'Selected Program' }}
+                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                @endif
+
                 <!-- Weeks Table -->
                 <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
+                    <table class="table table-hover align-middle">
+                        <thead class="thead-light">
                             <tr>
-                                <th>Week #</th>
+                                <th class="text-nowrap">Week #</th>
                                 <th>Week Title</th>
-                                <th>Module</th>
-                                <th>Program</th>
-                                <th>Contents</th>
-                                <th>Status</th>
-                                <th>Actions</th>
+                                <th class="d-none d-lg-table-cell">Module</th>
+                                <th class="d-none d-xl-table-cell">Program</th>
+                                <th class="text-center d-none d-md-table-cell">Contents</th>
+                                <th class="text-center">Status</th>
+                                <th class="text-center" style="width: 100px;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse($weeks as $week)
                             <tr>
-                                <td><strong>Week {{ $week->week_number }}</strong></td>
+                                <td class="font-weight-bold text-nowrap">Week {{ $week->week_number }}</td>
                                 <td>
-                                    <strong>{{ $week->title }}</strong>
+                                    <div class="font-weight-bold">{{ $week->title }}</div>
                                     @if($week->description)
-                                        <br><small class="text-muted">{{ Str::limit($week->description, 50) }}</small>
+                                        <small class="text-muted d-block">{{ Str::limit($week->description, 50) }}</small>
+                                    @endif
+                                    <!-- Show module/program on mobile -->
+                                    <div class="d-lg-none mt-1">
+                                        <small class="text-muted">
+                                            {{ $week->programModule->title }}
+                                            <span class="d-xl-none"> • {{ $week->programModule->program->name }}</span>
+                                        </small>
+                                    </div>
+                                </td>
+                                <td class="d-none d-lg-table-cell">
+                                    <a href="{{ route('admin.modules.show', $week->programModule->id) }}" class="text-primary">
+                                        {{ $week->programModule->title }}
+                                    </a>
+                                </td>
+                                <td class="d-none d-xl-table-cell">{{ $week->programModule->program->name }}</td>
+                                <td class="text-center d-none d-md-table-cell">
+                                    <span class="badge badge-info">{{ $week->total_contents_count }}</span>
+                                    @if($week->required_contents_count > 0)
+                                        <span class="badge badge-primary">{{ $week->required_contents_count }}</span>
                                     @endif
                                 </td>
-                                <td>{{ $week->programModule->title }}</td>
-                                <td>{{ $week->programModule->program->name }}</td>
-                                <td>
-                                    <span class="badge badge-info">{{ $week->total_contents_count }} total</span>
-                                    <span class="badge badge-primary">{{ $week->required_contents_count }} required</span>
-                                </td>
-                                <td>
+                                <td class="text-center">
                                     @if($week->status === 'published')
                                         <span class="badge badge-success">Published</span>
                                     @elseif($week->status === 'draft')
@@ -91,24 +101,43 @@
                                         <span class="badge badge-secondary">Archived</span>
                                     @endif
                                 </td>
-                                <td>
-                                    <a href="{{ route('admin.weeks.show', $week->id) }}" class="btn btn-sm btn-info">
-                                        View
-                                    </a>
-                                    <button type="button" class="btn btn-sm btn-primary" 
-                                            onclick="editWeek({{ $week->id }})">
-                                        Edit
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-danger" 
-                                            onclick="deleteWeek({{ $week->id }})">
-                                        Delete
-                                    </button>
+                                <td class="text-center">
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-light dropdown-toggle" type="button" 
+                                                id="weekActions{{ $week->id }}" data-toggle="dropdown" 
+                                                aria-haspopup="true" aria-expanded="false">
+                                            Actions
+                                        </button>
+                                        <div class="dropdown-menu dropdown-menu-right" aria-labelledby="weekActions{{ $week->id }}">
+                                            <a class="dropdown-item" href="{{ route('admin.weeks.show', $week->id) }}">
+                                                View Details
+                                            </a>
+                                            <a class="dropdown-item" href="{{ route('admin.weeks.edit', $week->id) }}">
+                                                Edit Week
+                                            </a>
+                                            <a class="dropdown-item" href="{{ route('admin.contents.create', ['week_id' => $week->id]) }}">
+                                                Add Content
+                                            </a>
+                                            <div class="dropdown-divider"></div>
+                                            <a class="dropdown-item text-danger" href="javascript:void(0);" 
+                                               onclick="deleteWeek({{ $week->id }})">
+                                                Delete Week
+                                            </a>
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="7" class="text-center py-4">
-                                    <p class="text-muted mb-0">No weeks found. Create your first week to get started.</p>
+                                <td colspan="7" class="text-center py-5">
+                                    <div class="text-muted">
+                                        <p class="mb-2">No weeks found</p>
+                                        <small>Weeks are created from module pages</small>
+                                        @if(request()->has('program_id') || request()->has('status') || request()->has('search'))
+                                            <br>
+                                            <a href="{{ route('admin.weeks.index') }}" class="btn btn-sm btn-link">Clear all filters</a>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                             @endforelse
@@ -117,133 +146,24 @@
                 </div>
 
                 <!-- Pagination -->
-                <div class="mt-3">
-                    {{ $weeks->links() }}
+                @if($weeks->hasPages())
+                <div class="mt-4 d-flex justify-content-center">
+                    {{ $weeks->appends(request()->query())->links() }}
                 </div>
+                @endif
+
+                <!-- Results Summary -->
+                @if($weeks->total() > 0)
+                <div class="mt-3 text-center text-muted">
+                    <small>
+                        Showing {{ $weeks->firstItem() }} to {{ $weeks->lastItem() }} of {{ $weeks->total() }} week(s)
+                        @if(request()->has('program_id') || request()->has('status') || request()->has('search'))
+                            <a href="{{ route('admin.weeks.index') }}" class="ml-2">Clear filters</a>
+                        @endif
+                    </small>
+                </div>
+                @endif
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Create Week Modal -->
-<div class="modal fade" id="createWeekModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-            <form action="{{ route('admin.weeks.store') }}" method="POST" id="createWeekForm">
-                @csrf
-                <div class="modal-header">
-                    <h5 class="modal-title">Create New Week</h5>
-                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
-                            <label>Program <span class="text-danger">*</span></label>
-                            <select class="form-control" id="createProgram" onchange="loadModulesForCreate()" required>
-                                <option value="">Select Program</option>
-                                @foreach($programs as $program)
-                                    <option value="{{ $program->id }}">{{ $program->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="form-group col-md-6">
-                            <label>Module <span class="text-danger">*</span></label>
-                            <select class="form-control" name="program_module_id" id="createModule" required>
-                                <option value="">Select Program First</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
-                            <label>Week Number <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" name="week_number" 
-                                   min="1" placeholder="e.g., 1" required>
-                        </div>
-                        <div class="form-group col-md-6">
-                            <label>Status <span class="text-danger">*</span></label>
-                            <select class="form-control" name="status" required>
-                                <option value="draft">Draft</option>
-                                <option value="published">Published</option>
-                                <option value="archived">Archived</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Week Title <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="title" 
-                               placeholder="e.g., Week 1: Introduction to Data" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Description</label>
-                        <textarea class="form-control" name="description" rows="3" 
-                                  placeholder="What will be covered this week?"></textarea>
-                    </div>
-
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="has_assessment" id="hasAssessment">
-                        <label class="form-check-label" for="hasAssessment">
-                            This week has an assessment
-                        </label>
-                    </div>
-
-                    <div class="form-group" id="assessmentPassPercentage" style="display: none;">
-                        <label>Assessment Pass Percentage</label>
-                        <input type="number" class="form-control" name="assessment_pass_percentage" 
-                               min="0" max="100" value="70">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Learning Outcomes</label>
-                        <small class="text-muted d-block mb-2">What will learners achieve this week?</small>
-                        <div id="outcomes-container">
-                            <div class="input-group mb-2">
-                                <input type="text" class="form-control" name="learning_outcomes[]" 
-                                       placeholder="e.g., Understand basic data types">
-                                <div class="input-group-append">
-                                    <button type="button" class="btn btn-danger" onclick="removeOutcome(this)">Remove</button>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-secondary" onclick="addOutcome()">
-                            Add Another Outcome
-                        </button>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Week</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Edit Week Modal -->
-<div class="modal fade" id="editWeekModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-            <form id="editWeekForm" method="POST">
-                @csrf
-                @method('PUT')
-                <div class="modal-header">
-                    <h5 class="modal-title">Edit Week</h5>
-                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-                </div>
-                <div class="modal-body" id="editWeekContent">
-                    <div class="text-center py-4">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="sr-only">Loading...</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Update Week</button>
-                </div>
-            </form>
         </div>
     </div>
 </div>
@@ -253,114 +173,31 @@
 <script>
 let searchTimeout;
 
-// Toggle assessment fields
-document.addEventListener('DOMContentLoaded', function() {
-    const assessmentCheckbox = document.getElementById('hasAssessment');
-    if (assessmentCheckbox) {
-        assessmentCheckbox.addEventListener('change', function() {
-            document.getElementById('assessmentPassPercentage').style.display = 
-                this.checked ? 'block' : 'none';
-        });
-    }
-});
-
 function debounceSearch() {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(filterWeeks, 500);
 }
 
-function loadModules() {
-    const programId = document.getElementById('filterProgram').value;
-    
-    if (programId) {
-        fetch(`{{ route('admin.weeks.modules-by-program') }}?program_id=${programId}`)
-            .then(response => response.json())
-            .then(modules => {
-                const moduleSelect = document.getElementById('filterModule');
-                moduleSelect.innerHTML = '<option value="">All Modules</option>';
-                modules.forEach(module => {
-                    moduleSelect.innerHTML += `<option value="${module.id}">${module.title}</option>`;
-                });
-                filterWeeks();
-            });
-    } else {
-        filterWeeks();
-    }
-}
-
-function loadModulesForCreate() {
-    const programId = document.getElementById('createProgram').value;
-    const moduleSelect = document.getElementById('createModule');
-    
-    moduleSelect.innerHTML = '<option value="">Loading...</option>';
-    
-    if (programId) {
-        fetch(`{{ route('admin.weeks.modules-by-program') }}?program_id=${programId}`)
-            .then(response => response.json())
-            .then(modules => {
-                moduleSelect.innerHTML = '<option value="">Select Module</option>';
-                modules.forEach(module => {
-                    moduleSelect.innerHTML += `<option value="${module.id}">${module.title}</option>`;
-                });
-            });
-    } else {
-        moduleSelect.innerHTML = '<option value="">Select Program First</option>';
-    }
-}
-
 function filterWeeks() {
     const programId = document.getElementById('filterProgram').value;
-    const moduleId = document.getElementById('filterModule').value;
     const status = document.getElementById('filterStatus').value;
     const search = document.getElementById('searchWeeks').value;
     
     const params = new URLSearchParams();
     if (programId) params.append('program_id', programId);
-    if (moduleId) params.append('module_id', moduleId);
     if (status) params.append('status', status);
     if (search) params.append('search', search);
     
     window.location.href = '{{ route("admin.weeks.index") }}?' + params.toString();
 }
 
-function addOutcome() {
-    const container = document.getElementById('outcomes-container');
-    const newOutcome = document.createElement('div');
-    newOutcome.className = 'input-group mb-2';
-    newOutcome.innerHTML = `
-        <input type="text" class="form-control" name="learning_outcomes[]" 
-               placeholder="Enter learning outcome">
-        <div class="input-group-append">
-            <button type="button" class="btn btn-danger" onclick="removeOutcome(this)">Remove</button>
-        </div>
-    `;
-    container.appendChild(newOutcome);
-}
-
-function removeOutcome(btn) {
-    const container = document.getElementById('outcomes-container');
-    if (container.children.length > 1) {
-        btn.closest('.input-group').remove();
-    }
-}
-
-function editWeek(id) {
-    $('#editWeekModal').modal('show');
-    
-    fetch(`/admin/weeks/${id}/edit`)
-        .then(response => response.text())
-        .then(html => {
-            document.getElementById('editWeekContent').innerHTML = html;
-            document.getElementById('editWeekForm').action = `/admin/weeks/${id}`;
-        })
-        .catch(error => {
-            document.getElementById('editWeekContent').innerHTML = 
-                '<div class="alert alert-danger">Failed to load week data. Please try again.</div>';
-        });
-}
-
 function deleteWeek(id) {
-    if (confirm('Are you sure you want to delete this week? This action cannot be undone.')) {
+    if (confirm('Are you sure you want to delete this week? This will also delete all contents in this week.')) {
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = 'Deleting...';
+        btn.disabled = true;
+        
         fetch(`/admin/weeks/${id}`, {
             method: 'DELETE',
             headers: {
@@ -368,23 +205,109 @@ function deleteWeek(id) {
                 'Accept': 'application/json'
             }
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to delete');
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
                 toastr.success(data.message);
                 setTimeout(() => location.reload(), 1000);
             } else {
-                toastr.error(data.message);
+                toastr.error(data.message || 'Failed to delete week');
+                btn.textContent = originalText;
+                btn.disabled = false;
             }
         })
         .catch(error => {
+            console.error('Error:', error);
             toastr.error('An error occurred. Please try again.');
+            btn.textContent = originalText;
+            btn.disabled = false;
         });
     }
 }
-
-@if($errors->any())
-    $('#createWeekModal').modal('show');
-@endif
 </script>
+@endpush
+
+@push('styles')
+<style>
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+    
+    .card-title {
+        font-size: 1.1rem;
+    }
+}
+
+/* Dropdown menu improvements */
+.dropdown-menu {
+    min-width: 160px;
+}
+
+.dropdown-item {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+.dropdown-item:active {
+    background-color: #007bff;
+}
+
+/* Table improvements */
+.table th {
+    font-weight: 600;
+    font-size: 0.875rem;
+    border-top: none;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.thead-light th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+}
+
+/* Badge improvements */
+.badge {
+    font-weight: 500;
+    padding: 0.35em 0.65em;
+    font-size: 0.8125rem;
+}
+
+/* Action button */
+.btn-light.dropdown-toggle {
+    border-color: #dee2e6;
+    background-color: #fff;
+}
+
+.btn-light.dropdown-toggle:hover,
+.btn-light.dropdown-toggle:focus {
+    background-color: #f8f9fa;
+    border-color: #adb5bd;
+}
+
+/* Alert improvements */
+.alert {
+    font-size: 0.875rem;
+}
+
+.alert strong {
+    font-weight: 600;
+}
+
+/* Link styling in module column */
+.text-primary {
+    text-decoration: none;
+}
+
+.text-primary:hover {
+    text-decoration: underline;
+}
+</style>
 @endpush

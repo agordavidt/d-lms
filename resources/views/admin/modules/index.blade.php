@@ -79,13 +79,17 @@
                                     @endif
                                 </td>
                                 <td>
+                                    <a href="{{ route('admin.modules.show', $module->id) }}" 
+                                       class="btn btn-sm btn-info" title="View Module Details">
+                                        <i class="icon-eye"></i>
+                                    </a>
                                     <button type="button" class="btn btn-sm btn-primary" 
-                                            onclick="editModule({{ $module->id }})">
-                                        Edit
+                                            onclick="editModule({{ $module->id }})" title="Edit Module">
+                                        <i class="icon-pencil"></i>
                                     </button>
                                     <button type="button" class="btn btn-sm btn-danger" 
-                                            onclick="deleteModule({{ $module->id }})">
-                                        Delete
+                                            onclick="deleteModule({{ $module->id }})" title="Delete Module">
+                                        <i class="icon-trash"></i>
                                     </button>
                                 </td>
                             </tr>

@@ -78,7 +78,8 @@ class ModuleController extends Controller
                 'model_id' => $module->id,
             ]);
 
-            return redirect()->route('admin.modules.index', ['program_id' => $module->program_id])
+            // Redirect to module show page instead of index
+            return redirect()->route('admin.modules.show', $module->id)
                 ->with(['message' => 'Module created successfully!', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
@@ -87,13 +88,22 @@ class ModuleController extends Controller
         }
     }
 
+    /**
+     * Show module details with all weeks
+     */
+    public function show(ProgramModule $module)
+    {
+        $module->load(['program', 'weeks.contents']);
+        
+        return view('admin.modules.show', compact('module'));
+    }
+
     public function edit(ProgramModule $module)
     {
         $programs = Program::active()->get();
         
         return view('admin.modules.edit_partial', compact('module', 'programs'));
     }
-  
 
     public function update(Request $request, ProgramModule $module)
     {
@@ -124,7 +134,8 @@ class ModuleController extends Controller
                 'model_id' => $module->id,
             ]);
 
-            return redirect()->route('admin.modules.index', ['program_id' => $module->program_id])
+            // Redirect to module show page instead of index
+            return redirect()->route('admin.modules.show', $module->id)
                 ->with(['message' => 'Module updated successfully!', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {

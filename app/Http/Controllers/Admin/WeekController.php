@@ -47,17 +47,22 @@ class WeekController extends Controller
         return view('admin.weeks.index', compact('weeks', 'programs', 'modules'));
     }
 
+    /**
+     * Show create form with module pre-selected
+     */
     public function create(Request $request)
     {
-        $programs = Program::active()->get();
-        $modules = $request->program_id 
-            ? ProgramModule::where('program_id', $request->program_id)->orderBy('order')->get()
-            : collect();
+        // Module ID is required - passed from module show page
+        $request->validate([
+            'module_id' => 'required|exists:program_modules,id'
+        ]);
         
-        $programId = $request->program_id;
-        $moduleId = $request->module_id;
+        $module = ProgramModule::with('program')->findOrFail($request->module_id);
+        
+        // Suggest next week number
+        $suggestedWeekNumber = $module->weeks()->max('week_number') + 1;
 
-        return view('admin.weeks.create', compact('programs', 'modules', 'programId', 'moduleId'));
+        return view('admin.weeks.create', compact('module', 'suggestedWeekNumber'));
     }
 
     public function store(Request $request)
@@ -98,7 +103,8 @@ class WeekController extends Controller
                 'model_id' => $week->id,
             ]);
 
-            return redirect()->route('admin.weeks.index', ['module_id' => $week->program_module_id])
+            // Redirect to module show page to see the new week
+            return redirect()->route('admin.modules.show', $week->program_module_id)
                 ->with(['message' => 'Week created successfully!', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
@@ -116,15 +122,15 @@ class WeekController extends Controller
         return view('admin.weeks.show', compact('week'));
     }
 
+    /**
+     * Show full page edit form (not modal)
+     */
     public function edit(ModuleWeek $week)
     {
-        $programs = Program::active()->get();
-        $modules = ProgramModule::where('program_id', $week->programModule->program_id)
-            ->orderBy('order')
-            ->get();
-
-        // Return partial view for AJAX modal
-        return view('admin.weeks.edit_partial', compact('week', 'programs', 'modules'));
+        $week->load(['programModule.program']);
+        
+        // Return full page view instead of partial
+        return view('admin.weeks.edit', compact('week'));
     }
 
     public function update(Request $request, ModuleWeek $week)
@@ -160,7 +166,8 @@ class WeekController extends Controller
                 'model_id' => $week->id,
             ]);
 
-            return redirect()->route('admin.weeks.index', ['module_id' => $week->program_module_id])
+            // Redirect to week show page
+            return redirect()->route('admin.weeks.show', $week->id)
                 ->with(['message' => 'Week updated successfully!', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
@@ -214,6 +221,9 @@ class WeekController extends Controller
         }
     }
 
+    /**
+     * Keep for backward compatibility (though not needed for Option A)
+     */
     public function getModulesByProgram(Request $request)
     {
         $modules = ProgramModule::where('program_id', $request->program_id)

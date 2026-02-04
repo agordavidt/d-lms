@@ -58,21 +58,19 @@ class ContentController extends Controller
         return view('admin.contents.index', compact('contents', 'programs'));
     }
 
+    /**
+     * Show create form with week pre-selected
+     */
     public function create(Request $request)
     {
-        $programs = Program::active()->get();
-        $modules = $request->program_id 
-            ? ProgramModule::where('program_id', $request->program_id)->orderBy('order')->get()
-            : collect();
-        $weeks = $request->module_id
-            ? ModuleWeek::where('program_module_id', $request->module_id)->orderBy('week_number')->get()
-            : collect();
+        // Week ID is required - passed from week show page
+        $request->validate([
+            'week_id' => 'required|exists:module_weeks,id'
+        ]);
+        
+        $week = ModuleWeek::with(['programModule.program'])->findOrFail($request->week_id);
 
-        $programId = $request->program_id;
-        $moduleId = $request->module_id;
-        $weekId = $request->week_id;
-
-        return view('admin.contents.create', compact('programs', 'modules', 'weeks', 'programId', 'moduleId', 'weekId'));
+        return view('admin.contents.create', compact('week'));
     }
 
     public function store(Request $request)
@@ -146,7 +144,8 @@ class ContentController extends Controller
                 'model_id' => $content->id,
             ]);
 
-            return redirect()->route('admin.contents.index', ['week_id' => $content->module_week_id])
+            // Redirect to week show page to see the new content
+            return redirect()->route('admin.weeks.show', $content->module_week_id)
                 ->with(['message' => 'Content created successfully!', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
@@ -233,7 +232,7 @@ class ContentController extends Controller
                 'model_id' => $content->id,
             ]);
 
-            return redirect()->route('admin.contents.index', ['week_id' => $content->module_week_id])
+            return redirect()->route('admin.weeks.show', $content->module_week_id)
                 ->with(['message' => 'Content updated successfully!', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
@@ -304,7 +303,7 @@ class ContentController extends Controller
     }
 
     /**
-     * Get modules by program (for AJAX)
+     * Keep for backward compatibility (used in filters)
      */
     public function getModulesByProgram(Request $request)
     {
@@ -316,7 +315,7 @@ class ContentController extends Controller
     }
 
     /**
-     * Get weeks by module (for AJAX)
+     * Keep for backward compatibility (used in filters)
      */
     public function getWeeksByModule(Request $request)
     {

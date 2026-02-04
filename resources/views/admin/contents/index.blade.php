@@ -20,10 +20,7 @@
         <div class="card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h4 class="card-title mb-0">Learning Contents</h4>
-                    <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#createContentModal">
-                        Add New Content
-                    </button>
+                    <h4 class="card-title mb-0">Learning Contents</h4>                    
                 </div>
 
                 <!-- Filters -->
@@ -326,7 +323,10 @@ function debounceSearch() {
 }
 
 function toggleContentFields() {
-    const contentType = document.querySelector('input[name="content_type"]:checked').value;
+    const contentType = document.querySelector('input[name="content_type"]:checked');
+    if (!contentType) return;
+    
+    const typeValue = contentType.value;
     
     // Hide all type-specific fields
     document.getElementById('videoFields').style.display = 'none';
@@ -335,13 +335,13 @@ function toggleContentFields() {
     document.getElementById('textFields').style.display = 'none';
     
     // Show selected type fields
-    if (contentType === 'video') {
+    if (typeValue === 'video') {
         document.getElementById('videoFields').style.display = 'block';
-    } else if (contentType === 'pdf') {
+    } else if (typeValue === 'pdf') {
         document.getElementById('pdfFields').style.display = 'block';
-    } else if (contentType === 'link') {
+    } else if (typeValue === 'link') {
         document.getElementById('linkFields').style.display = 'block';
-    } else if (contentType === 'text') {
+    } else if (typeValue === 'text') {
         document.getElementById('textFields').style.display = 'block';
         initTinyMCE();
     }
@@ -360,19 +360,111 @@ function initTinyMCE() {
     });
 }
 
+// ==================== FILTER FUNCTIONS ====================
+
+function loadModulesFilter() {
+    const programId = document.getElementById('filterProgram').value;
+    const moduleSelect = document.getElementById('filterModule');
+    const weekSelect = document.getElementById('filterWeek');
+    
+    // Reset dependent selects
+    weekSelect.innerHTML = '<option value="">All Weeks</option>';
+    
+    if (programId) {
+        moduleSelect.innerHTML = '<option value="">Loading...</option>';
+        
+        fetch(`{{ route('admin.weeks.modules-by-program') }}?program_id=${programId}`)
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch modules');
+                return response.json();
+            })
+            .then(modules => {
+                moduleSelect.innerHTML = '<option value="">All Modules</option>';
+                if (Array.isArray(modules) && modules.length > 0) {
+                    modules.forEach(module => {
+                        moduleSelect.innerHTML += `<option value="${module.id}">${module.title}</option>`;
+                    });
+                } else {
+                    moduleSelect.innerHTML += '<option value="">No modules found</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading modules:', error);
+                moduleSelect.innerHTML = '<option value="">Error loading modules</option>';
+                toastr.error('Failed to load modules');
+            });
+    } else {
+        moduleSelect.innerHTML = '<option value="">All Modules</option>';
+    }
+}
+
+function loadWeeksFilter() {
+    const moduleId = document.getElementById('filterModule').value;
+    const weekSelect = document.getElementById('filterWeek');
+    
+    if (moduleId) {
+        weekSelect.innerHTML = '<option value="">Loading...</option>';
+        
+        fetch(`{{ route('admin.contents.weeks-by-module') }}?module_id=${moduleId}`)
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch weeks');
+                return response.json();
+            })
+            .then(weeks => {
+                weekSelect.innerHTML = '<option value="">All Weeks</option>';
+                if (Array.isArray(weeks) && weeks.length > 0) {
+                    weeks.forEach(week => {
+                        weekSelect.innerHTML += `<option value="${week.id}">Week ${week.week_number}: ${week.title}</option>`;
+                    });
+                } else {
+                    weekSelect.innerHTML += '<option value="">No weeks found</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading weeks:', error);
+                weekSelect.innerHTML = '<option value="">Error loading weeks</option>';
+                toastr.error('Failed to load weeks');
+            });
+    } else {
+        weekSelect.innerHTML = '<option value="">All Weeks</option>';
+    }
+}
+
+// ==================== CREATE MODAL FUNCTIONS ====================
+
 function loadModulesForCreate() {
     const programId = document.getElementById('createProgram').value;
     const moduleSelect = document.getElementById('createModule');
+    const weekSelect = document.getElementById('createWeek');
+    
+    // Reset dependent selects
+    weekSelect.innerHTML = '<option value="">Select Module First</option>';
     
     if (programId) {
-        fetch(`{{ route('admin.contents.weeks-by-module') }}?program_id=${programId}`)
-            .then(response => response.json())
+        moduleSelect.innerHTML = '<option value="">Loading...</option>';
+        
+        fetch(`{{ route('admin.weeks.modules-by-program') }}?program_id=${programId}`)
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch modules');
+                return response.json();
+            })
             .then(modules => {
                 moduleSelect.innerHTML = '<option value="">Select Module</option>';
-                modules.forEach(module => {
-                    moduleSelect.innerHTML += `<option value="${module.id}">${module.title}</option>`;
-                });
+                if (Array.isArray(modules) && modules.length > 0) {
+                    modules.forEach(module => {
+                        moduleSelect.innerHTML += `<option value="${module.id}">${module.title}</option>`;
+                    });
+                } else {
+                    moduleSelect.innerHTML += '<option value="">No modules available</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading modules:', error);
+                moduleSelect.innerHTML = '<option value="">Error loading modules</option>';
+                toastr.error('Failed to load modules');
             });
+    } else {
+        moduleSelect.innerHTML = '<option value="">Select Program First</option>';
     }
 }
 
@@ -381,16 +473,34 @@ function loadWeeksForCreate() {
     const weekSelect = document.getElementById('createWeek');
     
     if (moduleId) {
+        weekSelect.innerHTML = '<option value="">Loading...</option>';
+        
         fetch(`{{ route('admin.contents.weeks-by-module') }}?module_id=${moduleId}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch weeks');
+                return response.json();
+            })
             .then(weeks => {
                 weekSelect.innerHTML = '<option value="">Select Week</option>';
-                weeks.forEach(week => {
-                    weekSelect.innerHTML += `<option value="${week.id}">Week ${week.week_number}: ${week.title}</option>`;
-                });
+                if (Array.isArray(weeks) && weeks.length > 0) {
+                    weeks.forEach(week => {
+                        weekSelect.innerHTML += `<option value="${week.id}">Week ${week.week_number}: ${week.title}</option>`;
+                    });
+                } else {
+                    weekSelect.innerHTML += '<option value="">No weeks available</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading weeks:', error);
+                weekSelect.innerHTML = '<option value="">Error loading weeks</option>';
+                toastr.error('Failed to load weeks');
             });
+    } else {
+        weekSelect.innerHTML = '<option value="">Select Module First</option>';
     }
 }
+
+// ==================== OTHER FUNCTIONS ====================
 
 function filterContents() {
     const programId = document.getElementById('filterProgram').value;
@@ -420,7 +530,10 @@ function deleteContent(id) {
                 'Accept': 'application/json'
             }
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to delete content');
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
                 toastr.success(data.message);
@@ -428,6 +541,10 @@ function deleteContent(id) {
             } else {
                 toastr.error(data.message);
             }
+        })
+        .catch(error => {
+            console.error('Error deleting content:', error);
+            toastr.error('An error occurred. Please try again.');
         });
     }
 }
