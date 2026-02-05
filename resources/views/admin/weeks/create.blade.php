@@ -88,10 +88,12 @@
 
                     <div class="form-group">
                         <div class="custom-control custom-checkbox">
+                            <input type="hidden" name="has_assessment" value="0">
                             <input type="checkbox" 
                                    class="custom-control-input" 
                                    name="has_assessment" 
                                    id="hasAssessment"
+                                   value="1"
                                    {{ old('has_assessment') ? 'checked' : '' }}>
                             <label class="custom-control-label" for="hasAssessment">
                                 This week has an assessment
@@ -109,6 +111,8 @@
                                max="100">
                         <small class="text-muted">Minimum percentage required to pass (default: 70%)</small>
                     </div>
+
+                    
 
                     <div class="form-group">
                         <label>Learning Outcomes</label>

@@ -85,10 +85,12 @@
 
                     <div class="form-group">
                         <div class="custom-control custom-checkbox">
+                            <input type="hidden" name="has_assessment" value="0">
                             <input type="checkbox" 
                                    class="custom-control-input" 
                                    name="has_assessment" 
                                    id="hasAssessment"
+                                   value="1"
                                    {{ old('has_assessment', $week->has_assessment) ? 'checked' : '' }}>
                             <label class="custom-control-label" for="hasAssessment">
                                 This week has an assessment
@@ -101,9 +103,10 @@
                         <input type="number" 
                                class="form-control" 
                                name="assessment_pass_percentage" 
-                               value="{{ old('assessment_pass_percentage', $week->assessment_pass_percentage ?? 70) }}"
+                               value="{{ old('assessment_pass_percentage', $week->assessment_pass_percentage) }}"
                                min="0" 
                                max="100">
+                        <small class="text-muted">Minimum percentage required to pass (default: 70%)</small>
                     </div>
 
                     <div class="form-group">
