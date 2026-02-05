@@ -151,6 +151,35 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('/payments', [App\Http\Controllers\Admin\PaymentController::class, 'index'])->name('payments.index');
          Route::get('/payments/export/csv', [App\Http\Controllers\Admin\PaymentController::class, 'export'])->name('payments.export');
         Route::get('/payments/{id}', [App\Http\Controllers\Admin\PaymentController::class, 'show'])->name('payments.show');
+
+
+        // Assessment Management
+        Route::get('/assessments/create', [App\Http\Controllers\Admin\AssessmentController::class, 'create'])
+            ->name('assessments.create');
+        Route::post('/assessments', [App\Http\Controllers\Admin\AssessmentController::class, 'store'])
+            ->name('assessments.store');
+        Route::get('/assessments/{assessment}', [App\Http\Controllers\Admin\AssessmentController::class, 'show'])
+            ->name('assessments.show');
+        Route::get('/assessments/{assessment}/edit', [App\Http\Controllers\Admin\AssessmentController::class, 'edit'])
+            ->name('assessments.edit');
+        Route::put('/assessments/{assessment}', [App\Http\Controllers\Admin\AssessmentController::class, 'update'])
+            ->name('assessments.update');
+        Route::delete('/assessments/{assessment}', [App\Http\Controllers\Admin\AssessmentController::class, 'destroy'])
+            ->name('assessments.destroy');
+        Route::post('/assessments/{assessment}/toggle-active', [App\Http\Controllers\Admin\AssessmentController::class, 'toggleActive'])
+            ->name('assessments.toggle-active');
+
+        // Assessment Question Management
+        Route::get('/assessments/{assessment}/questions', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'index'])
+            ->name('assessments.questions.index');
+        Route::post('/assessments/{assessment}/questions', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'store'])
+            ->name('assessments.questions.store');
+        Route::put('/assessments/{assessment}/questions/{question}', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'update'])
+            ->name('assessments.questions.update');
+        Route::delete('/assessments/{assessment}/questions/{question}', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'destroy'])
+            ->name('assessments.questions.destroy');
+        Route::post('/assessments/{assessment}/questions/reorder', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'reorder'])
+            ->name('assessments.questions.reorder');
        
     });
 
@@ -192,6 +221,19 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
             ->name('learning.content.complete');
         Route::post('/learning/content/{content}/progress', [LearningController::class, 'updateContentProgress'])
             ->name('learning.content.progress');
+
+        // Learner Assessment Routes
+        Route::get('/assessments/{assessment}/start', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'start'])
+            ->name('assessments.start');
+        Route::post('/assessments/{assessment}/attempt', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'createAttempt'])
+            ->name('assessments.attempt');
+        Route::get('/attempts/{attempt}', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'show'])
+            ->name('attempts.show');
+        Route::post('/attempts/{attempt}/submit', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'submit'])
+            ->name('attempts.submit');
+        Route::get('/attempts/{attempt}/results', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'results'])
+            ->name('attempts.results');
+
 
         // Curriculum (Full Program Structure)
         Route::get('/curriculum', [CurriculumController::class, 'index'])->name('curriculum');

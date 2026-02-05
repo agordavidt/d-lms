@@ -131,4 +131,47 @@ class ModuleWeek extends Model
     {
         return $query->where('week_number', $weekNumber);
     }
+
+
+    // Add this to the ModuleWeek model relationships section
+
+    public function assessment()
+    {
+        return $this->hasOne(Assessment::class);
+    }
+
+    // Add these helper methods to ModuleWeek model
+
+    public function hasActiveAssessment(): bool
+    {
+        return $this->has_assessment && $this->assessment()->where('is_active', true)->exists();
+    }
+
+    public function getAssessmentStatusForUser(User $user): array
+    {
+        if (!$this->hasActiveAssessment()) {
+            return [
+                'has_assessment' => false,
+            ];
+        }
+
+        $assessment = $this->assessment;
+        $attempts = $assessment->getUserAttempts($user);
+        $bestScore = $assessment->getUserBestScore($user);
+        $passed = $assessment->hasUserPassed($user);
+        $canTake = $assessment->canUserTakeAssessment($user);
+        $remaining = $assessment->getRemainingAttempts($user);
+
+        return [
+            'has_assessment' => true,
+            'assessment_id' => $assessment->id,
+            'attempts_used' => $attempts->where('status', 'submitted')->count(),
+            'max_attempts' => $assessment->max_attempts,
+            'remaining_attempts' => $remaining,
+            'best_score' => $bestScore,
+            'passed' => $passed,
+            'can_take' => $canTake,
+            'pass_percentage' => $assessment->pass_percentage,
+        ];
+    }
 }
