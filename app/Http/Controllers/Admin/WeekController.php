@@ -14,7 +14,11 @@ class WeekController extends Controller
 {
     public function index(Request $request)
     {
-        $query = ModuleWeek::with(['programModule.program']);
+        $query = ModuleWeek::with([
+            'programModule.program',
+            'contents',
+            'assessment.questions'
+        ]);
 
         // Filter by program
         if ($request->program_id) {
@@ -115,12 +119,20 @@ class WeekController extends Controller
 
     public function show(ModuleWeek $week)
     {
-        $week->load(['programModule.program', 'contents' => function($query) {
-            $query->orderBy('order');
-        }]);
+        $week->load([
+            'programModule.program', 
+            'contents' => function($query) {
+                $query->orderBy('order');
+            },
+            'assessment.questions' => function($query) {
+                $query->orderBy('order');
+            },
+            'assessment.attempts'
+        ]);
 
         return view('admin.weeks.show', compact('week'));
     }
+
 
     /**
      * Show full page edit form (not modal)
