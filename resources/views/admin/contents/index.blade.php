@@ -4,134 +4,203 @@
 @section('breadcrumb-parent', 'Curriculum')
 @section('breadcrumb-current', 'Contents')
 
-@push('styles')
-<style>
-.content-icon {
-    font-size: 24px;
-    width: 40px;
-    text-align: center;
-}
-</style>
-@endpush
-
 @section('content')
 <div class="row">
     <div class="col-12">
         <div class="card">
             <div class="card-body">
+                <!-- Header -->
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h4 class="card-title mb-0">Learning Contents</h4>                    
+                    <h4 class="card-title mb-0">Learning Contents</h4>
+                    <div class="text-muted">
+                        Total: {{ $contents->total() }} contents
+                    </div>
                 </div>
 
-                <!-- Filters -->
-                <div class="row mb-3">
-                    <div class="col-md-2">
-                        <select class="form-control" id="filterProgram" onchange="loadModulesFilter()">
-                            <option value="">All Programs</option>
-                            @foreach($programs as $program)
-                                <option value="{{ $program->id }}" {{ request('program_id') == $program->id ? 'selected' : '' }}>
-                                    {{ $program->name }}
-                                </option>
-                            @endforeach
-                        </select>
+                <!-- Filters Form -->
+                <form method="GET" action="{{ route('admin.contents.index') }}" id="filterForm">
+                    <div class="row mb-4">
+                        <!-- Program Filter -->
+                        <div class="col-md-2">
+                            <select class="form-control form-control-sm" name="program_id" id="programFilter" onchange="this.form.submit()">
+                                <option value="">All Programs</option>
+                                @foreach($programs as $program)
+                                    <option value="{{ $program->id }}" {{ request('program_id') == $program->id ? 'selected' : '' }}>
+                                        {{ $program->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <!-- Module Filter -->
+                        <div class="col-md-2">
+                            <select class="form-control form-control-sm" name="module_id" id="moduleFilter" onchange="this.form.submit()">
+                                <option value="">All Modules</option>
+                                @foreach($modules as $module)
+                                    <option value="{{ $module->id }}" {{ request('module_id') == $module->id ? 'selected' : '' }}>
+                                        {{ Str::limit($module->title, 25) }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <!-- Week Filter -->
+                        <div class="col-md-2">
+                            <select class="form-control form-control-sm" name="week_id" id="weekFilter" onchange="this.form.submit()">
+                                <option value="">All Weeks</option>
+                                @foreach($weeks as $week)
+                                    <option value="{{ $week->id }}" {{ request('week_id') == $week->id ? 'selected' : '' }}>
+                                        Week {{ $week->week_number }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <!-- Type Filter -->
+                        <div class="col-md-2">
+                            <select class="form-control form-control-sm" name="content_type" onchange="this.form.submit()">
+                                <option value="">All Types</option>
+                                <option value="video" {{ request('content_type') == 'video' ? 'selected' : '' }}>Video</option>
+                                <option value="pdf" {{ request('content_type') == 'pdf' ? 'selected' : '' }}>PDF</option>
+                                <option value="link" {{ request('content_type') == 'link' ? 'selected' : '' }}>Link</option>
+                                <option value="text" {{ request('content_type') == 'text' ? 'selected' : '' }}>Text</option>
+                            </select>
+                        </div>
+
+                        <!-- Status Filter -->
+                        <div class="col-md-2">
+                            <select class="form-control form-control-sm" name="status" onchange="this.form.submit()">
+                                <option value="">All Status</option>
+                                <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>Draft</option>
+                                <option value="published" {{ request('status') == 'published' ? 'selected' : '' }}>Published</option>
+                            </select>
+                        </div>
+
+                        <!-- Search -->
+                        <div class="col-md-2">
+                            <input type="text" 
+                                   class="form-control form-control-sm" 
+                                   name="search" 
+                                   placeholder="Search..." 
+                                   value="{{ request('search') }}"
+                                   id="searchInput">
+                        </div>
                     </div>
-                    <div class="col-md-2">
-                        <select class="form-control" id="filterModule" onchange="loadWeeksFilter()">
-                            <option value="">All Modules</option>
-                        </select>
+
+                    <!-- Active Filters & Clear -->
+                    @if(request()->hasAny(['program_id', 'module_id', 'week_id', 'content_type', 'status', 'search']))
+                    <div class="mb-3">
+                        <a href="{{ route('admin.contents.index') }}" class="btn btn-sm btn-outline-secondary">
+                            Clear All Filters
+                        </a>
                     </div>
-                    <div class="col-md-2">
-                        <select class="form-control" id="filterWeek" onchange="filterContents()">
-                            <option value="">All Weeks</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <select class="form-control" id="filterType" onchange="filterContents()">
-                            <option value="">All Types</option>
-                            <option value="video" {{ request('content_type') == 'video' ? 'selected' : '' }}>Video</option>
-                            <option value="pdf" {{ request('content_type') == 'pdf' ? 'selected' : '' }}>PDF</option>
-                            <option value="link" {{ request('content_type') == 'link' ? 'selected' : '' }}>Link</option>
-                            <option value="text" {{ request('content_type') == 'text' ? 'selected' : '' }}>Text</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <select class="form-control" id="filterStatus" onchange="filterContents()">
-                            <option value="">All Status</option>
-                            <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>Draft</option>
-                            <option value="published" {{ request('status') == 'published' ? 'selected' : '' }}>Published</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <input type="text" class="form-control" id="searchContents" 
-                               placeholder="Search..." value="{{ request('search') }}" 
-                               onkeyup="debounceSearch()">
-                    </div>
-                </div>
+                    @endif
+                </form>
 
                 <!-- Contents Table -->
                 <div class="table-responsive">
-                    <table class="table">
-                        <thead>
+                    <table class="table table-sm table-hover">
+                        <thead class="thead-light">
                             <tr>
-                                <th style="width: 50px;"></th>
-                                <th>Title</th>
-                                <th>Week</th>
-                                <th>Module</th>
-                                <th>Type</th>
-                                <th>Created By</th>
-                                <th>Status</th>
-                                <th>Actions</th>
+                                <th style="width: 5%;">Type</th>
+                                <th style="width: 30%;">Title</th>
+                                <th style="width: 15%;">Program</th>
+                                <th style="width: 15%;">Module</th>
+                                <th style="width: 10%;">Week</th>
+                                <th style="width: 10%;">Status</th>
+                                <th style="width: 10%;">Created</th>
+                                <th style="width: 5%;" class="text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse($contents as $content)
                             <tr>
-                                <td class="content-icon">{{ $content->icon }}</td>
-                                <td>
-                                    <strong>{{ $content->title }}</strong>
-                                    @if($content->is_required)
-                                        <span class="badge badge-primary">Required</span>
-                                    @endif
-                                    @if($content->description)
-                                        <br><small class="text-muted">{{ Str::limit($content->description, 60) }}</small>
-                                    @endif
+                                <!-- Type Icon -->
+                                <td class="text-center">
+                                    @switch($content->content_type)
+                                        @case('video')
+                                            <span title="Video">📹</span>
+                                            @break
+                                        @case('pdf')
+                                            <span title="PDF">📄</span>
+                                            @break
+                                        @case('link')
+                                            <span title="Link">🔗</span>
+                                            @break
+                                        @case('text')
+                                            <span title="Text">📝</span>
+                                            @break
+                                    @endswitch
                                 </td>
+
+                                <!-- Title -->
                                 <td>
-                                    Week {{ $content->moduleWeek->week_number }}<br>
-                                    <small class="text-muted">{{ Str::limit($content->moduleWeek->title, 30) }}</small>
+                                    <div class="font-weight-bold">{{ Str::limit($content->title, 50) }}</div>
+                                    {{-- @if($content->is_required)
+                                        <small class="text-primary">Required</small>
+                                    @endif --}}
                                 </td>
-                                <td>{{ Str::limit($content->moduleWeek->programModule->title, 30) }}</td>
+
+                                <!-- Program -->
                                 <td>
-                                    <span class="badge badge-light">{{ $content->type_display }}</span>
-                                    @if($content->content_type === 'video' && $content->video_duration_minutes)
-                                        <br><small class="text-muted">{{ $content->video_duration_minutes }} min</small>
-                                    @elseif($content->content_type === 'pdf' && $content->file_size)
-                                        <br><small class="text-muted">{{ $content->file_size }}</small>
-                                    @endif
+                                    <small>{{ Str::limit($content->moduleWeek->programModule->program->name, 25) }}</small>
                                 </td>
-                                <td>{{ $content->creator ? $content->creator->name : 'N/A' }}</td>
+
+                                <!-- Module -->
+                                <td>
+                                    <small>{{ Str::limit($content->moduleWeek->programModule->title, 25) }}</small>
+                                </td>
+
+                                <!-- Week -->
+                                <td>
+                                    <small>Week {{ $content->moduleWeek->week_number }}</small>
+                                </td>
+
+                                <!-- Status -->
                                 <td>
                                     @if($content->status === 'published')
-                                        <span class="badge badge-success">Published</span>
+                                        <span class="badge badge-sm badge-success">Published</span>
                                     @else
-                                        <span class="badge badge-warning">Draft</span>
+                                        <span class="badge badge-sm badge-warning">Draft</span>
                                     @endif
                                 </td>
+
+                                <!-- Created Date -->
                                 <td>
-                                    <button type="button" class="btn btn-sm btn-primary" 
-                                            onclick="editContent({{ $content->id }})">
-                                        Edit
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-danger" 
-                                            onclick="deleteContent({{ $content->id }})">
-                                        Delete
-                                    </button>
+                                    <small class="text-muted">{{ $content->created_at->format('M d, Y') }}</small>
+                                </td>
+
+                                <!-- Actions -->
+                                <td class="text-center">
+                                    <div class="dropdown">
+                                        <button type="button" class="btn btn-sm btn-light" data-toggle="dropdown">
+                                            <i class="fa fa-ellipsis-v"></i>
+                                        </button>
+                                        <div class="dropdown-menu dropdown-menu-right">
+                                            <a href="{{ route('admin.contents.edit', $content->id) }}" class="dropdown-item">
+                                                <i class="fa fa-edit"></i> Edit
+                                            </a>
+                                            <a href="{{ route('admin.weeks.show', $content->module_week_id) }}" class="dropdown-item">
+                                                <i class="fa fa-eye"></i> View Week
+                                            </a>
+                                            <div class="dropdown-divider"></div>
+                                            <button type="button" class="dropdown-item text-danger" onclick="deleteContent({{ $content->id }})">
+                                                <i class="fa fa-trash"></i> Delete
+                                            </button>
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="8" class="text-center py-4">
-                                    <p class="text-muted mb-0">No contents found.</p>
+                                <td colspan="8" class="text-center py-5">
+                                    <div class="text-muted">
+                                        <i class="fa fa-inbox fa-3x mb-3"></i>
+                                        <p>No contents found</p>
+                                        @if(request()->hasAny(['program_id', 'module_id', 'week_id', 'content_type', 'status', 'search']))
+                                            <a href="{{ route('admin.contents.index') }}" class="btn btn-sm btn-outline-primary">Clear Filters</a>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                             @endforelse
@@ -140,417 +209,71 @@
                 </div>
 
                 <!-- Pagination -->
-                <div class="mt-3">
-                    {{ $contents->links() }}
+                @if($contents->hasPages())
+                <div class="d-flex justify-content-between align-items-center mt-4">
+                    <div class="text-muted">
+                        Showing {{ $contents->firstItem() }} to {{ $contents->lastItem() }} of {{ $contents->total() }} entries
+                    </div>
+                    <div>
+                        {{ $contents->links() }}
+                    </div>
                 </div>
+                @endif
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Create Content Modal -->
-<div class="modal fade" id="createContentModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-            <form action="{{ route('admin.contents.store') }}" method="POST" enctype="multipart/form-data" id="createContentForm">
-                @csrf
-                <div class="modal-header">
-                    <h5 class="modal-title">Add New Content</h5>
-                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-                </div>
-                <div class="modal-body">
-                    <!-- Program/Module/Week Selection -->
-                    <div class="form-row">
-                        <div class="form-group col-md-4">
-                            <label>Program <span class="text-danger">*</span></label>
-                            <select class="form-control" id="createProgram" onchange="loadModulesForCreate()" required>
-                                <option value="">Select Program</option>
-                                @foreach($programs as $program)
-                                    <option value="{{ $program->id }}">{{ $program->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="form-group col-md-4">
-                            <label>Module <span class="text-danger">*</span></label>
-                            <select class="form-control" id="createModule" onchange="loadWeeksForCreate()" required>
-                                <option value="">Select Program First</option>
-                            </select>
-                        </div>
-                        <div class="form-group col-md-4">
-                            <label>Week <span class="text-danger">*</span></label>
-                            <select class="form-control" name="module_week_id" id="createWeek" required>
-                                <option value="">Select Module First</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Content Type Selection -->
-                    <div class="form-group">
-                        <label>Content Type <span class="text-danger">*</span></label>
-                        <div class="row">
-                            <div class="col-md-3">
-                                <div class="custom-control custom-radio">
-                                    <input type="radio" class="custom-control-input" id="typeVideo" 
-                                           name="content_type" value="video" onchange="toggleContentFields()">
-                                    <label class="custom-control-label" for="typeVideo">📹 Video</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="custom-control custom-radio">
-                                    <input type="radio" class="custom-control-input" id="typePDF" 
-                                           name="content_type" value="pdf" onchange="toggleContentFields()">
-                                    <label class="custom-control-label" for="typePDF">📄 PDF</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="custom-control custom-radio">
-                                    <input type="radio" class="custom-control-input" id="typeLink" 
-                                           name="content_type" value="link" onchange="toggleContentFields()">
-                                    <label class="custom-control-label" for="typeLink">🔗 Link</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="custom-control custom-radio">
-                                    <input type="radio" class="custom-control-input" id="typeText" 
-                                           name="content_type" value="text" onchange="toggleContentFields()">
-                                    <label class="custom-control-label" for="typeText">📝 Text</label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <hr>
-
-                    <!-- Common Fields -->
-                    <div class="form-group">
-                        <label>Content Title <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="title" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Description</label>
-                        <textarea class="form-control" name="description" rows="2"></textarea>
-                    </div>
-
-                    <!-- Type-Specific Fields -->
-                    <div id="videoFields" style="display:none;">
-                        <div class="form-group">
-                            <label>Video URL <span class="text-danger">*</span></label>
-                            <input type="url" class="form-control" name="video_url" 
-                                   placeholder="https://youtube.com/watch?v=...">
-                            <small class="text-muted">YouTube, Vimeo, or other video platform URL</small>
-                        </div>
-                        <div class="form-group">
-                            <label>Duration (minutes)</label>
-                            <input type="number" class="form-control" name="video_duration_minutes" min="1">
-                        </div>
-                    </div>
-
-                    <div id="pdfFields" style="display:none;">
-                        <div class="form-group">
-                            <label>Upload PDF File <span class="text-danger">*</span></label>
-                            <div class="custom-file">
-                                <input type="file" class="custom-file-input" name="file" accept=".pdf">
-                                <label class="custom-file-label">Choose file</label>
-                            </div>
-                            <small class="text-muted">Max file size: 10MB</small>
-                        </div>
-                    </div>
-
-                    <div id="linkFields" style="display:none;">
-                        <div class="form-group">
-                            <label>External URL <span class="text-danger">*</span></label>
-                            <input type="url" class="form-control" name="external_url" 
-                                   placeholder="https://example.com/resource">
-                        </div>
-                    </div>
-
-                    <div id="textFields" style="display:none;">
-                        <div class="form-group">
-                            <label>Content <span class="text-danger">*</span></label>
-                            <textarea class="form-control" name="text_content" rows="8" 
-                                      id="textContentEditor"></textarea>
-                        </div>
-                    </div>
-
-                    <hr>
-
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
-                            <div class="custom-control custom-checkbox">
-                                <input type="checkbox" class="custom-control-input" id="isRequired" 
-                                       name="is_required" checked>
-                                <label class="custom-control-label" for="isRequired">
-                                    Required content (must complete to unlock next week)
-                                </label>
-                            </div>
-                        </div>
-                        <div class="form-group col-md-6">
-                            <label>Status <span class="text-danger">*</span></label>
-                            <select class="form-control" name="status" required>
-                                <option value="draft">Draft</option>
-                                <option value="published">Published</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Content</button>
-                </div>
-            </form>
         </div>
     </div>
 </div>
 @endsection
 
 @push('scripts')
-<script src="https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js"></script>
 <script>
-let searchTimeout;
-
-// File input label update
-document.addEventListener('DOMContentLoaded', function() {
-    $('.custom-file-input').on('change', function() {
-        let fileName = $(this).val().split('\\').pop();
-        $(this).siblings('.custom-file-label').addClass('selected').html(fileName);
+// Delete content with confirmation
+function deleteContent(id) {
+    if (!confirm('Are you sure you want to delete this content? This action cannot be undone.')) {
+        return;
+    }
+    
+    fetch(`/admin/contents/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            toastr.success(data.message);
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            toastr.error(data.message || 'Failed to delete content');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        toastr.error('An error occurred while deleting the content');
     });
+}
+
+// Debounced search
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('keyup', function(e) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        document.getElementById('filterForm').submit();
+    }, 500);
 });
 
-function debounceSearch() {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(filterContents, 500);
-}
+// Reset module and week filters when program changes
+document.getElementById('programFilter').addEventListener('change', function() {
+    document.getElementById('moduleFilter').value = '';
+    document.getElementById('weekFilter').value = '';
+});
 
-function toggleContentFields() {
-    const contentType = document.querySelector('input[name="content_type"]:checked');
-    if (!contentType) return;
-    
-    const typeValue = contentType.value;
-    
-    // Hide all type-specific fields
-    document.getElementById('videoFields').style.display = 'none';
-    document.getElementById('pdfFields').style.display = 'none';
-    document.getElementById('linkFields').style.display = 'none';
-    document.getElementById('textFields').style.display = 'none';
-    
-    // Show selected type fields
-    if (typeValue === 'video') {
-        document.getElementById('videoFields').style.display = 'block';
-    } else if (typeValue === 'pdf') {
-        document.getElementById('pdfFields').style.display = 'block';
-    } else if (typeValue === 'link') {
-        document.getElementById('linkFields').style.display = 'block';
-    } else if (typeValue === 'text') {
-        document.getElementById('textFields').style.display = 'block';
-        initTinyMCE();
-    }
-}
-
-function initTinyMCE() {
-    if (tinymce.get('textContentEditor')) {
-        tinymce.get('textContentEditor').remove();
-    }
-    tinymce.init({
-        selector: '#textContentEditor',
-        height: 300,
-        menubar: false,
-        plugins: 'lists link',
-        toolbar: 'undo redo | formatselect | bold italic | alignleft aligncenter alignright | bullist numlist | link'
-    });
-}
-
-// ==================== FILTER FUNCTIONS ====================
-
-function loadModulesFilter() {
-    const programId = document.getElementById('filterProgram').value;
-    const moduleSelect = document.getElementById('filterModule');
-    const weekSelect = document.getElementById('filterWeek');
-    
-    // Reset dependent selects
-    weekSelect.innerHTML = '<option value="">All Weeks</option>';
-    
-    if (programId) {
-        moduleSelect.innerHTML = '<option value="">Loading...</option>';
-        
-        fetch(`{{ route('admin.weeks.modules-by-program') }}?program_id=${programId}`)
-            .then(response => {
-                if (!response.ok) throw new Error('Failed to fetch modules');
-                return response.json();
-            })
-            .then(modules => {
-                moduleSelect.innerHTML = '<option value="">All Modules</option>';
-                if (Array.isArray(modules) && modules.length > 0) {
-                    modules.forEach(module => {
-                        moduleSelect.innerHTML += `<option value="${module.id}">${module.title}</option>`;
-                    });
-                } else {
-                    moduleSelect.innerHTML += '<option value="">No modules found</option>';
-                }
-            })
-            .catch(error => {
-                console.error('Error loading modules:', error);
-                moduleSelect.innerHTML = '<option value="">Error loading modules</option>';
-                toastr.error('Failed to load modules');
-            });
-    } else {
-        moduleSelect.innerHTML = '<option value="">All Modules</option>';
-    }
-}
-
-function loadWeeksFilter() {
-    const moduleId = document.getElementById('filterModule').value;
-    const weekSelect = document.getElementById('filterWeek');
-    
-    if (moduleId) {
-        weekSelect.innerHTML = '<option value="">Loading...</option>';
-        
-        fetch(`{{ route('admin.contents.weeks-by-module') }}?module_id=${moduleId}`)
-            .then(response => {
-                if (!response.ok) throw new Error('Failed to fetch weeks');
-                return response.json();
-            })
-            .then(weeks => {
-                weekSelect.innerHTML = '<option value="">All Weeks</option>';
-                if (Array.isArray(weeks) && weeks.length > 0) {
-                    weeks.forEach(week => {
-                        weekSelect.innerHTML += `<option value="${week.id}">Week ${week.week_number}: ${week.title}</option>`;
-                    });
-                } else {
-                    weekSelect.innerHTML += '<option value="">No weeks found</option>';
-                }
-            })
-            .catch(error => {
-                console.error('Error loading weeks:', error);
-                weekSelect.innerHTML = '<option value="">Error loading weeks</option>';
-                toastr.error('Failed to load weeks');
-            });
-    } else {
-        weekSelect.innerHTML = '<option value="">All Weeks</option>';
-    }
-}
-
-// ==================== CREATE MODAL FUNCTIONS ====================
-
-function loadModulesForCreate() {
-    const programId = document.getElementById('createProgram').value;
-    const moduleSelect = document.getElementById('createModule');
-    const weekSelect = document.getElementById('createWeek');
-    
-    // Reset dependent selects
-    weekSelect.innerHTML = '<option value="">Select Module First</option>';
-    
-    if (programId) {
-        moduleSelect.innerHTML = '<option value="">Loading...</option>';
-        
-        fetch(`{{ route('admin.weeks.modules-by-program') }}?program_id=${programId}`)
-            .then(response => {
-                if (!response.ok) throw new Error('Failed to fetch modules');
-                return response.json();
-            })
-            .then(modules => {
-                moduleSelect.innerHTML = '<option value="">Select Module</option>';
-                if (Array.isArray(modules) && modules.length > 0) {
-                    modules.forEach(module => {
-                        moduleSelect.innerHTML += `<option value="${module.id}">${module.title}</option>`;
-                    });
-                } else {
-                    moduleSelect.innerHTML += '<option value="">No modules available</option>';
-                }
-            })
-            .catch(error => {
-                console.error('Error loading modules:', error);
-                moduleSelect.innerHTML = '<option value="">Error loading modules</option>';
-                toastr.error('Failed to load modules');
-            });
-    } else {
-        moduleSelect.innerHTML = '<option value="">Select Program First</option>';
-    }
-}
-
-function loadWeeksForCreate() {
-    const moduleId = document.getElementById('createModule').value;
-    const weekSelect = document.getElementById('createWeek');
-    
-    if (moduleId) {
-        weekSelect.innerHTML = '<option value="">Loading...</option>';
-        
-        fetch(`{{ route('admin.contents.weeks-by-module') }}?module_id=${moduleId}`)
-            .then(response => {
-                if (!response.ok) throw new Error('Failed to fetch weeks');
-                return response.json();
-            })
-            .then(weeks => {
-                weekSelect.innerHTML = '<option value="">Select Week</option>';
-                if (Array.isArray(weeks) && weeks.length > 0) {
-                    weeks.forEach(week => {
-                        weekSelect.innerHTML += `<option value="${week.id}">Week ${week.week_number}: ${week.title}</option>`;
-                    });
-                } else {
-                    weekSelect.innerHTML += '<option value="">No weeks available</option>';
-                }
-            })
-            .catch(error => {
-                console.error('Error loading weeks:', error);
-                weekSelect.innerHTML = '<option value="">Error loading weeks</option>';
-                toastr.error('Failed to load weeks');
-            });
-    } else {
-        weekSelect.innerHTML = '<option value="">Select Module First</option>';
-    }
-}
-
-// ==================== OTHER FUNCTIONS ====================
-
-function filterContents() {
-    const programId = document.getElementById('filterProgram').value;
-    const moduleId = document.getElementById('filterModule').value;
-    const weekId = document.getElementById('filterWeek').value;
-    const contentType = document.getElementById('filterType').value;
-    const status = document.getElementById('filterStatus').value;
-    const search = document.getElementById('searchContents').value;
-    
-    const params = new URLSearchParams();
-    if (programId) params.append('program_id', programId);
-    if (moduleId) params.append('module_id', moduleId);
-    if (weekId) params.append('week_id', weekId);
-    if (contentType) params.append('content_type', contentType);
-    if (status) params.append('status', status);
-    if (search) params.append('search', search);
-    
-    window.location.href = '{{ route("admin.contents.index") }}?' + params.toString();
-}
-
-function deleteContent(id) {
-    if (confirm('Are you sure you want to delete this content?')) {
-        fetch(`/admin/contents/${id}`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json'
-            }
-        })
-        .then(response => {
-            if (!response.ok) throw new Error('Failed to delete content');
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                toastr.success(data.message);
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                toastr.error(data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error deleting content:', error);
-            toastr.error('An error occurred. Please try again.');
-        });
-    }
-}
-
-@if($errors->any())
-    $('#createContentModal').modal('show');
-@endif
+// Reset week filter when module changes
+document.getElementById('moduleFilter').addEventListener('change', function() {
+    document.getElementById('weekFilter').value = '';
+});
 </script>
 @endpush

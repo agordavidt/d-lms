@@ -11,7 +11,7 @@ use App\Models\WeekContent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str; // FIX: Added missing import
+use Illuminate\Support\Str;
 
 class ContentController extends Controller
 {
@@ -20,43 +20,65 @@ class ContentController extends Controller
         $query = WeekContent::with(['moduleWeek.programModule.program', 'creator']);
 
         // Filter by program
-        if ($request->program_id) {
+        if ($request->filled('program_id')) {
             $query->whereHas('moduleWeek.programModule', function($q) use ($request) {
                 $q->where('program_id', $request->program_id);
             });
         }
 
         // Filter by module
-        if ($request->module_id) {
+        if ($request->filled('module_id')) {
             $query->whereHas('moduleWeek', function($q) use ($request) {
                 $q->where('program_module_id', $request->module_id);
             });
         }
 
         // Filter by week
-        if ($request->week_id) {
+        if ($request->filled('week_id')) {
             $query->where('module_week_id', $request->week_id);
         }
 
         // Filter by content type
-        if ($request->content_type) {
+        if ($request->filled('content_type')) {
             $query->where('content_type', $request->content_type);
         }
 
         // Search
-        if ($request->search) {
-            $query->where('title', 'like', '%' . $request->search . '%');
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('title', 'like', '%' . $search . '%')
+                  ->orWhere('description', 'like', '%' . $search . '%');
+            });
         }
 
         // Filter by status
-        if ($request->status) {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
-        $contents = $query->orderBy('created_at', 'desc')->paginate(20);
-        $programs = Program::active()->get();
+        $contents = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
+        
+        // Get filter options
+        $programs = Program::active()->orderBy('name')->get();
+        
+        // Get modules for selected program
+        $modules = collect();
+        if ($request->filled('program_id')) {
+            $modules = ProgramModule::where('program_id', $request->program_id)
+                ->orderBy('order')
+                ->get(['id', 'title']);
+        }
+        
+        // Get weeks for selected module
+        $weeks = collect();
+        if ($request->filled('module_id')) {
+            $weeks = ModuleWeek::where('program_module_id', $request->module_id)
+                ->orderBy('week_number')
+                ->get(['id', 'title', 'week_number']);
+        }
 
-        return view('admin.contents.index', compact('contents', 'programs'));
+        return view('admin.contents.index', compact('contents', 'programs', 'modules', 'weeks'));
     }
 
     /**
@@ -304,7 +326,7 @@ class ContentController extends Controller
     }
 
     /**
-     * Keep for backward compatibility (used in filters)
+     * AJAX endpoint for filter dependencies
      */
     public function getModulesByProgram(Request $request)
     {
@@ -316,7 +338,7 @@ class ContentController extends Controller
     }
 
     /**
-     * Keep for backward compatibility (used in filters)
+     * AJAX endpoint for filter dependencies
      */
     public function getWeeksByModule(Request $request)
     {
@@ -328,14 +350,14 @@ class ContentController extends Controller
     }
 
     /**
-     * FIX: Improved image upload handler with better error handling and validation
+     * Image upload handler for text editor
      */
     public function uploadImage(Request $request)
     {
         try {
             // Validate request
             $request->validate([
-                'file' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:2048' // 2MB max
+                'file' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:2048'
             ]);
 
             if (!$request->hasFile('file')) {
@@ -347,7 +369,6 @@ class ContentController extends Controller
 
             $file = $request->file('file');
             
-            // Validate file is actually an image
             if (!$file->isValid()) {
                 return response()->json([
                     'success' => false,
@@ -355,21 +376,15 @@ class ContentController extends Controller
                 ], 400);
             }
             
-            // Generate unique filename with proper extension
             $filename = time() . '_' . Str::random(10) . '.' . $file->getClientOriginalExtension();
-            
-            // Store in public disk under content/images
             $path = $file->storeAs('content/images', $filename, 'public');
             
-            // Verify file was stored
             if (!Storage::disk('public')->exists($path)) {
                 throw new \Exception('File was not saved to storage');
             }
             
-            // Get full URL
             $url = Storage::url($path);
             
-            // Log the upload for audit purposes
             \Log::info('Image uploaded for content editor', [
                 'user_id' => auth()->id(),
                 'filename' => $filename,
@@ -380,7 +395,7 @@ class ContentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'location' => $url, // Quill expects 'location' key
+                'location' => $url,
                 'path' => $path,
                 'filename' => $filename
             ]);
