@@ -11,6 +11,7 @@ use App\Models\WeekContent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str; // FIX: Added missing import
 
 class ContentController extends Controller
 {
@@ -81,7 +82,7 @@ class ContentController extends Controller
             'description' => 'nullable|string',
             'content_type' => 'required|in:video,pdf,link,text',
             'is_required' => 'boolean',
-            'status' => 'required|in:draft,published,archived',
+            'status' => 'required|in:draft,published',
             
             // Type-specific validations
             'video_url' => 'required_if:content_type,video|nullable|url',
@@ -172,7 +173,7 @@ class ContentController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'is_required' => 'boolean',
-            'status' => 'required|in:draft,published,archived',
+            'status' => 'required|in:draft,published',
             
             // Type-specific validations
             'video_url' => 'required_if:content_type,video|nullable|url',
@@ -324,5 +325,85 @@ class ContentController extends Controller
             ->get(['id', 'title', 'week_number']);
 
         return response()->json($weeks);
+    }
+
+    /**
+     * FIX: Improved image upload handler with better error handling and validation
+     */
+    public function uploadImage(Request $request)
+    {
+        try {
+            // Validate request
+            $request->validate([
+                'file' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:2048' // 2MB max
+            ]);
+
+            if (!$request->hasFile('file')) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No file uploaded'
+                ], 400);
+            }
+
+            $file = $request->file('file');
+            
+            // Validate file is actually an image
+            if (!$file->isValid()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Invalid file upload'
+                ], 400);
+            }
+            
+            // Generate unique filename with proper extension
+            $filename = time() . '_' . Str::random(10) . '.' . $file->getClientOriginalExtension();
+            
+            // Store in public disk under content/images
+            $path = $file->storeAs('content/images', $filename, 'public');
+            
+            // Verify file was stored
+            if (!Storage::disk('public')->exists($path)) {
+                throw new \Exception('File was not saved to storage');
+            }
+            
+            // Get full URL
+            $url = Storage::url($path);
+            
+            // Log the upload for audit purposes
+            \Log::info('Image uploaded for content editor', [
+                'user_id' => auth()->id(),
+                'filename' => $filename,
+                'size' => $file->getSize(),
+                'path' => $path,
+                'mime_type' => $file->getMimeType()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'location' => $url, // Quill expects 'location' key
+                'path' => $path,
+                'filename' => $filename
+            ]);
+            
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Invalid file. Please upload a valid image (jpeg, png, jpg, gif, webp) under 2MB.',
+                'details' => $e->errors()
+            ], 422);
+            
+        } catch (\Exception $e) {
+            \Log::error('Image upload failed', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to upload image. Please try again.',
+                'debug' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
     }
 }

@@ -16,10 +16,10 @@
                        class="btn btn-secondary btn-sm">
                         <i class="icon-arrow-left"></i> Back to Modules
                     </a>
-                    <a href="{{ route('admin.modules.edit', $module->id) }}" 
+                    {{-- <a href="{{ route('admin.modules.edit', $module->id) }}" 
                        class="btn btn-primary btn-sm">
                          Edit Module
-                    </a>
+                    </a> --}}
                 </div>
             </div>
             <div class="card-body">
@@ -229,10 +229,10 @@
                    class="btn btn-primary btn-block mb-2">
                      Add Week
                 </a>
-                <a href="{{ route('admin.modules.edit', $module->id) }}" 
+                {{-- <a href="{{ route('admin.modules.edit', $module->id) }}" 
                    class="btn btn-secondary btn-block mb-2">
                    Edit Module
-                </a>
+                </a> --}}
                 <a href="{{ route('admin.modules.index', ['program_id' => $module->program_id]) }}" 
                    class="btn btn-light btn-block">
                     <i class="icon-arrow-left"></i> Back to List

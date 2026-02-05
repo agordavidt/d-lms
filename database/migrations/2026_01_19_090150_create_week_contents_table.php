@@ -29,8 +29,8 @@ return new class extends Migration
             
             $table->boolean('is_required')->default(true); // Must complete to unlock next week
             $table->boolean('is_downloadable')->default(false); // For PDFs
-            $table->enum('status', ['draft', 'published', 'archived'])->default('draft');
-            $table->json('metadata')->nullable(); // Additional info (file size, author, etc.)
+            $table->enum('status', ['draft', 'published'])->default('published');
+            $table->json('metadata')->nullable(); 
             
             $table->timestamps();
             $table->softDeletes();

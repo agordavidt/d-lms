@@ -124,18 +124,23 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('/contents/modules-by-program', [AdminContentController::class, 'getModulesByProgram'])
             ->name('contents.modules-by-program');
 
-        // Curriculum Management 
-        // Route::resource('modules', ModuleController::class);
-        // Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
+            // Image Upload for Quill Editor (used in article/text content)
+        Route::post('contents/upload-image', [AdminContentController::class, 'uploadImage'])
+            ->name('contents.upload-image');
         
-        // Route::resource('weeks', WeekController::class);
-        // Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])
-        //     ->name('weeks.modules-by-program');
+        // Get modules by program (for filters/dropdowns)
+        Route::get('contents/modules-by-program', [AdminContentController::class, 'getModulesByProgram'])
+            ->name('contents.modules-by-program');
+        
+        // Get weeks by module (for filters/dropdowns)
+        Route::get('contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])
+            ->name('contents.weeks-by-module');
+        
+        // Reorder contents within a week
+        Route::post('contents/reorder', [AdminContentController::class, 'reorder'])
+            ->name('contents.reorder');
 
-        // Route::resource('contents', AdminContentController::class);
-        // Route::post('/contents/reorder', [AdminContentController::class, 'reorder'])->name('contents.reorder');
-        // Route::get('/contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])
-        //     ->name('contents.weeks-by-module');
+       
 
         // Sessions/Calendar
         Route::get('/sessions/calendar', [AdminSessionController::class, 'calendar'])->name('sessions.calendar');

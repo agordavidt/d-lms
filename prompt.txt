@@ -1,46 +1,336 @@
-=== content creation flow ===
+== 
+@extends('layouts.admin')
+
+@section('title', 'Program Modules')
+@section('breadcrumb-parent', 'Curriculum')
+@section('breadcrumb-current', 'Modules')
+
+@section('content')
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="card-title mb-0">Program Modules</h4>
+                    <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#createModuleModal">
+                        Create New Module
+                    </button>
+                </div>
+
+                <!-- Filters -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <select class="form-control" id="filterProgram" onchange="filterModules()">
+                            <option value="">All Programs</option>
+                            @foreach($programs as $program)
+                                <option value="{{ $program->id }}" {{ request('program_id') == $program->id ? 'selected' : '' }}>
+                                    {{ $program->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-control" id="filterStatus" onchange="filterModules()">
+                            <option value="">All Status</option>
+                            <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>Draft</option>
+                            <option value="published" {{ request('status') == 'published' ? 'selected' : '' }}>Published</option>
+                            <option value="archived" {{ request('status') == 'archived' ? 'selected' : '' }}>Archived</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <input type="text" class="form-control" id="searchModules" placeholder="Search modules..." 
+                               value="{{ request('search') }}" onkeyup="debounceSearch()">
+                    </div>
+                </div>
+
+                <!-- Modules Table -->
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Order</th>
+                                <th>Module Title</th>
+                                <th>Program</th>
+                                <th>Duration (Weeks)</th>
+                                <th>Weeks</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($modules as $module)
+                            <tr>
+                                <td>{{ $module->order }}</td>
+                                <td>
+                                    <strong>{{ $module->title }}</strong>
+                                    @if($module->description)
+                                        <br><small class="text-muted">{{ Str::limit($module->description, 60) }}</small>
+                                    @endif
+                                </td>
+                                <td>{{ $module->program->name }}</td>
+                                <td>{{ $module->duration_weeks }}</td>
+                                <td>{{ $module->total_weeks }}/{{ $module->duration_weeks }}</td>
+                                <td>
+                                    @if($module->status === 'published')
+                                        <span class="badge badge-success">Published</span>
+                                    @elseif($module->status === 'draft')
+                                        <span class="badge badge-warning">Draft</span>
+                                    @else
+                                        <span class="badge badge-secondary">Archived</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    <a href="{{ route('admin.modules.show', $module->id) }}" 
+                                       class="btn btn-sm btn-info" title="View Module Details">
+                                        <i class="icon-eye"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-primary" 
+                                            onclick="editModule({{ $module->id }})" title="Edit Module">
+                                        <i class="icon-pencil"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-danger" 
+                                            onclick="deleteModule({{ $module->id }})" title="Delete Module">
+                                        <i class="icon-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="7" class="text-center py-4">
+                                    <p class="text-muted mb-0">No modules found. Create your first module to get started.</p>
+                                </td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="mt-3">
+                    {{ $modules->links() }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Module Modal -->
+<div class="modal fade" id="createModuleModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <form action="{{ route('admin.modules.store') }}" method="POST" id="createModuleForm">
+                @csrf
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Module</h5>
+                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Program <span class="text-danger">*</span></label>
+                        <select class="form-control" name="program_id" required>
+                            <option value="">Select Program</option>
+                            @foreach($programs as $program)
+                                <option value="{{ $program->id }}" {{ old('program_id') == $program->id ? 'selected' : '' }}>
+                                    {{ $program->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Module Title <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="title" 
+                               placeholder="e.g., Module 1: Foundations of Data Analytics" 
+                               value="{{ old('title') }}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea class="form-control" name="description" rows="3" 
+                                  placeholder="Brief description of what this module covers">{{ old('description') }}</textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label>Duration (Weeks) <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" name="duration_weeks" 
+                                   min="1" value="{{ old('duration_weeks', 1) }}" required>
+                        </div>
+                        <div class="form-group col-md-6">
+                            <label>Status <span class="text-danger">*</span></label>
+                            <select class="form-control" name="status" required>
+                                <option value="draft" {{ old('status') == 'draft' ? 'selected' : '' }}>Draft</option>
+                                <option value="published" {{ old('status') == 'published' ? 'selected' : '' }}>Published</option>
+                                <option value="archived" {{ old('status') == 'archived' ? 'selected' : '' }}>Archived</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Learning Objectives</label>
+                        <small class="text-muted d-block mb-2">What will learners achieve in this module?</small>
+                        <div id="objectives-container">
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" name="learning_objectives[]" 
+                                       placeholder="e.g., Understand fundamental data concepts">
+                                <div class="input-group-append">
+                                    <button type="button" class="btn btn-danger" onclick="removeObjective(this)">Remove</button>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="addObjective()">
+                            Add Another Objective
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Module</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Module Modal -->
+<div class="modal fade" id="editModuleModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <form id="editModuleForm" method="POST">
+                @csrf
+                @method('PUT')
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Module</h5>
+                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                </div>
+                <div class="modal-body" id="editModuleContent">
+                    <!-- Content loaded via AJAX -->
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Module</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endsection
+
+@push('scripts')
+<script>
+let searchTimeout;
+
+function debounceSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(filterModules, 500);
+}
+
+function filterModules() {
+    const programId = document.getElementById('filterProgram').value;
+    const status = document.getElementById('filterStatus').value;
+    const search = document.getElementById('searchModules').value;
+    
+    const params = new URLSearchParams();
+    if (programId) params.append('program_id', programId);
+    if (status) params.append('status', status);
+    if (search) params.append('search', search);
+    
+    window.location.href = '{{ route("admin.modules.index") }}?' + params.toString();
+}
+
+function addObjective() {
+    const container = document.getElementById('objectives-container');
+    const newObjective = document.createElement('div');
+    newObjective.className = 'input-group mb-2';
+    newObjective.innerHTML = `
+        <input type="text" class="form-control" name="learning_objectives[]" 
+               placeholder="Enter learning objective">
+        <div class="input-group-append">
+            <button type="button" class="btn btn-danger" onclick="removeObjective(this)">Remove</button>
+        </div>
+    `;
+    container.appendChild(newObjective);
+}
+
+function removeObjective(btn) {
+    const container = document.getElementById('objectives-container');
+    if (container.children.length > 1) {
+        btn.closest('.input-group').remove();
+    }
+}
+
+function editModule(id) {
+    $('#editModuleModal').modal('show');
+    
+    fetch(`/admin/modules/${id}/edit`)
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('editModuleContent').innerHTML = html;
+            document.getElementById('editModuleForm').action = `/admin/modules/${id}`;
+        })
+        .catch(error => {
+            document.getElementById('editModuleContent').innerHTML = 
+                '<div class="alert alert-danger">Failed to load module data. Please try again.</div>';
+        });
+}
+
+function deleteModule(id) {
+    if (confirm('Are you sure you want to delete this module? This action cannot be undone.')) {
+        fetch(`/admin/modules/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                toastr.success(data.message);
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                toastr.error(data.message);
+            }
+        })
+        .catch(error => {
+            toastr.error('An error occurred. Please try again.');
+        });
+    }
+}
+
+// Show modal if there are validation errors
+@if($errors->any())
+    $('#createModuleModal').modal('show');
+@endif
+</script>
+@endpush
+
+
 <?php
 
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
-use App\Models\ModuleWeek;
 use App\Models\Program;
 use App\Models\ProgramModule;
-use App\Models\WeekContent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
-class ContentController extends Controller
+class ModuleController extends Controller
 {
     public function index(Request $request)
     {
-        $query = WeekContent::with(['moduleWeek.programModule.program', 'creator']);
+        $query = ProgramModule::with('program');
 
         // Filter by program
         if ($request->program_id) {
-            $query->whereHas('moduleWeek.programModule', function($q) use ($request) {
-                $q->where('program_id', $request->program_id);
-            });
-        }
-
-        // Filter by module
-        if ($request->module_id) {
-            $query->whereHas('moduleWeek', function($q) use ($request) {
-                $q->where('program_module_id', $request->module_id);
-            });
-        }
-
-        // Filter by week
-        if ($request->week_id) {
-            $query->where('module_week_id', $request->week_id);
-        }
-
-        // Filter by content type
-        if ($request->content_type) {
-            $query->where('content_type', $request->content_type);
+            $query->where('program_id', $request->program_id);
         }
 
         // Search
@@ -53,220 +343,148 @@ class ContentController extends Controller
             $query->where('status', $request->status);
         }
 
-        $contents = $query->orderBy('created_at', 'desc')->paginate(20);
+        $modules = $query->orderBy('order')->paginate(20);
         $programs = Program::active()->get();
 
-        return view('admin.contents.index', compact('contents', 'programs'));
+        return view('admin.modules.index', compact('modules', 'programs'));
     }
 
-    /**
-     * Show create form with week pre-selected
-     */
     public function create(Request $request)
     {
-        // Week ID is required - passed from week show page
-        $request->validate([
-            'week_id' => 'required|exists:module_weeks,id'
-        ]);
-        
-        $week = ModuleWeek::with(['programModule.program'])->findOrFail($request->week_id);
+        $programs = Program::active()->get();
+        $programId = $request->program_id;
 
-        return view('admin.contents.create', compact('week'));
+        return view('admin.modules.create', compact('programs', 'programId'));
     }
 
     public function store(Request $request)
     {
         $request->validate([
-            'module_week_id' => 'required|exists:module_weeks,id',
+            'program_id' => 'required|exists:programs,id',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'content_type' => 'required|in:video,pdf,link,text',
-            'is_required' => 'boolean',
+            'duration_weeks' => 'required|integer|min:1',
             'status' => 'required|in:draft,published,archived',
-            
-            // Type-specific validations
-            'video_url' => 'required_if:content_type,video|nullable|url',
-            'video_duration_minutes' => 'nullable|integer|min:1',
-            'file' => 'required_if:content_type,pdf|nullable|file|mimes:pdf|max:10240',
-            'external_url' => 'required_if:content_type,link|nullable|url',
-            'text_content' => 'required_if:content_type,text|nullable|string',
+            'learning_objectives' => 'nullable|array',
         ]);
 
         try {
             // Get next order number
-            $nextOrder = WeekContent::where('module_week_id', $request->module_week_id)
+            $nextOrder = ProgramModule::where('program_id', $request->program_id)
                 ->max('order') + 1;
 
-            $data = [
-                'module_week_id' => $request->module_week_id,
-                'created_by' => auth()->id(),
+            $module = ProgramModule::create([
+                'program_id' => $request->program_id,
                 'title' => $request->title,
                 'description' => $request->description,
-                'content_type' => $request->content_type,
+                'duration_weeks' => $request->duration_weeks,
                 'order' => $nextOrder,
-                'is_required' => $request->is_required ?? true,
                 'status' => $request->status,
-            ];
-
-            // Handle content based on type
-            switch ($request->content_type) {
-                case 'video':
-                    $data['video_url'] = $request->video_url;
-                    $data['video_duration_minutes'] = $request->video_duration_minutes;
-                    break;
-
-                case 'pdf':
-                    if ($request->hasFile('file')) {
-                        $file = $request->file('file');
-                        $path = $file->store('content/pdfs', 'public');
-                        $data['file_path'] = $path;
-                        $data['is_downloadable'] = true;
-                        $data['metadata'] = [
-                            'original_name' => $file->getClientOriginalName(),
-                            'file_size' => $file->getSize(),
-                        ];
-                    }
-                    break;
-
-                case 'link':
-                    $data['external_url'] = $request->external_url;
-                    break;
-
-                case 'text':
-                    $data['text_content'] = $request->text_content;
-                    break;
-            }
-
-            $content = WeekContent::create($data);
-
-            AuditLog::log('content_created', auth()->user(), [
-                'description' => 'Created content: ' . $content->title,
-                'model_type' => WeekContent::class,
-                'model_id' => $content->id,
+                'learning_objectives' => $request->learning_objectives 
+                    ? array_filter($request->learning_objectives) 
+                    : null,
             ]);
 
-            // Redirect to week show page to see the new content
-            return redirect()->route('admin.weeks.show', $content->module_week_id)
-                ->with(['message' => 'Content created successfully!', 'alert-type' => 'success']);
+            AuditLog::log('module_created', auth()->user(), [
+                'description' => 'Created module: ' . $module->title,
+                'model_type' => ProgramModule::class,
+                'model_id' => $module->id,
+            ]);
+
+            // Redirect to module show page instead of index
+            return redirect()->route('admin.modules.show', $module->id)
+                ->with(['message' => 'Module created successfully!', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
             return back()->withInput()
-                ->with(['message' => 'Failed to create content: ' . $e->getMessage(), 'alert-type' => 'error']);
+                ->with(['message' => 'Failed to create module: ' . $e->getMessage(), 'alert-type' => 'error']);
         }
     }
 
-    public function edit(WeekContent $content)
+    /**
+     * Show module details with all weeks
+     */
+    public function show(ProgramModule $module)
     {
-        $programs = Program::active()->get();
-        $program = $content->moduleWeek->programModule->program;
-        $modules = ProgramModule::where('program_id', $program->id)->orderBy('order')->get();
-        $weeks = ModuleWeek::where('program_module_id', $content->moduleWeek->program_module_id)
-            ->orderBy('week_number')->get();
-
-        return view('admin.contents.edit', compact('content', 'programs', 'modules', 'weeks'));
+        $module->load(['program', 'weeks.contents']);
+        
+        return view('admin.modules.show', compact('module'));
     }
 
-    public function update(Request $request, WeekContent $content)
+    public function edit(ProgramModule $module)
+    {
+        $programs = Program::active()->get();
+        
+        return view('admin.modules.edit_partial', compact('module', 'programs'));
+    }
+
+    public function update(Request $request, ProgramModule $module)
     {
         $request->validate([
-            'module_week_id' => 'required|exists:module_weeks,id',
+            'program_id' => 'required|exists:programs,id',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'is_required' => 'boolean',
+            'duration_weeks' => 'required|integer|min:1',
             'status' => 'required|in:draft,published,archived',
-            
-            // Type-specific validations
-            'video_url' => 'required_if:content_type,video|nullable|url',
-            'video_duration_minutes' => 'nullable|integer|min:1',
-            'file' => 'nullable|file|mimes:pdf|max:10240',
-            'external_url' => 'required_if:content_type,link|nullable|url',
-            'text_content' => 'required_if:content_type,text|nullable|string',
+            'learning_objectives' => 'nullable|array',
         ]);
 
         try {
-            $data = [
-                'module_week_id' => $request->module_week_id,
+            $module->update([
+                'program_id' => $request->program_id,
                 'title' => $request->title,
                 'description' => $request->description,
-                'is_required' => $request->is_required ?? true,
+                'duration_weeks' => $request->duration_weeks,
                 'status' => $request->status,
-            ];
-
-            // Handle content based on type
-            switch ($content->content_type) {
-                case 'video':
-                    $data['video_url'] = $request->video_url;
-                    $data['video_duration_minutes'] = $request->video_duration_minutes;
-                    break;
-
-                case 'pdf':
-                    if ($request->hasFile('file')) {
-                        // Delete old file
-                        if ($content->file_path) {
-                            Storage::disk('public')->delete($content->file_path);
-                        }
-                        
-                        $file = $request->file('file');
-                        $path = $file->store('content/pdfs', 'public');
-                        $data['file_path'] = $path;
-                        $data['metadata'] = [
-                            'original_name' => $file->getClientOriginalName(),
-                            'file_size' => $file->getSize(),
-                        ];
-                    }
-                    break;
-
-                case 'link':
-                    $data['external_url'] = $request->external_url;
-                    break;
-
-                case 'text':
-                    $data['text_content'] = $request->text_content;
-                    break;
-            }
-
-            $content->update($data);
-
-            AuditLog::log('content_updated', auth()->user(), [
-                'description' => 'Updated content: ' . $content->title,
-                'model_type' => WeekContent::class,
-                'model_id' => $content->id,
+                'learning_objectives' => $request->learning_objectives 
+                    ? array_filter($request->learning_objectives) 
+                    : null,
             ]);
 
-            return redirect()->route('admin.weeks.show', $content->module_week_id)
-                ->with(['message' => 'Content updated successfully!', 'alert-type' => 'success']);
+            AuditLog::log('module_updated', auth()->user(), [
+                'description' => 'Updated module: ' . $module->title,
+                'model_type' => ProgramModule::class,
+                'model_id' => $module->id,
+            ]);
+
+            // Redirect to module show page instead of index
+            return redirect()->route('admin.modules.show', $module->id)
+                ->with(['message' => 'Module updated successfully!', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
             return back()->withInput()
-                ->with(['message' => 'Failed to update content: ' . $e->getMessage(), 'alert-type' => 'error']);
+                ->with(['message' => 'Failed to update module: ' . $e->getMessage(), 'alert-type' => 'error']);
         }
     }
 
-    public function destroy(WeekContent $content)
+    public function destroy(ProgramModule $module)
     {
         try {
-            // Delete file if exists
-            if ($content->file_path) {
-                Storage::disk('public')->delete($content->file_path);
+            // Check if module has weeks
+            if ($module->weeks()->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot delete module with existing weeks. Delete weeks first.'
+                ], 400);
             }
 
-            AuditLog::log('content_deleted', auth()->user(), [
-                'description' => 'Deleted content: ' . $content->title,
-                'model_type' => WeekContent::class,
-                'model_id' => $content->id,
+            AuditLog::log('module_deleted', auth()->user(), [
+                'description' => 'Deleted module: ' . $module->title,
+                'model_type' => ProgramModule::class,
+                'model_id' => $module->id,
             ]);
 
-            $content->delete();
+            $module->delete();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Content deleted successfully!'
+                'message' => 'Module deleted successfully!'
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete content: ' . $e->getMessage()
+                'message' => 'Failed to delete module.'
             ], 500);
         }
     }
@@ -274,56 +492,515 @@ class ContentController extends Controller
     public function reorder(Request $request)
     {
         $request->validate([
-            'contents' => 'required|array',
-            'contents.*.id' => 'required|exists:week_contents,id',
-            'contents.*.order' => 'required|integer',
+            'modules' => 'required|array',
+            'modules.*.id' => 'required|exists:program_modules,id',
+            'modules.*.order' => 'required|integer',
         ]);
 
         try {
             DB::beginTransaction();
 
-            foreach ($request->contents as $contentData) {
-                WeekContent::where('id', $contentData['id'])
-                    ->update(['order' => $contentData['order']]);
+            foreach ($request->modules as $moduleData) {
+                ProgramModule::where('id', $moduleData['id'])
+                    ->update(['order' => $moduleData['order']]);
             }
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Contents reordered successfully!'
+                'message' => 'Modules reordered successfully!'
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to reorder contents.'
+                'message' => 'Failed to reorder modules.'
             ], 500);
         }
     }
+}
 
-    /**
-     * Keep for backward compatibility (used in filters)
-     */
-    public function getModulesByProgram(Request $request)
-    {
-        $modules = ProgramModule::where('program_id', $request->program_id)
-            ->orderBy('order')
-            ->get(['id', 'title']);
 
-        return response()->json($modules);
-    }
+@extends('layouts.admin')
 
-    /**
-     * Keep for backward compatibility (used in filters)
-     */
-    public function getWeeksByModule(Request $request)
-    {
-        $weeks = ModuleWeek::where('program_module_id', $request->module_id)
-            ->orderBy('week_number')
-            ->get(['id', 'title', 'week_number']);
+@section('title', 'Module Details')
+@section('breadcrumb-parent', 'Modules')
+@section('breadcrumb-current', $module->title)
 
-        return response()->json($weeks);
+@section('content')
+<div class="row">
+    <!-- Module Information -->
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="card-title mb-0">{{ $module->title }}</h4>
+                <div>
+                    <a href="{{ route('admin.modules.index', ['program_id' => $module->program_id]) }}" 
+                       class="btn btn-secondary btn-sm">
+                        <i class="icon-arrow-left"></i> Back to Modules
+                    </a>
+                    <a href="{{ route('admin.modules.edit', $module->id) }}" 
+                       class="btn btn-primary btn-sm">
+                         Edit Module
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-3">Module Information</h6>
+                        <table class="table table-borderless table-sm">
+                            <tr>
+                                <td width="40%"><strong>Program:</strong></td>
+                                <td>{{ $module->program->name }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Order:</strong></td>
+                                <td>Module {{ $module->order }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Duration:</strong></td>
+                                <td>{{ $module->duration_weeks }} weeks</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>
+                                    @if($module->status === 'published')
+                                        <span class="badge badge-success">Published</span>
+                                    @elseif($module->status === 'draft')
+                                        <span class="badge badge-warning">Draft</span>
+                                    @else
+                                        <span class="badge badge-secondary">Archived</span>
+                                    @endif
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-3">Statistics</h6>
+                        <table class="table table-borderless table-sm">
+                            <tr>
+                                <td width="40%"><strong>Total Weeks:</strong></td>
+                                <td><span class="badge badge-info">{{ $module->weeks->count() }}</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Planned Weeks:</strong></td>
+                                <td>{{ $module->duration_weeks }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Progress:</strong></td>
+                                <td>
+                                    @php
+                                        $progress = $module->duration_weeks > 0 ? ($module->weeks->count() / $module->duration_weeks) * 100 : 0;
+                                    @endphp
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar bg-primary" role="progressbar" 
+                                             style="width: {{ min($progress, 100) }}%">
+                                            {{ number_format(min($progress, 100), 0) }}%
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                @if($module->description)
+                <div class="mb-4">
+                    <h6 class="text-muted">Description</h6>
+                    <p>{{ $module->description }}</p>
+                </div>
+                @endif
+
+                @if($module->learning_objectives && count($module->learning_objectives) > 0)
+                <div class="mb-4">
+                    <h6 class="text-muted">Learning Objectives</h6>
+                    <ul>
+                        @foreach($module->learning_objectives as $objective)
+                            <li>{{ $objective }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+                @endif
+            </div>
+        </div>
+
+        <!-- Weeks List -->
+        <div class="card mt-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="card-title mb-0">Weeks in This Module</h4>
+                <a href="{{ route('admin.weeks.create', ['module_id' => $module->id]) }}" 
+                   class="btn btn-primary btn-sm">
+                   Add Week
+                </a>
+            </div>
+            <div class="card-body">
+                @if($module->weeks->count() > 0)
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th width="10%">Week #</th>
+                                    <th>Title</th>
+                                    <th width="15%">Contents</th>
+                                    <th width="12%">Status</th>
+                                    <th width="20%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($module->weeks->sortBy('week_number') as $week)
+                                <tr>
+                                    <td><strong>Week {{ $week->week_number }}</strong></td>
+                                    <td>
+                                        <strong>{{ $week->title }}</strong>
+                                        @if($week->description)
+                                            <br><small class="text-muted">{{ Str::limit($week->description, 60) }}</small>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-info">{{ $week->contents->count() }}</span>
+                                        @if($week->contents->where('is_required', true)->count() > 0)
+                                            <br><small class="text-muted">{{ $week->contents->where('is_required', true)->count() }} required</small>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if($week->status === 'published')
+                                            <span class="badge badge-success">Published</span>
+                                        @elseif($week->status === 'draft')
+                                            <span class="badge badge-warning">Draft</span>
+                                        @else
+                                            <span class="badge badge-secondary">Archived</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <a href="{{ route('admin.weeks.show', $week->id) }}" 
+                                           class="btn btn-info btn-sm" title="View Details">
+                                            <i class="icon-eye"></i>
+                                        </a>
+                                        <a href="{{ route('admin.weeks.edit', $week->id) }}" 
+                                           class="btn btn-primary btn-sm" title="Edit">
+                                            <i class="icon-pencil"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-danger btn-sm" 
+                                                onclick="deleteWeek({{ $week->id }})" title="Delete">
+                                            <i class="icon-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="text-center py-5">
+                        <i class="icon-grid" style="font-size: 48px; color: #ccc;"></i>
+                        <h5 class="mt-3 text-muted">No Weeks Added Yet</h5>
+                        <p class="text-muted mb-3">Start building your module by adding weeks</p>
+                        <a href="{{ route('admin.weeks.create', ['module_id' => $module->id]) }}" 
+                           class="btn btn-primary">
+                            <i class="icon-plus"></i> Add First Week
+                        </a>
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- Quick Stats -->
+        <div class="card">
+            <div class="card-header">
+                <h4 class="card-title mb-0">Quick Stats</h4>
+            </div>
+            <div class="card-body">
+                <div class="mb-3 pb-3 border-bottom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted">Total Weeks</span>
+                        <h3 class="mb-0 text-primary">{{ $module->weeks->count() }}</h3>
+                    </div>
+                </div>
+                <div class="mb-3 pb-3 border-bottom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted">Total Contents</span>
+                        <h3 class="mb-0 text-info">{{ $module->weeks->sum(function($week) { return $week->contents->count(); }) }}</h3>
+                    </div>
+                </div>
+                <div class="mb-3 pb-3 border-bottom">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted">Published Weeks</span>
+                        <h3 class="mb-0 text-success">{{ $module->weeks->where('status', 'published')->count() }}</h3>
+                    </div>
+                </div>
+                <div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted">Draft Weeks</span>
+                        <h3 class="mb-0 text-warning">{{ $module->weeks->where('status', 'draft')->count() }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h4 class="card-title mb-0">Quick Actions</h4>
+            </div>
+            <div class="card-body">
+                <a href="{{ route('admin.weeks.create', ['module_id' => $module->id]) }}" 
+                   class="btn btn-primary btn-block mb-2">
+                     Add Week
+                </a>
+                <a href="{{ route('admin.modules.edit', $module->id) }}" 
+                   class="btn btn-secondary btn-block mb-2">
+                   Edit Module
+                </a>
+                <a href="{{ route('admin.modules.index', ['program_id' => $module->program_id]) }}" 
+                   class="btn btn-light btn-block">
+                    <i class="icon-arrow-left"></i> Back to List
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+@endsection
+
+@push('scripts')
+<script>
+function deleteWeek(id) {
+    if (confirm('Are you sure you want to delete this week? This will also delete all contents in this week.')) {
+        fetch(`/admin/weeks/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                toastr.success(data.message);
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                toastr.error(data.message);
+            }
+        })
+        .catch(error => {
+            toastr.error('An error occurred. Please try again.');
+        });
     }
 }
+</script>
+@endpush
+
+<?php
+
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\LearnerController;
+use App\Http\Controllers\Admin\MentorManagementController;
+use App\Http\Controllers\Admin\ProgramController as AdminProgramController;
+use App\Http\Controllers\Admin\CohortController;
+use App\Http\Controllers\Admin\ActivityLogController;
+use App\Http\Controllers\Admin\SessionController as AdminSessionController;
+use App\Http\Controllers\Admin\ModuleController;
+use App\Http\Controllers\Admin\WeekController;
+use App\Http\Controllers\Admin\ContentController as AdminContentController;
+use App\Http\Controllers\Learner\DashboardController as LearnerDashboardController;
+use App\Http\Controllers\Learner\CalendarController;
+use App\Http\Controllers\Learner\ProgramController as LearnerProgramController;
+use App\Http\Controllers\Learner\ProfileController;
+use App\Http\Controllers\Learner\LearningController;
+use App\Http\Controllers\Learner\CurriculumController;
+use App\Http\Controllers\Mentor\DashboardController as MentorDashboardController;
+use App\Http\Controllers\Mentor\SessionController as MentorSessionController;
+use App\Http\Controllers\Mentor\StudentController;
+use App\Http\Controllers\Mentor\ContentController as MentorContentController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\Auth\ForgotPasswordController;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Auth\ResetPasswordController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/test-learners', function() {
+    $learners = \App\Models\User::where('role', 'learner')->get();
+    return response()->json([
+        'total' => $learners->count(),
+        'learners' => $learners->toArray()
+    ]);
+});
+
+// Public Routes
+Route::get('/', function () {
+    return view('welcome');
+})->name('home');
+
+// Guest Routes (only accessible when not logged in)
+Route::middleware('guest')->group(function () {
+    // Login
+    Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
+    Route::post('/login', [LoginController::class, 'login']);
+
+    // Register (Learners Only)
+    Route::get('/register', [RegisterController::class, 'showRegistrationForm'])->name('register');
+    Route::post('/register', [RegisterController::class, 'register']);
+
+    // Password Reset
+    Route::get('/forgot-password', [ForgotPasswordController::class, 'showLinkRequestForm'])
+        ->name('password.request');
+    Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail'])
+        ->name('password.email');
+    Route::get('/reset-password/{token}', [ResetPasswordController::class, 'showResetForm'])
+        ->name('password.reset');
+    Route::post('/reset-password', [ResetPasswordController::class, 'reset'])
+        ->name('password.update');
+});
+
+// Authenticated Routes
+Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () {
+    
+    // Logout
+    Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
+
+    // Payment Routes (inside auth middleware)
+    Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment'])->name('payment.initiate');
+    Route::get('/payment/callback', [PaymentController::class, 'callback'])->name('payment.callback');
+    Route::post('/payment/installment', [PaymentController::class, 'payInstallment'])->name('payment.installment');
+
+    // Admin Routes
+    Route::middleware(['check.role:admin,superadmin'])->prefix('admin')->name('admin.')->group(function () {
+        // Dashboard
+        Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+
+        // Activity Log
+        Route::get('/activity-log', [ActivityLogController::class, 'index'])->name('activity-log');
+        Route::get('/activity-log/{id}', [ActivityLogController::class, 'show'])->name('activity-log.show');
+
+        // Learner Management
+        Route::get('/learners', [LearnerController::class, 'index'])->name('learners.index');
+        Route::get('/learners/data', [LearnerController::class, 'getData'])->name('learners.data');
+        Route::get('/learners/{id}', [LearnerController::class, 'show'])->name('learners.show');
+        Route::post('/learners/{id}/status', [LearnerController::class, 'updateStatus'])->name('learners.update-status');
+
+        // Mentor Management
+        Route::get('/mentors', [MentorManagementController::class, 'index'])->name('mentors.index');
+        Route::get('/mentors/data', [MentorManagementController::class, 'getData'])->name('mentors.data');
+        Route::get('/mentors/create', [MentorManagementController::class, 'create'])->name('mentors.create');
+        Route::post('/mentors', [MentorManagementController::class, 'store'])->name('mentors.store');
+        Route::get('/mentors/{id}/edit', [MentorManagementController::class, 'edit'])->name('mentors.edit');
+        Route::put('/mentors/{id}', [MentorManagementController::class, 'update'])->name('mentors.update');
+        Route::delete('/mentors/{id}', [MentorManagementController::class, 'destroy'])->name('mentors.destroy');
+        Route::post('/mentors/{id}/status', [MentorManagementController::class, 'updateStatus'])->name('mentors.update-status');
+
+        // User Management (SuperAdmin only - for creating admins)
+        Route::middleware(['check.role:superadmin'])->group(function () {
+            Route::get('/users/data', [UserController::class, 'getUsersData'])->name('users.data');
+            Route::post('/users/{id}/status', [UserController::class, 'updateStatus'])->name('users.update-status');
+            Route::resource('users', UserController::class);
+        });
+
+        // Program Management
+        Route::resource('programs', AdminProgramController::class);
+        Route::resource('cohorts', CohortController::class);
+
+        Route::resource('modules', ModuleController::class);
+        Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
+
+        Route::resource('weeks', WeekController::class);
+        Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])
+            ->name('weeks.modules-by-program');
+
+        Route::resource('contents', AdminContentController::class);
+        Route::post('/contents/reorder', [AdminContentController::class, 'reorder'])->name('contents.reorder');
+        Route::get('/contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])
+            ->name('contents.weeks-by-module');
+        // Add this new route for getting modules by program (used in content filters)
+        Route::get('/contents/modules-by-program', [AdminContentController::class, 'getModulesByProgram'])
+            ->name('contents.modules-by-program');
+
+            // Image Upload for Quill Editor (used in article/text content)
+        Route::post('contents/upload-image', [AdminContentController::class, 'uploadImage'])
+            ->name('contents.upload-image');
+        
+        // Get modules by program (for filters/dropdowns)
+        Route::get('contents/modules-by-program', [AdminContentController::class, 'getModulesByProgram'])
+            ->name('contents.modules-by-program');
+        
+        // Get weeks by module (for filters/dropdowns)
+        Route::get('contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])
+            ->name('contents.weeks-by-module');
+        
+        // Reorder contents within a week
+        Route::post('contents/reorder', [AdminContentController::class, 'reorder'])
+            ->name('contents.reorder');
+
+       
+
+        // Sessions/Calendar
+        Route::get('/sessions/calendar', [AdminSessionController::class, 'calendar'])->name('sessions.calendar');
+        Route::get('/sessions/events', [AdminSessionController::class, 'getEvents'])->name('sessions.events');
+        Route::resource('sessions', AdminSessionController::class);
+
+        // Payment Management
+        Route::get('/payments', [App\Http\Controllers\Admin\PaymentController::class, 'index'])->name('payments.index');
+         Route::get('/payments/export/csv', [App\Http\Controllers\Admin\PaymentController::class, 'export'])->name('payments.export');
+        Route::get('/payments/{id}', [App\Http\Controllers\Admin\PaymentController::class, 'show'])->name('payments.show');
+       
+    });
+
+    // Mentor Routes
+    Route::middleware(['check.role:mentor'])->prefix('mentor')->name('mentor.')->group(function () {
+        // Dashboard
+        Route::get('/dashboard', [MentorDashboardController::class, 'index'])->name('dashboard');
+
+        // Sessions Management
+        Route::get('/sessions/calendar', [MentorSessionController::class, 'calendar'])->name('sessions.calendar');
+        Route::get('/sessions/events', [MentorSessionController::class, 'getEvents'])->name('sessions.events');
+        Route::post('/sessions/{session}/attendance', [MentorSessionController::class, 'markAttendance'])->name('sessions.attendance');
+        Route::resource('sessions', MentorSessionController::class);
+
+        // Student Management
+        Route::get('/students', [StudentController::class, 'index'])->name('students.index');
+        Route::get('/students/{id}', [StudentController::class, 'show'])->name('students.show');
+
+        // Content Management
+        Route::resource('contents', MentorContentController::class);
+    });
+
+    // Learner Routes
+    Route::middleware(['check.role:learner'])->prefix('learner')->name('learner.')->group(function () {
+        // Dashboard (redirects appropriately)
+        Route::get('/dashboard', [LearnerDashboardController::class, 'index'])->name('dashboard');
+
+        // Programs (Browse and Enroll - only for non-enrolled users)
+        Route::get('/programs', [LearnerProgramController::class, 'index'])->name('programs.index');
+        Route::post('/programs/{program}/enroll', [LearnerProgramController::class, 'enroll'])->name('programs.enroll');
+
+        // Learning (Current Week)
+        Route::get('/learning', [LearningController::class, 'index'])->name('learning.index');
+        Route::get('/learning/week/{week}', [LearningController::class, 'showWeek'])->name('learning.week');
+        Route::get('/learning/content/{content}', [LearningController::class, 'showContent'])->name('learning.content');
+        
+        // Content Progress 
+        Route::post('/learning/content/{content}/complete', [LearningController::class, 'markContentComplete'])
+            ->name('learning.content.complete');
+        Route::post('/learning/content/{content}/progress', [LearningController::class, 'updateContentProgress'])
+            ->name('learning.content.progress');
+
+        // Curriculum (Full Program Structure)
+        Route::get('/curriculum', [CurriculumController::class, 'index'])->name('curriculum');
+
+        // Calendar (for viewing sessions)
+        Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
+        Route::get('/sessions/events', [CalendarController::class, 'getEvents'])->name('sessions.events');
+
+        // Profile
+        Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+        Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
+    });
+});
