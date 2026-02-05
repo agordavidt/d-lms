@@ -6,7 +6,7 @@
 
 @section('content')
 <div class="row">
-    <div class="col-lg-8 offset-lg-2">
+    <div class="col-lg-12">
         <div class="card">
             <div class="card-header">
                 <h4 class="card-title mb-0">Add Week to Module</h4>
@@ -152,10 +152,10 @@
 
                     <div class="form-group mb-0">
                         <button type="submit" class="btn btn-primary">
-                            <i class="icon-check"></i> Create Week
+                             Create Week
                         </button>
                         <a href="{{ route('admin.modules.show', $module->id) }}" class="btn btn-secondary">
-                            <i class="icon-close"></i> Cancel
+                             Cancel
                         </a>
                     </div>
                 </form>

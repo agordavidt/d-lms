@@ -251,7 +251,7 @@
                     <hr class="my-4">
 
                     <!-- Settings -->
-                    {{-- <div class="row mb-4">
+                    <div class="row mb-4">
                         <div class="col-md-6">
                             <div class="form-group">
                                 <div class="form-check form-switch">
@@ -281,7 +281,7 @@
                                 @enderror
                             </div>
                         </div>
-                    </div> --}}
+                    </div>
 
                     <hr class="my-4">
 
