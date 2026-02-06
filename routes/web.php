@@ -180,6 +180,13 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
             ->name('assessments.questions.destroy');
         Route::post('/assessments/{assessment}/questions/reorder', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'reorder'])
             ->name('assessments.questions.reorder');
+
+        Route::get('/assessments/{assessment}/questions/import', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'showImport'])
+            ->name('assessments.questions.import-form');
+        Route::post('/assessments/{assessment}/questions/import', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'import'])
+            ->name('assessments.questions.import');
+        Route::get('/assessments/questions/template', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'downloadTemplate'])
+            ->name('assessments.questions.template');
        
     });
 

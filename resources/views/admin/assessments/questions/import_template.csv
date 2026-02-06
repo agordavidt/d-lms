@@ -1,0 +1,6 @@
+question_text,question_type,option_a,option_b,option_c,option_d,correct_answer,points,explanation
+"What is the primary purpose of a database?","multiple_choice","To store files","To store and manage data","To run applications","To browse the internet","B",1,"Databases are designed to efficiently store, retrieve, and manage data"
+"SQL stands for Structured Query Language","true_false","","","","","true",1,"SQL is indeed an acronym for Structured Query Language"
+"Which of the following are programming languages?","multiple_select","Python","HTML","JavaScript","CSS","A,C",2,"Python and JavaScript are programming languages, while HTML and CSS are markup/styling languages"
+"What does API stand for?","multiple_choice","Application Programming Interface","Advanced Program Integration","Automated Process Indicator","Application Process Interface","A",1,"API stands for Application Programming Interface"
+"A variable can store multiple data types in Python","true_false","","","","","true",1,"Python is dynamically typed, allowing variables to hold different types"

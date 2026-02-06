@@ -8,6 +8,8 @@ use App\Models\AssessmentQuestion;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use Illuminate\Support\Facades\DB;
 
 class AssessmentQuestionController extends Controller
 {
@@ -277,5 +279,292 @@ class AssessmentQuestionController extends Controller
             default:
                 return [];
         }
+    }
+
+    // import questions from csv / excel
+    /**
+     * Show import form
+     */
+    public function showImport(Assessment $assessment)
+    {
+        $assessment->load(['moduleWeek.programModule.program']);
+        return view('admin.assessments.questions.import', compact('assessment'));
+    }
+
+    /**
+     * Import questions from CSV/Excel
+     */
+    public function import(Request $request, Assessment $assessment)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt,xlsx,xls|max:2048'
+        ]);
+
+        try {
+            $file = $request->file('file');
+            $extension = $file->getClientOriginalExtension();
+            
+            // Parse file based on extension
+            if (in_array($extension, ['xlsx', 'xls'])) {
+                $questions = $this->parseExcel($file);
+            } else {
+                $questions = $this->parseCsv($file);
+            }
+
+            if (empty($questions)) {
+                return back()->with([
+                    'message' => 'No valid questions found in file',
+                    'alert-type' => 'warning'
+                ]);
+            }
+
+            // Get starting order
+            $startOrder = $assessment->questions()->max('order') + 1;
+            $imported = 0;
+            $errors = [];
+
+            DB::beginTransaction();
+
+            foreach ($questions as $index => $questionData) {
+                try {
+                    // Validate question data
+                    $validated = $this->validateQuestionData($questionData, $index + 2); // +2 for header row
+                    
+                    if ($validated['error']) {
+                        $errors[] = $validated['error'];
+                        continue;
+                    }
+
+                    // Create question
+                    AssessmentQuestion::create([
+                        'assessment_id' => $assessment->id,
+                        'question_type' => $validated['question_type'],
+                        'question_text' => $validated['question_text'],
+                        'points' => $validated['points'],
+                        'order' => $startOrder + $imported,
+                        'explanation' => $validated['explanation'],
+                        'options' => $validated['options'],
+                        'correct_answer' => $validated['correct_answer'],
+                    ]);
+
+                    $imported++;
+
+                } catch (\Exception $e) {
+                    $errors[] = "Row " . ($index + 2) . ": " . $e->getMessage();
+                }
+            }
+
+            DB::commit();
+
+            // Log the import
+            AuditLog::log('questions_imported', auth()->user(), [
+                'description' => "Imported {$imported} questions to assessment: " . $assessment->title,
+                'model_type' => Assessment::class,
+                'model_id' => $assessment->id,
+            ]);
+
+            $message = "{$imported} question(s) imported successfully";
+            if (!empty($errors)) {
+                $message .= ". " . count($errors) . " error(s) occurred.";
+            }
+
+            return redirect()->route('admin.assessments.questions.index', $assessment->id)
+                ->with([
+                    'message' => $message,
+                    'alert-type' => $imported > 0 ? 'success' : 'warning',
+                    'import_errors' => $errors
+                ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with([
+                'message' => 'Import failed: ' . $e->getMessage(),
+                'alert-type' => 'error'
+            ]);
+        }
+    }
+
+    /**
+     * Download CSV template
+     */
+    public function downloadTemplate()
+    {
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="question_import_template.csv"',
+        ];
+
+        $template = "question_text,question_type,option_a,option_b,option_c,option_d,correct_answer,points,explanation\n";
+        $template .= "\"What is the primary purpose of a database?\",multiple_choice,\"To store files\",\"To store and manage data\",\"To run applications\",\"To browse the internet\",B,1,\"Databases are designed to efficiently store, retrieve, and manage data\"\n";
+        $template .= "\"SQL stands for Structured Query Language\",true_false,\"\",\"\",\"\",\"\",true,1,\"SQL is indeed an acronym for Structured Query Language\"\n";
+        $template .= "\"Which of the following are programming languages?\",multiple_select,\"Python\",\"HTML\",\"JavaScript\",\"CSS\",\"A,C\",2,\"Python and JavaScript are programming languages\"\n";
+
+        return response($template, 200, $headers);
+    }
+
+    /**
+     * Parse CSV file
+     */
+    protected function parseCsv($file): array
+    {
+        $questions = [];
+        $handle = fopen($file->getRealPath(), 'r');
+        
+        // Skip header row
+        fgetcsv($handle);
+        
+        while (($row = fgetcsv($handle)) !== false) {
+            if (count($row) < 9 || empty(trim($row[0]))) {
+                continue; // Skip empty or invalid rows
+            }
+
+            $questions[] = [
+                'question_text' => trim($row[0]),
+                'question_type' => trim($row[1]),
+                'option_a' => trim($row[2] ?? ''),
+                'option_b' => trim($row[3] ?? ''),
+                'option_c' => trim($row[4] ?? ''),
+                'option_d' => trim($row[5] ?? ''),
+                'correct_answer' => trim($row[6]),
+                'points' => trim($row[7] ?? '1'),
+                'explanation' => trim($row[8] ?? ''),
+            ];
+        }
+        
+        fclose($handle);
+        return $questions;
+    }
+
+    /**
+     * Parse Excel file
+     */
+    protected function parseExcel($file): array
+    {
+        // Using PhpSpreadsheet
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getRealPath());
+        $worksheet = $spreadsheet->getActiveSheet();
+        $rows = $worksheet->toArray();
+        
+        $questions = [];
+        
+        // Skip header row
+        array_shift($rows);
+        
+        foreach ($rows as $row) {
+            if (empty(trim($row[0] ?? ''))) {
+                continue; // Skip empty rows
+            }
+
+            $questions[] = [
+                'question_text' => trim($row[0]),
+                'question_type' => trim($row[1] ?? ''),
+                'option_a' => trim($row[2] ?? ''),
+                'option_b' => trim($row[3] ?? ''),
+                'option_c' => trim($row[4] ?? ''),
+                'option_d' => trim($row[5] ?? ''),
+                'correct_answer' => trim($row[6] ?? ''),
+                'points' => trim($row[7] ?? '1'),
+                'explanation' => trim($row[8] ?? ''),
+            ];
+        }
+        
+        return $questions;
+    }
+
+    /**
+     * Validate imported question data
+     */
+    protected function validateQuestionData(array $data, int $rowNumber): array
+    {
+        // Validate question type
+        $validTypes = ['multiple_choice', 'true_false', 'multiple_select'];
+        if (!in_array($data['question_type'], $validTypes)) {
+            return [
+                'error' => "Row {$rowNumber}: Invalid question type '{$data['question_type']}'. Must be: multiple_choice, true_false, or multiple_select"
+            ];
+        }
+
+        // Validate question text
+        if (empty($data['question_text'])) {
+            return ['error' => "Row {$rowNumber}: Question text is required"];
+        }
+
+        // Validate points
+        $points = (int) $data['points'];
+        if ($points < 1 || $points > 10) {
+            return ['error' => "Row {$rowNumber}: Points must be between 1 and 10"];
+        }
+
+        // Build options and correct answer based on type
+        $options = [];
+        $correctAnswer = [];
+
+        switch ($data['question_type']) {
+            case 'multiple_choice':
+                // Build options
+                foreach (['A' => 'option_a', 'B' => 'option_b', 'C' => 'option_c', 'D' => 'option_d'] as $key => $field) {
+                    if (!empty($data[$field])) {
+                        $options[$key] = $data[$field];
+                    }
+                }
+
+                if (count($options) < 2) {
+                    return ['error' => "Row {$rowNumber}: Multiple choice requires at least 2 options"];
+                }
+
+                // Validate correct answer
+                $correct = strtoupper(trim($data['correct_answer']));
+                if (!isset($options[$correct])) {
+                    return ['error' => "Row {$rowNumber}: Correct answer '{$correct}' not found in options"];
+                }
+
+                $correctAnswer = ['answer' => $correct];
+                break;
+
+            case 'true_false':
+                $options = ['true' => 'True', 'false' => 'False'];
+                
+                $correct = strtolower(trim($data['correct_answer']));
+                if (!in_array($correct, ['true', 'false'])) {
+                    return ['error' => "Row {$rowNumber}: True/False answer must be 'true' or 'false'"];
+                }
+
+                $correctAnswer = ['answer' => $correct];
+                break;
+
+            case 'multiple_select':
+                // Build options
+                foreach (['A' => 'option_a', 'B' => 'option_b', 'C' => 'option_c', 'D' => 'option_d'] as $key => $field) {
+                    if (!empty($data[$field])) {
+                        $options[$key] = $data[$field];
+                    }
+                }
+
+                if (count($options) < 2) {
+                    return ['error' => "Row {$rowNumber}: Multiple select requires at least 2 options"];
+                }
+
+                // Parse correct answers (comma-separated: A,C,D)
+                $correctKeys = array_map('trim', explode(',', strtoupper($data['correct_answer'])));
+                
+                foreach ($correctKeys as $key) {
+                    if (!isset($options[$key])) {
+                        return ['error' => "Row {$rowNumber}: Correct answer '{$key}' not found in options"];
+                    }
+                }
+
+                $correctAnswer = ['answers' => $correctKeys];
+                break;
+        }
+
+        return [
+            'error' => null,
+            'question_type' => $data['question_type'],
+            'question_text' => $data['question_text'],
+            'points' => $points,
+            'explanation' => $data['explanation'] ?? null,
+            'options' => $options,
+            'correct_answer' => $correctAnswer,
+        ];
     }
 }

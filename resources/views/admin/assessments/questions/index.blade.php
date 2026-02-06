@@ -46,6 +46,7 @@
                     <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addQuestionModal">
                         <i class="icon-plus"></i> Add Question
                     </button>
+                    
                 </div>
 
                 @if($assessment->questions->count() > 0)
@@ -164,32 +165,36 @@
             <div class="card-body">
                 <a href="{{ route('admin.weeks.show', $assessment->module_week_id) }}" 
                    class="btn btn-secondary btn-block mb-2">
-                    <i class="icon-arrow-left"></i> Back to Week
+                    Back to Week
                 </a>
 
                 <a href="{{ route('admin.assessments.edit', $assessment->id) }}" 
                    class="btn btn-primary btn-block mb-2">
-                    <i class="icon-settings"></i> Edit Settings
+                    Edit Settings
                 </a>
 
                 @if($assessment->questions->count() > 0)
                     <button type="button" 
                             class="btn btn-{{ $assessment->is_active ? 'warning' : 'success' }} btn-block mb-2"
                             onclick="toggleAssessmentStatus()">
-                        <i class="icon-power"></i> 
                         {{ $assessment->is_active ? 'Deactivate' : 'Activate' }}
                     </button>
                 @else
                     <button type="button" class="btn btn-success btn-block mb-2" disabled title="Add questions first">
-                        <i class="icon-power"></i> Activate
+                        Activate
                     </button>
                 @endif
 
                 <hr>
 
-                <button type="button" class="btn btn-primary btn-block" data-toggle="modal" data-target="#addQuestionModal">
-                    <i class="icon-plus"></i> Add Question
+                <button type="button" class="btn btn-primary btn-block mb-2" data-toggle="modal" data-target="#addQuestionModal">
+                    Add Question
                 </button>
+
+                <a href="{{ route('admin.assessments.questions.import-form', $assessment->id) }}" 
+                   class="btn btn-success btn-block">
+                    Import from CSV/Excel
+                </a>
             </div>
         </div>
 
