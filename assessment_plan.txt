@@ -1,0 +1,194 @@
+================================================================================
+ASSESSMENT INTEGRATION PLAN - ADMIN FLOW
+================================================================================
+
+CURRENT FLOW ANALYSIS:
+----------------------
+Programs → Modules → Weeks → Contents
+
+Admin creates content in this sequence:
+1. Create Program (e.g., "Data Analytics Bootcamp")
+2. Create Modules within Program (e.g., "Module 1: Foundations")
+3. Create Weeks within Module (e.g., "Week 1: Introduction")
+4. Create Contents within Week (e.g., videos, PDFs, links)
+
+
+PROPOSED ASSESSMENT INTEGRATION:
+================================================================================
+
+OPTION A: ASSESSMENT AS PARALLEL TO CONTENTS (RECOMMENDED)
+-----------------------------------------------------------
+
+Week Structure:
+├── Contents (videos, PDFs, articles, links)
+└── Assessment (quiz questions)
+
+Why this works:
+✓ Assessment is part of the week but separate from content
+✓ Learners complete contents THEN take assessment
+✓ Clean separation of learning materials vs evaluation
+✓ Matches the database structure (assessment belongs to week)
+
+Admin Flow:
+1. Create Program
+2. Create Module
+3. Create Week → Check "This week has assessment"
+4. FROM WEEK SHOW PAGE:
+   - Add Contents (existing flow)
+   - Add Assessment (new button/section)
+
+
+
+
+
+================================================================================
+RECOMMENDED INTEGRATION POINTS
+================================================================================
+
+1. WEEKS INDEX PAGE (admin.weeks.index)
+   - Add "Assessment" column showing status
+   - Show: ✓ Has Assessment (5 questions) or ✗ No Assessment
+
+2. WEEKS SHOW PAGE (admin.weeks.show) ⭐ PRIMARY ENTRY POINT
+   
+   Current Layout:
+   ┌─────────────────────────────────────────────────────┐
+   │ Week 1: Introduction to Data Analytics              │
+   │                                                     │
+   │ [Week Info Card]                                    │
+   │                                                     │
+   │ Contents Section                                    │
+   │ ├─ Video 1                                         │
+   │ ├─ Reading 1                                       │
+   │ └─ [Add Content Button]                            │
+   └─────────────────────────────────────────────────────┘
+
+   Proposed Layout:
+   ┌─────────────────────────────────────────────────────┐
+   │ Week 1: Introduction to Data Analytics              │
+   │                                                     │
+   │ [Week Info Card]                                    │
+   │                                                     │
+   │ Contents Section                                    │
+   │ ├─ Video 1                                         │
+   │ ├─ Reading 1                                       │
+   │ └─ [Add Content Button]                            │
+   │                                                     │
+   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+   │                                                     │
+   │ Assessment Section ⭐ NEW                           │
+   │                                                     │
+   │ SCENARIO 1: No Assessment Yet                       │
+   │ ┌─────────────────────────────────────────────────┐│
+   │ │ 📝 This week is marked as having an assessment  ││
+   │ │                                                 ││
+   │ │ No assessment created yet.                      ││
+   │ │                                                 ││
+   │ │ [Create Assessment]                             ││
+   │ └─────────────────────────────────────────────────┘│
+   │                                                     │
+   │ SCENARIO 2: Assessment Exists (Not Active)          │
+   │ ┌─────────────────────────────────────────────────┐│
+   │ │ 📝 Week 1 Assessment                            ││
+   │ │                                                 ││
+   │ │ Status: ⚠️ Inactive (not visible to learners)  ││
+   │ │ Questions: 5                                    ││
+   │ │ Pass: 70% | Attempts: 3 | Time: 20 min         ││
+   │ │                                                 ││
+   │ │ [Manage Questions] [Edit Settings] [Activate]   ││
+   │ └─────────────────────────────────────────────────┘│
+   │                                                     │
+   │ SCENARIO 3: Assessment Active                       │
+   │ ┌─────────────────────────────────────────────────┐│
+   │ │ 📝 Week 1 Assessment ✅                         ││
+   │ │                                                 ││
+   │ │ Status: Active (visible to learners)            ││
+   │ │ Questions: 5                                    ││
+   │ │ Pass: 70% | Attempts: 3 | Time: 20 min         ││
+   │ │ Learner Attempts: 12                            ││
+   │ │ Avg Score: 78%                                  ││
+   │ │                                                 ││
+   │ │ [Manage Questions] [Edit Settings] [Deactivate] ││
+   │ │ [View Attempts]                                 ││
+   │ └─────────────────────────────────────────────────┘│
+   └─────────────────────────────────────────────────────┘
+
+3. MODULES SHOW PAGE (admin.modules.show)
+   - Add assessment count to week listing
+   - Week 1: Introduction (5 contents, ✓ Assessment)
+
+4. CREATE ASSESSMENT PAGE (admin.assessments.create)
+   - Accessed from week show page
+   - Pre-filled with week context
+   - Just settings (title, time limit, attempts, etc.)
+   - After creation → redirect to question management
+
+5. MANAGE QUESTIONS PAGE (admin.assessments.questions.index) ⭐ KEY PAGE
+   
+   Layout:
+   ┌─────────────────────────────────────────────────────┐
+   │ Week 1 Assessment - Questions                       │
+   │                                                     │
+   │ [Back to Week] [Edit Settings] [Preview]           │
+   │                                                     │
+   │ Assessment Info:                                    │
+   │ Pass: 70% | Max Attempts: 3 | Time: 20 min         │
+   │                                                     │
+   │ Questions (5) - Total Points: 10                    │
+   │                                                     │
+   │ ┌─────────────────────────────────────────────────┐│
+   │ │ Question 1 (2 points)              [Edit] [Del] ││
+   │ │ What is the purpose of data cleaning?           ││
+   │ │ Type: Multiple Choice | ✓ Has Explanation       ││
+   │ └─────────────────────────────────────────────────┘│
+   │                                                     │
+   │ ┌─────────────────────────────────────────────────┐│
+   │ │ Question 2 (1 point)               [Edit] [Del] ││
+   │ │ True or False: SQL stands for...                ││
+   │ │ Type: True/False                                ││
+   │ └─────────────────────────────────────────────────┘│
+   │                                                     │
+   │ [+ Add Question] [Reorder Questions]                │
+   │                                                     │
+   │ ⚠️ Assessment is INACTIVE                           │
+   │ Add at least 3 questions, then activate            │
+   │ [Activate Assessment]                               │
+   └─────────────────────────────────────────────────────┘
+
+   Add Question Modal/Form:
+   ┌─────────────────────────────────────────────────────┐
+   │ Add Question                                        │
+   │                                                     │
+   │ Question Type: ○ Multiple Choice                   │
+   │                ○ True/False                         │
+   │                ○ Multiple Select                    │
+   │                                                     │
+   │ Question Text: [                                 ]  │
+   │                                                     │
+   │ Upload Image (optional): [Choose File]              │
+   │                                                     │
+   │ Points: [1]                                         │
+   │                                                     │
+   │ Options:                                            │
+   │ ○ A: [                                    ] ☑️      │
+   │ ○ B: [                                    ]         │
+   │ ○ C: [                                    ]         │
+   │ ○ D: [                                    ]         │
+   │                                                     │
+   │ Explanation (shown after submission):               │
+   │ [                                                ]  │
+   │                                                     │
+   │ [Save Question] [Cancel]                            │
+   └─────────────────────────────────────────────────────┘
+
+6. EDIT ASSESSMENT SETTINGS (admin.assessments.edit)
+   - Update time limit, attempts, pass percentage
+   - Toggle randomization
+   - Activate/Deactivate
+
+7. VIEW ATTEMPTS (OPTIONAL - PHASE 2)
+   - See which learners took assessment
+   - Individual scores
+   - Question performance analytics
+
+

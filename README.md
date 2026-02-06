@@ -77,3 +77,11 @@ Program (e.g., Data Analytics - 8 weeks)
 - ✅ **Simplified enrollment flow** - Program details + enrollment form on same page
 - ✅ **Clear progression path** - Complete current program before enrolling in new one
 
+
+
+
+## mentor relationship to cohort
+Cohorts are program-specific - A mentor teaches a specific cohort of a specific program
+Natural grouping - Learners in a cohort share the same mentor
+Flexibility - A mentor can teach multiple cohorts (different programs or same program, different batches)
+Clean data - One mentor per cohort, many learners per cohort

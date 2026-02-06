@@ -40,13 +40,19 @@
                     </div>
                 </div>
 
-                <!-- Questions List -->
+                <!-- Questions List -->               
+
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0">Questions</h5>
-                    <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addQuestionModal">
-                        <i class="icon-plus"></i> Add Question
-                    </button>
-                    
+                    <div>
+                        <a href="{{ route('admin.assessments.questions.import-form', $assessment->id) }}" 
+                        class="btn btn-success btn-sm mr-2">
+                            <i class="icon-upload"></i> Import from CSV/Excel
+                        </a>
+                        <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addQuestionModal">
+                            <i class="icon-plus"></i> Add Question
+                        </button>
+                    </div>
                 </div>
 
                 @if($assessment->questions->count() > 0)
