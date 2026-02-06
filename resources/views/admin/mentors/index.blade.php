@@ -1,64 +1,192 @@
 @extends('layouts.admin')
 
-@section('content')
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <h4 class="card-title mb-0">Mentor Management</h4>
-                        <a href="{{ route('admin.mentors.create') }}" class="btn btn-primary">
-                            <i class="fa fa-plus-circle mr-2"></i>Add New Mentor
-                        </a>
-                    </div>
+@section('title', 'Mentor Management')
+@section('breadcrumb-parent', 'Users')
+@section('breadcrumb-current', 'Mentors')
 
-                    <!-- Filters -->
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="font-weight-bold small text-uppercase">Filter by Status</label>
-                            <select id="statusFilter" class="form-control">
-                                <option value="">All Statuses</option>
-                                <option value="active">Active</option>
-                                <option value="suspended">Suspended</option>
-                                <option value="inactive">Inactive</option>
+@section('content')
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="card-title mb-0">Mentor Management</h4>
+                    <a href="{{ route('admin.mentors.create') }}" class="btn btn-primary">
+                        <i class="fa fa-plus-circle mr-2"></i>Add New Mentor
+                    </a>
+                </div>
+
+                <!-- Filters Form -->
+                <form method="GET" action="{{ route('admin.mentors.index') }}" id="filterForm">
+                    <div class="row mb-4">
+                        <!-- Search -->
+                        <div class="col-md-6">
+                            <input type="text" 
+                                   class="form-control form-control-sm" 
+                                   name="search" 
+                                   placeholder="Search by name or email..." 
+                                   value="{{ request('search') }}"
+                                   id="searchInput">
+                        </div>
+
+                        <!-- Status Filter -->
+                        <div class="col-md-6">
+                            <select class="form-control form-control-sm" name="status" onchange="this.form.submit()">
+                                <option value="">All Status</option>
+                                <option value="active" {{ request('status') == 'active' ? 'selected' : '' }}>Active</option>
+                                <option value="suspended" {{ request('status') == 'suspended' ? 'selected' : '' }}>Suspended</option>
+                                <option value="inactive" {{ request('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
                             </select>
                         </div>
                     </div>
 
-                    <!-- Table -->
-                    <div class="table-responsive">
-                        <table id="mentorsTable" class="table table-striped table-bordered" style="width:100%">
-                            <thead>
-                                <tr>
-                                    <th>Mentor</th>
-                                    <th>Email</th>
-                                    <th>Phone</th>
-                                    <th>Programs</th>
-                                    <th>Cohorts</th>
-                                    <th>Status</th>
-                                    <th>Joined</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Data loaded via AJAX -->
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <th>Mentor</th>
-                                    <th>Email</th>
-                                    <th>Phone</th>
-                                    <th>Programs</th>
-                                    <th>Cohorts</th>
-                                    <th>Status</th>
-                                    <th>Joined</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </tfoot>
-                        </table>
+                    <!-- Active Filters & Clear -->
+                    @if(request()->hasAny(['status', 'search']))
+                    <div class="mb-3">
+                        <a href="{{ route('admin.mentors.index') }}" class="btn btn-sm btn-outline-secondary">
+                            Clear All Filters
+                        </a>
+                    </div>
+                    @endif
+                </form>
+
+                <!-- Mentors Table -->
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="thead-light">
+                            <tr>
+                                <th style="width: 25%;">Mentor</th>
+                                <th style="width: 20%;">Contact</th>
+                                <th style="width: 20%;">Programs</th>
+                                <th style="width: 10%;">Cohorts</th>
+                                <th style="width: 10%;">Status</th>
+                                <th style="width: 10%;">Joined</th>
+                                <th style="width: 5%;" class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($mentors as $mentor)
+                            @php
+                                // Get unique programs this mentor teaches
+                                $programs = $mentor->cohorts()
+                                    ->with('program')
+                                    ->get()
+                                    ->pluck('program')
+                                    ->unique('id')
+                                    ->pluck('name')
+                                    ->toArray();
+                            @endphp
+                            <tr>
+                                <!-- Mentor Name & Avatar -->
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <img src="{{ $mentor->avatar_url }}" 
+                                             class="rounded mr-2" 
+                                             style="width: 35px; height: 35px; object-fit: cover;" 
+                                             alt="{{ $mentor->name }}">
+                                        <div>
+                                            <div class="font-weight-bold">{{ $mentor->name }}</div>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- Contact -->
+                                <td>
+                                    <div class="small text-muted">{{ $mentor->email }}</div>
+                                    @if($mentor->phone)
+                                        <div class="small text-muted">{{ $mentor->phone }}</div>
+                                    @endif
+                                </td>
+
+                                <!-- Programs -->
+                                <td>
+                                    @if(count($programs) > 0)
+                                        <span class="small">{{ Str::limit(implode(', ', $programs), 40) }}</span>
+                                    @else
+                                        <span class="text-muted small">No Programs</span>
+                                    @endif
+                                </td>
+
+                                <!-- Cohorts Count -->
+                                <td>
+                                    <span class="badge badge-primary badge-pill">{{ $mentor->cohorts_count }}</span>
+                                </td>
+
+                                <!-- Status -->
+                                <td>
+                                    @switch($mentor->status)
+                                        @case('active')
+                                            <span class="badge badge-sm badge-success">Active</span>
+                                            @break
+                                        @case('suspended')
+                                            <span class="badge badge-sm badge-danger">Suspended</span>
+                                            @break
+                                        @case('inactive')
+                                            <span class="badge badge-sm badge-secondary">Inactive</span>
+                                            @break
+                                    @endswitch
+                                </td>
+
+                                <!-- Joined Date -->
+                                <td>
+                                    <small class="text-muted">{{ $mentor->created_at->format('M d, Y') }}</small>
+                                </td>
+
+                                <!-- Actions -->
+                                <td class="text-center">
+                                    <div class="dropdown">
+                                        <button type="button" class="btn btn-sm btn-light" data-toggle="dropdown">
+                                            <i class="fa fa-ellipsis-v"></i>
+                                        </button>
+                                        <div class="dropdown-menu dropdown-menu-right">
+                                            <a href="{{ route('admin.mentors.edit', $mentor->id) }}" class="dropdown-item">
+                                                <i class="fa fa-edit"></i> Edit
+                                            </a>
+                                            <div class="dropdown-divider"></div>
+                                            <button type="button" class="dropdown-item" onclick="changeStatus({{ $mentor->id }}, '{{ $mentor->status }}')">
+                                                <i class="fa fa-refresh"></i> Change Status
+                                            </button>
+                                            <div class="dropdown-divider"></div>
+                                            <button type="button" class="dropdown-item text-danger" onclick="deleteMentor({{ $mentor->id }})">
+                                                <i class="fa fa-trash"></i> Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="7" class="text-center py-5">
+                                    <div class="text-muted">
+                                        <i class="fa fa-users fa-3x mb-3"></i>
+                                        <p>No mentors found</p>
+                                        @if(request()->hasAny(['status', 'search']))
+                                            <a href="{{ route('admin.mentors.index') }}" class="btn btn-sm btn-outline-primary">Clear Filters</a>
+                                        @else
+                                            <a href="{{ route('admin.mentors.create') }}" class="btn btn-sm btn-primary">
+                                                <i class="fa fa-plus-circle mr-2"></i>Add First Mentor
+                                            </a>
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                @if($mentors->hasPages())
+                <div class="d-flex justify-content-between align-items-center mt-4">
+                    <div class="text-muted">
+                        Showing {{ $mentors->firstItem() }} to {{ $mentors->lastItem() }} of {{ $mentors->total() }} entries
+                    </div>
+                    <div>
+                        {{ $mentors->links() }}
                     </div>
                 </div>
+                @endif
             </div>
         </div>
     </div>
@@ -99,190 +227,70 @@
         </div>
     </div>
 </div>
-
 @endsection
 
 @push('scripts')
 <script>
-// Debug logging
-console.log('jQuery loaded:', typeof $ !== 'undefined');
-console.log('DataTables loaded:', typeof $.fn.DataTable !== 'undefined');
+// Debounced search
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('keyup', function(e) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        document.getElementById('filterForm').submit();
+    }, 500);
+});
 
-$(document).ready(function() {
-    console.log('Initializing mentors table...');
+// Change Status
+function changeStatus(mentorId, currentStatus) {
+    $('#statusMentorId').val(mentorId);
+    $('#newStatus').val(currentStatus);
+    $('#statusModal').modal('show');
+}
+
+$('#statusForm').on('submit', function(e) {
+    e.preventDefault();
     
-    let table = $('#mentorsTable').DataTable({
-        processing: true,
-        serverSide: true,
-        ajax: {
-            url: '{{ route("admin.mentors.data") }}',
-            type: 'GET',
-            data: function(d) {
-                d.status = $('#statusFilter').val();
-                console.log('AJAX request data:', d);
-            },
-            error: function(xhr, error, thrown) {
-                console.error('DataTables AJAX Error:', xhr.responseText);
-                toastr.error('Error loading data: ' + xhr.statusText);
-            },
-            dataSrc: function(json) {
-                console.log('Response received:', json);
-                return json.data;
-            }
+    let mentorId = $('#statusMentorId').val();
+    let newStatus = $('#newStatus').val();
+    
+    $.ajax({
+        url: '/admin/mentors/' + mentorId + '/status',
+        type: 'POST',
+        data: {
+            _token: '{{ csrf_token() }}',
+            status: newStatus
         },
-        columns: [
-            {
-                data: 'name',
-                name: 'first_name',
-                render: function(data, type, row) {
-                    return '<div class="d-flex align-items-center">' +
-                           '<img src="' + row.avatar_url + '" class="rounded mr-2" style="width: 40px; height: 40px;" alt="' + row.name + '">' +
-                           '<div><strong>' + row.name + '</strong></div>' +
-                           '</div>';
-                }
-            },
-            {
-                data: 'email',
-                name: 'email',
-                render: function(data) {
-                    return '<span class="text-muted">' + data + '</span>';
-                }
-            },
-            {
-                data: 'phone',
-                name: 'phone',
-                orderable: false
-            },
-            {
-                data: 'programs',
-                name: 'programs',
-                orderable: false,
-                render: function(data) {
-                    if (data === 'No Programs') {
-                        return '<span class="text-muted">—</span>';
-                    }
-                    return '<span class="small">' + data + '</span>';
-                }
-            },
-            {
-                data: 'cohorts_count',
-                name: 'cohorts_count',
-                render: function(data) {
-                    return '<span class="badge badge-primary badge-pill">' + data + '</span>';
-                }
-            },
-            {
-                data: 'status',
-                name: 'status',
-                render: function(data) {
-                    let badgeClass = '';
-                    switch(data) {
-                        case 'active':
-                            badgeClass = 'badge-success';
-                            break;
-                        case 'suspended':
-                            badgeClass = 'badge-danger';
-                            break;
-                        case 'inactive':
-                            badgeClass = 'badge-secondary';
-                            break;
-                    }
-                    return '<span class="badge ' + badgeClass + '">' + data.charAt(0).toUpperCase() + data.slice(1) + '</span>';
-                }
-            },
-            {
-                data: 'joined_at',
-                name: 'created_at',
-                render: function(data) {
-                    return '<span class="text-muted">' + data + '</span>';
-                }
-            },
-            {
-                data: 'actions',
-                name: 'actions',
-                orderable: false,
-                searchable: false,
-                render: function(data, type, row) {
-                    return '<div class="btn-group btn-group-sm">' +
-                           '<a href="/admin/mentors/' + row.id + '/edit" class="btn btn-primary btn-sm" title="Edit">' +
-                           '<i class="fa fa-pencil"></i>' +
-                           '</a>' +
-                           '<button class="btn btn-warning btn-sm change-status" data-id="' + row.id + '" data-status="' + row.status + '" title="Change Status">' +
-                           '<i class="fa fa-refresh"></i>' +
-                           '</button>' +
-                           '<button class="btn btn-danger btn-sm delete-mentor" data-id="' + row.id + '" title="Delete">' +
-                           '<i class="fa fa-trash"></i>' +
-                           '</button>' +
-                           '</div>';
-                }
-            }
-        ],
-        order: [[6, 'desc']],
-        pageLength: 10,
-        responsive: true
-    });
-
-    // Filter handler
-    $('#statusFilter').on('change', function() {
-        console.log('Filter changed');
-        table.ajax.reload();
-    });
-
-    // Change Status
-    $(document).on('click', '.change-status', function() {
-        let mentorId = $(this).data('id');
-        let currentStatus = $(this).data('status');
-        
-        $('#statusMentorId').val(mentorId);
-        $('#newStatus').val(currentStatus);
-        $('#statusModal').modal('show');
-    });
-
-    $('#statusForm').on('submit', function(e) {
-        e.preventDefault();
-        
-        let mentorId = $('#statusMentorId').val();
-        let newStatus = $('#newStatus').val();
-        
-        $.ajax({
-            url: '/admin/mentors/' + mentorId + '/status',
-            type: 'POST',
-            data: {
-                _token: '{{ csrf_token() }}',
-                status: newStatus
-            },
-            success: function(response) {
-                $('#statusModal').modal('hide');
-                toastr.success(response.message);
-                table.ajax.reload();
-            },
-            error: function(xhr) {
-                toastr.error(xhr.responseJSON?.message || 'Failed to update status');
-            }
-        });
-    });
-
-    // Delete Mentor
-    $(document).on('click', '.delete-mentor', function() {
-        let mentorId = $(this).data('id');
-        
-        if (confirm('Are you sure you want to delete this mentor? This action cannot be undone.')) {
-            $.ajax({
-                url: '/admin/mentors/' + mentorId,
-                type: 'DELETE',
-                data: {
-                    _token: '{{ csrf_token() }}'
-                },
-                success: function(response) {
-                    toastr.success(response.message);
-                    table.ajax.reload();
-                },
-                error: function(xhr) {
-                    toastr.error(xhr.responseJSON?.message || 'Failed to delete mentor');
-                }
-            });
+        success: function(response) {
+            $('#statusModal').modal('hide');
+            toastr.success(response.message);
+            setTimeout(() => window.location.reload(), 1000);
+        },
+        error: function(xhr) {
+            toastr.error(xhr.responseJSON?.message || 'Failed to update status');
         }
     });
 });
+
+// Delete Mentor
+function deleteMentor(mentorId) {
+    if (!confirm('Are you sure you want to delete this mentor? This action cannot be undone.')) {
+        return;
+    }
+    
+    $.ajax({
+        url: '/admin/mentors/' + mentorId,
+        type: 'DELETE',
+        data: {
+            _token: '{{ csrf_token() }}'
+        },
+        success: function(response) {
+            toastr.success(response.message);
+            setTimeout(() => window.location.reload(), 1000);
+        },
+        error: function(xhr) {
+            toastr.error(xhr.responseJSON?.message || 'Failed to delete mentor');
+        }
+    });
+}
 </script>
 @endpush

@@ -28,14 +28,25 @@ class AssessmentQuestionController extends Controller
      */
     public function store(Request $request, Assessment $assessment)
     {
+        // First, decode JSON options if they were sent as JSON string
+        if ($request->has('options') && is_string($request->options)) {
+            $request->merge(['options' => json_decode($request->options, true)]);
+        }
+        
+        // Decode correct_answer if it's JSON string (for multiple_select)
+        if ($request->has('correct_answer') && is_string($request->correct_answer)) {
+            $decoded = json_decode($request->correct_answer, true);
+            if ($decoded !== null) {
+                $request->merge(['correct_answer' => $decoded]);
+            }
+        }
+
         $request->validate([
             'question_type' => 'required|in:multiple_choice,true_false,multiple_select',
             'question_text' => 'required|string',
             'question_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'points' => 'required|integer|min:1',
             'explanation' => 'nullable|string',
-            'options' => 'required_unless:question_type,true_false|array',
-            'correct_answer' => 'required',
         ]);
 
         try {
@@ -219,8 +230,20 @@ class AssessmentQuestionController extends Controller
 
             case 'multiple_choice':
             case 'multiple_select':
-                // Expected format: ['A' => 'text', 'B' => 'text', ...]
-                return $request->options;
+                // If options already decoded from JSON, use it
+                if ($request->has('options') && is_array($request->options)) {
+                    return $request->options;
+                }
+                
+                // Otherwise build from individual fields
+                $options = [];
+                foreach (['A', 'B', 'C', 'D'] as $key) {
+                    $value = $request->input("options.{$key}");
+                    if ($value) {
+                        $options[$key] = $value;
+                    }
+                }
+                return $options;
 
             default:
                 return [];
@@ -240,7 +263,12 @@ class AssessmentQuestionController extends Controller
                 return ['answer' => $request->correct_answer];
 
             case 'multiple_select':
-                // Expected format: array of keys ['A', 'C', 'D']
+                // If already an array (decoded from JSON), use it
+                if (is_array($request->correct_answer)) {
+                    return ['answers' => $request->correct_answer];
+                }
+                
+                // Otherwise it should be a single value
                 $answers = is_array($request->correct_answer) 
                     ? $request->correct_answer 
                     : [$request->correct_answer];

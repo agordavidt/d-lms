@@ -5,94 +5,52 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Enrollment;
+use App\Models\Program;
 use Illuminate\Http\Request;
 
 class LearnerController extends Controller
 {
     /**
-     * Display all learners
+     * Display all learners with backend filtering
      */
-    public function index()
-    {
-        return view('admin.learners.index');
-    }
-
-    /**
-     * Get learners data for DataTables
-     */
-    public function getData(Request $request)
+    public function index(Request $request)
     {
         $query = User::where('role', 'learner')
-            ->with(['enrollments.program', 'enrollments.cohort', 'enrollments.cohort.mentor']);
+            ->with(['enrollments' => function($q) {
+                $q->whereIn('status', ['active', 'pending'])
+                  ->with(['program', 'cohort.mentor'])
+                  ->latest();
+            }]);
 
-        // Search
-        if ($request->has('search') && $request->search['value'] != '') {
-            $search = $request->search['value'];
+        // Search by name or email
+        if ($request->filled('search')) {
+            $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
-                  ->orWhere('last_name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+                $q->where('first_name', 'like', '%' . $search . '%')
+                  ->orWhere('last_name', 'like', '%' . $search . '%')
+                  ->orWhere('email', 'like', '%' . $search . '%');
             });
         }
 
         // Filter by status
-        if ($request->has('status') && $request->status != '') {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
         // Filter by program
-        if ($request->has('program') && $request->program != '') {
+        if ($request->filled('program_id')) {
             $query->whereHas('enrollments', function($q) use ($request) {
-                $q->where('program_id', $request->program);
+                $q->where('program_id', $request->program_id)
+                  ->whereIn('status', ['active', 'pending']);
             });
         }
 
-        $totalRecords = User::where('role', 'learner')->count();
-        $filteredRecords = $query->count();
-
-        // Sorting
-        if ($request->has('order')) {
-            $columnIndex = $request->order[0]['column'];
-            $columnName = $request->columns[$columnIndex]['data'];
-            $sortDirection = $request->order[0]['dir'];
-            
-            if (in_array($columnName, ['first_name', 'email', 'status', 'created_at'])) {
-                $query->orderBy($columnName, $sortDirection);
-            }
-        } else {
-            $query->latest();
-        }
-
-        $start = $request->start ?? 0;
-        $length = $request->length ?? 10;
+        $learners = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
         
-        $learners = $query->skip($start)->take($length)->get();
+        // Get programs for filter
+        $programs = Program::active()->orderBy('name')->get(['id', 'name']);
 
-        $data = $learners->map(function($learner) {
-            $enrollment = $learner->enrollments()->whereIn('status', ['active', 'pending'])->first();
-            
-            return [
-                'id' => $learner->id,
-                'name' => $learner->name,
-                'email' => $learner->email,
-                'phone' => $learner->phone ?? 'N/A',
-                'avatar_url' => $learner->avatar_url,
-                'program' => $enrollment ? $enrollment->program->name : 'Not Enrolled',
-                'cohort' => $enrollment ? $enrollment->cohort->name : 'N/A',
-                'mentor' => $enrollment && $enrollment->cohort->mentor ? $enrollment->cohort->mentor->name : 'N/A',
-                'enrollment_status' => $enrollment ? $enrollment->status : 'none',
-                'status' => $learner->status,
-                'joined_at' => $learner->created_at->format('M d, Y'),
-                'actions' => $learner->id
-            ];
-        });
-
-        return response()->json([
-            'draw' => intval($request->draw),
-            'recordsTotal' => $totalRecords,
-            'recordsFiltered' => $filteredRecords,
-            'data' => $data
-        ]);
+        return view('admin.learners.index', compact('learners', 'programs'));
     }
 
     /**
@@ -105,26 +63,28 @@ class LearnerController extends Controller
                 'enrollments.program',
                 'enrollments.cohort.mentor',
                 'enrollments.payments',
-                'contentProgress.content'
             ])
             ->findOrFail($id);
 
-        $enrollment = $learner->enrollments()->whereIn('status', ['active', 'pending'])->first();
+        $enrollment = $learner->enrollments()
+            ->whereIn('status', ['active', 'pending'])
+            ->with(['program.modules.weeks.contents', 'cohort.mentor'])
+            ->first();
         
         // Calculate progress statistics if enrolled
         $progressStats = null;
         if ($enrollment) {
-            $totalContent = $enrollment->program->modules()
-                ->with('weeks.contents')
-                ->get()
-                ->sum(function($module) {
-                    return $module->weeks->sum(function($week) {
-                        return $week->contents->count();
-                    });
-                });
+            // Count total published content in the program
+            $totalContent = 0;
+            foreach ($enrollment->program->modules as $module) {
+                foreach ($module->weeks as $week) {
+                    $totalContent += $week->contents()->where('status', 'published')->count();
+                }
+            }
 
+            // Count completed content for this learner
             $completedContent = $learner->contentProgress()
-                ->where('status', 'completed')
+                ->where('is_completed', true)
                 ->count();
 
             $progressStats = [
@@ -149,7 +109,6 @@ class LearnerController extends Controller
                 'status' => 'required|in:active,suspended,inactive'
             ]);
 
-            $oldStatus = $learner->status;
             $learner->update(['status' => $request->status]);
 
             return response()->json([

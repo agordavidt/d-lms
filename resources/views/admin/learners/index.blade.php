@@ -1,72 +1,200 @@
 @extends('layouts.admin')
 
-@section('content')
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <h4 class="card-title mb-0">Learner Management</h4>
-                    </div>
+@section('title', 'Learner Management')
+@section('breadcrumb-parent', 'Users')
+@section('breadcrumb-current', 'Learners')
 
-                    <!-- Filters -->
-                    <div class="row mb-3">
+@section('content')
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="card-title mb-0">Learner Management</h4>
+                    <div class="text-muted">
+                        Total: {{ $learners->total() }} learners
+                    </div>
+                </div>
+
+                <!-- Filters Form -->
+                <form method="GET" action="{{ route('admin.learners.index') }}" id="filterForm">
+                    <div class="row mb-4">
+                        <!-- Search -->
                         <div class="col-md-4">
-                            <label class="font-weight-bold small text-uppercase">Filter by Status</label>
-                            <select id="statusFilter" class="form-control">
-                                <option value="">All Statuses</option>
-                                <option value="active">Active</option>
-                                <option value="suspended">Suspended</option>
-                                <option value="inactive">Inactive</option>
-                            </select>
+                            <input type="text" 
+                                   class="form-control form-control-sm" 
+                                   name="search" 
+                                   placeholder="Search by name or email..." 
+                                   value="{{ request('search') }}"
+                                   id="searchInput">
                         </div>
+
+                        <!-- Program Filter -->
                         <div class="col-md-4">
-                            <label class="font-weight-bold small text-uppercase">Filter by Program</label>
-                            <select id="programFilter" class="form-control">
+                            <select class="form-control form-control-sm" name="program_id" onchange="this.form.submit()">
                                 <option value="">All Programs</option>
-                                @foreach(\App\Models\Program::all() as $program)
-                                    <option value="{{ $program->id }}">{{ $program->name }}</option>
+                                @foreach($programs as $program)
+                                    <option value="{{ $program->id }}" {{ request('program_id') == $program->id ? 'selected' : '' }}>
+                                        {{ $program->name }}
+                                    </option>
                                 @endforeach
                             </select>
                         </div>
+
+                        <!-- Status Filter -->
+                        <div class="col-md-4">
+                            <select class="form-control form-control-sm" name="status" onchange="this.form.submit()">
+                                <option value="">All Status</option>
+                                <option value="active" {{ request('status') == 'active' ? 'selected' : '' }}>Active</option>
+                                <option value="suspended" {{ request('status') == 'suspended' ? 'selected' : '' }}>Suspended</option>
+                                <option value="inactive" {{ request('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <!-- Table -->
-                    <div class="table-responsive">
-                        <table id="learnersTable" class="table table-striped table-bordered" style="width:100%">
-                            <thead>
-                                <tr>
-                                    <th>Learner</th>
-                                    <th>Email</th>
-                                    <th>Phone</th>
-                                    <th>Program</th>
-                                    <th>Cohort</th>
-                                    <th>Mentor</th>
-                                    <th>Status</th>
-                                    <th>Joined</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Data loaded via AJAX -->
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <th>Learner</th>
-                                    <th>Email</th>
-                                    <th>Phone</th>
-                                    <th>Program</th>
-                                    <th>Cohort</th>
-                                    <th>Mentor</th>
-                                    <th>Status</th>
-                                    <th>Joined</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </tfoot>
-                        </table>
+                    <!-- Active Filters & Clear -->
+                    @if(request()->hasAny(['program_id', 'status', 'search']))
+                    <div class="mb-3">
+                        <a href="{{ route('admin.learners.index') }}" class="btn btn-sm btn-outline-secondary">
+                            Clear All Filters
+                        </a>
+                    </div>
+                    @endif
+                </form>
+
+                <!-- Learners Table -->
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="thead-light">
+                            <tr>
+                                <th style="width: 25%;">Learner</th>
+                                <th style="width: 20%;">Contact</th>
+                                <th style="width: 20%;">Program</th>
+                                <th style="width: 15%;">Cohort</th>
+                                <th style="width: 10%;">Status</th>
+                                <th style="width: 10%;">Joined</th>
+                                <th style="width: 5%;" class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($learners as $learner)
+                            @php
+                                $enrollment = $learner->enrollments->first();
+                            @endphp
+                            <tr>
+                                <!-- Learner Name & Avatar -->
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <img src="{{ $learner->avatar_url }}" 
+                                             class="rounded mr-2" 
+                                             style="width: 35px; height: 35px; object-fit: cover;" 
+                                             alt="{{ $learner->name }}">
+                                        <div>
+                                            <div class="font-weight-bold">{{ $learner->name }}</div>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- Contact -->
+                                <td>
+                                    <div class="small text-muted">{{ $learner->email }}</div>
+                                    @if($learner->phone)
+                                        <div class="small text-muted">{{ $learner->phone }}</div>
+                                    @endif
+                                </td>
+
+                                <!-- Program -->
+                                <td>
+                                    @if($enrollment && $enrollment->program)
+                                        <span class="small">{{ Str::limit($enrollment->program->name, 30) }}</span>
+                                    @else
+                                        <span class="text-muted small">Not Enrolled</span>
+                                    @endif
+                                </td>
+
+                                <!-- Cohort -->
+                                <td>
+                                    @if($enrollment && $enrollment->cohort)
+                                        <span class="small">{{ $enrollment->cohort->name }}</span>
+                                        @if($enrollment->cohort->mentor)
+                                            <div class="text-muted small">{{ $enrollment->cohort->mentor->name }}</div>
+                                        @endif
+                                    @else
+                                        <span class="text-muted">—</span>
+                                    @endif
+                                </td>
+
+                                <!-- Status -->
+                                <td>
+                                    @switch($learner->status)
+                                        @case('active')
+                                            <span class="badge badge-sm badge-success">Active</span>
+                                            @break
+                                        @case('suspended')
+                                            <span class="badge badge-sm badge-danger">Suspended</span>
+                                            @break
+                                        @case('inactive')
+                                            <span class="badge badge-sm badge-secondary">Inactive</span>
+                                            @break
+                                    @endswitch
+                                    
+                                    @if($enrollment && $enrollment->status === 'pending')
+                                        <br><span class="badge badge-sm badge-warning mt-1">Payment Pending</span>
+                                    @endif
+                                </td>
+
+                                <!-- Joined Date -->
+                                <td>
+                                    <small class="text-muted">{{ $learner->created_at->format('M d, Y') }}</small>
+                                </td>
+
+                                <!-- Actions -->
+                                <td class="text-center">
+                                    <div class="dropdown">
+                                        <button type="button" class="btn btn-sm btn-light" data-toggle="dropdown">
+                                            <i class="fa fa-ellipsis-v"></i>
+                                        </button>
+                                        <div class="dropdown-menu dropdown-menu-right">
+                                            <a href="{{ route('admin.learners.show', $learner->id) }}" class="dropdown-item">
+                                                <i class="fa fa-eye"></i> View Details
+                                            </a>
+                                            <div class="dropdown-divider"></div>
+                                            <button type="button" class="dropdown-item" onclick="changeStatus({{ $learner->id }}, '{{ $learner->status }}')">
+                                                <i class="fa fa-refresh"></i> Change Status
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="7" class="text-center py-5">
+                                    <div class="text-muted">
+                                        <i class="fa fa-users fa-3x mb-3"></i>
+                                        <p>No learners found</p>
+                                        @if(request()->hasAny(['program_id', 'status', 'search']))
+                                            <a href="{{ route('admin.learners.index') }}" class="btn btn-sm btn-outline-primary">Clear Filters</a>
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                @if($learners->hasPages())
+                <div class="d-flex justify-content-between align-items-center mt-4">
+                    <div class="text-muted">
+                        Showing {{ $learners->firstItem() }} to {{ $learners->lastItem() }} of {{ $learners->total() }} entries
+                    </div>
+                    <div>
+                        {{ $learners->links() }}
                     </div>
                 </div>
+                @endif
             </div>
         </div>
     </div>
@@ -107,178 +235,47 @@
         </div>
     </div>
 </div>
-
 @endsection
 
 @push('scripts')
 <script>
-// Debug logging
-console.log('jQuery loaded:', typeof $ !== 'undefined');
-console.log('DataTables loaded:', typeof $.fn.DataTable !== 'undefined');
+// Debounced search
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('keyup', function(e) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        document.getElementById('filterForm').submit();
+    }, 500);
+});
 
-$(document).ready(function() {
-    console.log('Initializing learners table...');
+// Change Status
+function changeStatus(learnerId, currentStatus) {
+    $('#statusLearnerId').val(learnerId);
+    $('#newStatus').val(currentStatus);
+    $('#statusModal').modal('show');
+}
+
+$('#statusForm').on('submit', function(e) {
+    e.preventDefault();
     
-    let table = $('#learnersTable').DataTable({
-        processing: true,
-        serverSide: true,
-        ajax: {
-            url: '{{ route("admin.learners.data") }}',
-            type: 'GET',
-            data: function(d) {
-                d.status = $('#statusFilter').val();
-                d.program = $('#programFilter').val();
-                console.log('AJAX request data:', d);
-            },
-            error: function(xhr, error, thrown) {
-                console.error('DataTables AJAX Error:', xhr.responseText);
-                toastr.error('Error loading data: ' + xhr.statusText);
-            },
-            dataSrc: function(json) {
-                console.log('Response received:', json);
-                return json.data;
-            }
+    let learnerId = $('#statusLearnerId').val();
+    let newStatus = $('#newStatus').val();
+    
+    $.ajax({
+        url: '/admin/learners/' + learnerId + '/status',
+        type: 'POST',
+        data: {
+            _token: '{{ csrf_token() }}',
+            status: newStatus
         },
-        columns: [
-            {
-                data: 'name',
-                name: 'first_name',
-                render: function(data, type, row) {
-                    return '<div class="d-flex align-items-center">' +
-                           '<img src="' + row.avatar_url + '" class="rounded mr-2" style="width: 40px; height: 40px;" alt="' + row.name + '">' +
-                           '<div><strong>' + row.name + '</strong></div>' +
-                           '</div>';
-                }
-            },
-            {
-                data: 'email',
-                name: 'email',
-                render: function(data) {
-                    return '<span class="text-muted">' + data + '</span>';
-                }
-            },
-            {
-                data: 'phone',
-                name: 'phone',
-                orderable: false
-            },
-            {
-                data: 'program',
-                name: 'program',
-                render: function(data) {
-                    if (data === 'Not Enrolled') {
-                        return '<span class="badge badge-secondary">Not Enrolled</span>';
-                    }
-                    return '<span class="font-weight-bold">' + data + '</span>';
-                }
-            },
-            {
-                data: 'cohort',
-                name: 'cohort',
-                render: function(data) {
-                    return data === 'N/A' ? '<span class="text-muted">—</span>' : data;
-                }
-            },
-            {
-                data: 'mentor',
-                name: 'mentor',
-                render: function(data) {
-                    return data === 'N/A' ? '<span class="text-muted">—</span>' : data;
-                }
-            },
-            {
-                data: 'status',
-                name: 'status',
-                render: function(data, type, row) {
-                    let badgeClass = '';
-                    switch(data) {
-                        case 'active':
-                            badgeClass = 'badge-success';
-                            break;
-                        case 'suspended':
-                            badgeClass = 'badge-danger';
-                            break;
-                        case 'inactive':
-                            badgeClass = 'badge-secondary';
-                            break;
-                    }
-                    
-                    let html = '<span class="badge ' + badgeClass + '">' + data.charAt(0).toUpperCase() + data.slice(1) + '</span>';
-                    
-                    if (row.enrollment_status === 'pending') {
-                        html += '<br><span class="badge badge-warning mt-1">Payment Pending</span>';
-                    }
-                    
-                    return html;
-                }
-            },
-            {
-                data: 'joined_at',
-                name: 'created_at',
-                render: function(data) {
-                    return '<span class="text-muted">' + data + '</span>';
-                }
-            },
-            {
-                data: 'actions',
-                name: 'actions',
-                orderable: false,
-                searchable: false,
-                render: function(data, type, row) {
-                    return '<div class="btn-group btn-group-sm">' +
-                           '<a href="/admin/learners/' + row.id + '" class="btn btn-primary btn-sm" title="View Details">' +
-                           '<i class="fa fa-eye"></i>' +
-                           '</a>' +
-                           '<button class="btn btn-warning btn-sm change-status" data-id="' + row.id + '" data-status="' + row.status + '" title="Change Status">' +
-                           '<i class="fa fa-refresh"></i>' +
-                           '</button>' +
-                           '</div>';
-                }
-            }
-        ],
-        order: [[7, 'desc']],
-        pageLength: 10,
-        responsive: true
-    });
-
-    // Filter handlers
-    $('#statusFilter, #programFilter').on('change', function() {
-        console.log('Filter changed');
-        table.ajax.reload();
-    });
-
-    // Change Status
-    $(document).on('click', '.change-status', function() {
-        let learnerId = $(this).data('id');
-        let currentStatus = $(this).data('status');
-        
-        $('#statusLearnerId').val(learnerId);
-        $('#newStatus').val(currentStatus);
-        $('#statusModal').modal('show');
-    });
-
-    $('#statusForm').on('submit', function(e) {
-        e.preventDefault();
-        
-        let learnerId = $('#statusLearnerId').val();
-        let newStatus = $('#newStatus').val();
-        
-        $.ajax({
-            url: '/admin/learners/' + learnerId + '/status',
-            type: 'POST',
-            data: {
-                _token: '{{ csrf_token() }}',
-                status: newStatus
-            },
-            success: function(response) {
-                $('#statusModal').modal('hide');
-                toastr.success(response.message);
-                table.ajax.reload();
-            },
-            error: function(xhr) {
-                toastr.error(xhr.responseJSON?.message || 'Failed to update status');
-            }
-        });
+        success: function(response) {
+            $('#statusModal').modal('hide');
+            toastr.success(response.message);
+            setTimeout(() => window.location.reload(), 1000);
+        },
+        error: function(xhr) {
+            toastr.error(xhr.responseJSON?.message || 'Failed to update status');
+        }
     });
 });
 </script>

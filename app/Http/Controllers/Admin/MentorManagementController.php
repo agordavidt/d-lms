@@ -15,87 +15,31 @@ use Illuminate\Validation\Rules\Password;
 class MentorManagementController extends Controller
 {
     /**
-     * Display all mentors
+     * Display all mentors with backend filtering
      */
-    public function index()
-    {
-        return view('admin.mentors.index');
-    }
-
-    /**
-     * Get mentors data for DataTables
-     */
-    public function getData(Request $request)
+    public function index(Request $request)
     {
         $query = User::where('role', 'mentor')
             ->withCount('cohorts');
 
-        // Search
-        if ($request->has('search') && $request->search['value'] != '') {
-            $search = $request->search['value'];
+        // Search by name or email
+        if ($request->filled('search')) {
+            $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
-                  ->orWhere('last_name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+                $q->where('first_name', 'like', '%' . $search . '%')
+                  ->orWhere('last_name', 'like', '%' . $search . '%')
+                  ->orWhere('email', 'like', '%' . $search . '%');
             });
         }
 
         // Filter by status
-        if ($request->has('status') && $request->status != '') {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
-        $totalRecords = User::where('role', 'mentor')->count();
-        $filteredRecords = $query->count();
+        $mentors = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
 
-        // Sorting
-        if ($request->has('order')) {
-            $columnIndex = $request->order[0]['column'];
-            $columnName = $request->columns[$columnIndex]['data'];
-            $sortDirection = $request->order[0]['dir'];
-            
-            if (in_array($columnName, ['first_name', 'email', 'status', 'created_at'])) {
-                $query->orderBy($columnName, $sortDirection);
-            }
-        } else {
-            $query->latest();
-        }
-
-        $start = $request->start ?? 0;
-        $length = $request->length ?? 10;
-        
-        $mentors = $query->skip($start)->take($length)->get();
-
-        $data = $mentors->map(function($mentor) {
-            // Get unique programs this mentor teaches
-            $programs = $mentor->cohorts()
-                ->with('program')
-                ->get()
-                ->pluck('program')
-                ->unique('id')
-                ->pluck('name')
-                ->toArray();
-
-            return [
-                'id' => $mentor->id,
-                'name' => $mentor->name,
-                'email' => $mentor->email,
-                'phone' => $mentor->phone ?? 'N/A',
-                'avatar_url' => $mentor->avatar_url,
-                'cohorts_count' => $mentor->cohorts_count,
-                'programs' => implode(', ', $programs) ?: 'No Programs',
-                'status' => $mentor->status,
-                'joined_at' => $mentor->created_at->format('M d, Y'),
-                'actions' => $mentor->id
-            ];
-        });
-
-        return response()->json([
-            'draw' => intval($request->draw),
-            'recordsTotal' => $totalRecords,
-            'recordsFiltered' => $filteredRecords,
-            'data' => $data
-        ]);
+        return view('admin.mentors.index', compact('mentors'));
     }
 
     /**

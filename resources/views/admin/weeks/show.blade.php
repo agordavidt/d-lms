@@ -300,24 +300,24 @@
                     <div class="mt-4 pt-3 border-top">
                         <a href="{{ route('admin.assessments.questions.index', $week->assessment->id) }}" 
                            class="btn btn-primary">
-                            <i class="icon-list"></i> Manage Questions ({{ $week->assessment->questions->count() }})
+                           Manage Questions ({{ $week->assessment->questions->count() }})
                         </a>
                         
                         <a href="{{ route('admin.assessments.edit', $week->assessment->id) }}" 
                            class="btn btn-secondary">
-                            <i class="icon-settings"></i> Edit Settings
+                           Edit Settings
                         </a>
 
                         @if($week->assessment->questions->count() > 0)
                             <button type="button" 
                                     class="btn btn-{{ $week->assessment->is_active ? 'warning' : 'success' }}"
                                     onclick="toggleAssessmentStatus({{ $week->assessment->id }})">
-                                <i class="icon-power"></i> 
+                                
                                 {{ $week->assessment->is_active ? 'Deactivate' : 'Activate' }}
                             </button>
                         @else
                             <button type="button" class="btn btn-success" disabled title="Add questions first">
-                                <i class="icon-power"></i> Activate
+                                Activate
                             </button>
                         @endif
 
@@ -325,7 +325,7 @@
                                 class="btn btn-danger float-right"
                                 onclick="deleteAssessment({{ $week->assessment->id }})"
                                 @if($week->assessment->attempts->count() > 0) disabled title="Cannot delete assessment with learner attempts" @endif>
-                            <i class="icon-trash"></i> Delete Assessment
+                            Delete Assessment
                         </button>
                     </div>
 
@@ -357,29 +357,29 @@
             <div class="card-body">
                 <a href="{{ route('admin.modules.show', $week->program_module_id) }}" 
                    class="btn btn-secondary btn-block mb-2">
-                    <i class="icon-arrow-left"></i> Back to Module
+                     Back to Module
                 </a>
                 
                 <a href="{{ route('admin.weeks.edit', $week->id) }}" 
                    class="btn btn-primary btn-block mb-2">
-                    <i class="icon-pencil"></i> Edit Week
+                    Edit Week
                 </a>
 
                 <a href="{{ route('admin.contents.create', ['week_id' => $week->id]) }}" 
                    class="btn btn-success btn-block mb-2">
-                    <i class="icon-plus"></i> Add Content
+                    Add Content
                 </a>
 
                 @if($week->has_assessment)
                     @if(!$week->assessment)
                         <a href="{{ route('admin.assessments.create', ['week_id' => $week->id]) }}" 
                            class="btn btn-info btn-block mb-2">
-                            <i class="icon-note"></i> Create Assessment
+                             Create Assessment
                         </a>
                     @else
                         <a href="{{ route('admin.assessments.questions.index', $week->assessment->id) }}" 
                            class="btn btn-info btn-block mb-2">
-                            <i class="icon-list"></i> Manage Questions
+                             Manage Questions
                         </a>
                     @endif
                 @endif
@@ -387,7 +387,7 @@
                 <hr>
 
                 <button type="button" class="btn btn-danger btn-block" onclick="deleteWeek()">
-                    <i class="icon-trash"></i> Delete Week
+                     Delete Week
                 </button>
             </div>
         </div>
