@@ -9,8 +9,6 @@ class WeekProgress extends Model
 {
     use HasFactory;
 
-    protected $table = 'week_progress';
-
     protected $fillable = [
         'user_id',
         'module_week_id',
@@ -18,19 +16,26 @@ class WeekProgress extends Model
         'is_unlocked',
         'is_completed',
         'progress_percentage',
-        'contents_completed',
         'total_contents',
+        'contents_completed',
+        'assessment_score',
+        'assessment_passed',
+        'assessment_attempts',
+        'last_assessment_at',
         'unlocked_at',
-        'started_at',
         'completed_at',
     ];
 
     protected $casts = [
         'is_unlocked' => 'boolean',
         'is_completed' => 'boolean',
+        'progress_percentage' => 'decimal:2',
+        'assessment_score' => 'decimal:2',
+        'assessment_passed' => 'boolean',
+        'assessment_attempts' => 'integer',
         'unlocked_at' => 'datetime',
-        'started_at' => 'datetime',
         'completed_at' => 'datetime',
+        'last_assessment_at' => 'datetime',
     ];
 
     // Relationships
@@ -49,106 +54,157 @@ class WeekProgress extends Model
         return $this->belongsTo(Enrollment::class);
     }
 
-    // Helper methods
-    public function unlock(): void
-    {
-        if (!$this->is_unlocked) {
-            $this->update([
-                'is_unlocked' => true,
-                'unlocked_at' => now(),
-            ]);
-        }
-    }
+    // Helper Methods
 
-    public function markAsStarted(): void
-    {
-        if (!$this->started_at) {
-            $this->update([
-                'started_at' => now(),
-            ]);
-        }
-    }
-
-    public function recalculateProgress(): void
+    /**
+     * Check if week is fully complete (content + assessment if required)
+     */
+    public function isWeekFullyComplete(): bool
     {
         $week = $this->moduleWeek;
         
-        // Get all required published contents for this week
-        $requiredContents = $week->contents()
-            ->where('status', 'published')
-            ->where('is_required', true)
-            ->pluck('id');
-
-        $totalRequired = $requiredContents->count();
+        // Check content completion
+        if ($this->progress_percentage < 100) {
+            return false;
+        }
         
-        if ($totalRequired === 0) {
-            // No required content, mark as complete
-            $this->update([
-                'is_completed' => true,
-                'progress_percentage' => 100,
-                'contents_completed' => 0,
-                'total_contents' => 0,
-                'completed_at' => now(),
-            ]);
+        // If week has assessment, check if taken (not necessarily passed)
+        if ($week->has_assessment && $week->assessment) {
+            return $this->assessment_attempts > 0; // Assessment taken (score recorded)
+        }
+        
+        return true;
+    }
+
+    /**
+     * Calculate and update week completion percentage
+     */
+    public function recalculateCompletion(): void
+    {
+        $week = $this->moduleWeek;
+        $requiredContents = $week->contents()->where('is_required', true)->count();
+        
+        if ($requiredContents === 0) {
+            $this->update(['progress_percentage' => 100]);
             return;
         }
 
-        // Count completed required contents
-        $completedCount = ContentProgress::where('user_id', $this->user_id)
+        // Get completed required contents
+        $completedContents = ContentProgress::where('user_id', $this->user_id)
             ->where('enrollment_id', $this->enrollment_id)
-            ->whereIn('week_content_id', $requiredContents)
             ->where('is_completed', true)
+            ->whereHas('weekContent', function($q) use ($week) {
+                $q->where('module_week_id', $week->id)
+                  ->where('is_required', true);
+            })
             ->count();
 
-        $progressPercentage = ($completedCount / $totalRequired) * 100;
-        $isCompleted = $completedCount >= $totalRequired;
-
+        $percentage = ($completedContents / $requiredContents) * 100;
+        
         $this->update([
-            'contents_completed' => $completedCount,
-            'total_contents' => $totalRequired,
-            'progress_percentage' => round($progressPercentage, 2),
-            'is_completed' => $isCompleted,
-            'completed_at' => $isCompleted ? ($this->completed_at ?? now()) : null,
+            'contents_completed' => $completedContents,
+            'total_contents' => $requiredContents,
+            'progress_percentage' => round($percentage, 2),
         ]);
-
-        // If week is completed, unlock next week
-        if ($isCompleted) {
-            $this->unlockNextWeek();
-        }
     }
 
-    private function unlockNextWeek(): void
+    /**
+     * Mark week as complete and unlock next week
+     */
+    public function markAsComplete(): void
+    {
+        if ($this->is_completed) {
+            return; // Already completed
+        }
+
+        $this->update([
+            'is_completed' => true,
+            'completed_at' => now(),
+        ]);
+
+        // Unlock next week
+        $this->unlockNextWeek();
+        
+        // Update enrollment grade averages
+        $this->enrollment->recalculateGradeAverages();
+    }
+
+    /**
+     * Unlock the next week in sequence
+     */
+    protected function unlockNextWeek(): void
     {
         $currentWeek = $this->moduleWeek;
         $program = $currentWeek->programModule->program;
         
-        // Get next week by week_number
-        $nextWeek = ModuleWeek::whereHas('programModule', function($query) use ($program) {
-            $query->where('program_id', $program->id);
+        // Get all weeks in program ordered by module and week number
+        $allWeeks = ModuleWeek::whereHas('programModule', function($q) use ($program) {
+            $q->where('program_id', $program->id);
         })
-        ->where('week_number', $currentWeek->week_number + 1)
         ->where('status', 'published')
-        ->first();
+        ->with('programModule')
+        ->get()
+        ->sortBy(function($week) {
+            return [$week->programModule->order, $week->week_number];
+        });
 
-        if ($nextWeek) {
-            // Check cohort start date restriction
-            $enrollment = $this->enrollment;
-            $cohortStartDate = $enrollment->cohort->start_date;
-            $weeksSinceStart = now()->diffInWeeks($cohortStartDate);
+        // Find current week index
+        $currentIndex = $allWeeks->search(function($week) use ($currentWeek) {
+            return $week->id === $currentWeek->id;
+        });
 
-            // Only unlock if cohort has reached that week
-            if ($weeksSinceStart >= $nextWeek->week_number - 1) {
-                $nextWeekProgress = WeekProgress::firstOrCreate([
+        // Get next week
+        if ($currentIndex !== false && isset($allWeeks[$currentIndex + 1])) {
+            $nextWeek = $allWeeks[$currentIndex + 1];
+            
+            // Create or update progress for next week
+            WeekProgress::updateOrCreate(
+                [
                     'user_id' => $this->user_id,
                     'module_week_id' => $nextWeek->id,
                     'enrollment_id' => $this->enrollment_id,
-                ], [
+                ],
+                [
+                    'is_unlocked' => true,
+                    'unlocked_at' => now(),
                     'total_contents' => $nextWeek->required_contents_count,
-                ]);
-
-                $nextWeekProgress->unlock();
-            }
+                ]
+            );
         }
+    }
+
+    /**
+     * Check if content is complete but assessment pending
+     */
+    public function isContentCompleteAssessmentPending(): bool
+    {
+        $week = $this->moduleWeek;
+        
+        return $this->progress_percentage >= 100 
+            && $week->has_assessment 
+            && $week->assessment
+            && $this->assessment_attempts === 0;
+    }
+
+    /**
+     * Check if assessment can be taken
+     */
+    public function canTakeAssessment(): bool
+    {
+        // Content must be 100% complete
+        if ($this->progress_percentage < 100) {
+            return false;
+        }
+
+        $week = $this->moduleWeek;
+        
+        // Week must have assessment
+        if (!$week->has_assessment || !$week->assessment) {
+            return false;
+        }
+
+        // Check if max attempts reached (though we still allow - just for UI)
+        return $this->assessment_attempts < $week->assessment->max_attempts;
     }
 
     // Scopes
@@ -165,16 +221,6 @@ class WeekProgress extends Model
     public function scopeInProgress($query)
     {
         return $query->where('is_unlocked', true)
-            ->where('is_completed', false);
-    }
-
-    public function scopeForUser($query, $userId)
-    {
-        return $query->where('user_id', $userId);
-    }
-
-    public function scopeForEnrollment($query, $enrollmentId)
-    {
-        return $query->where('enrollment_id', $enrollmentId);
+                     ->where('is_completed', false);
     }
 }

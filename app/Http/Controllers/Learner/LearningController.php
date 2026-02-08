@@ -1,6 +1,5 @@
 <?php
 
-
 namespace App\Http\Controllers\Learner;
 
 use App\Http\Controllers\Controller;
@@ -54,6 +53,16 @@ class LearningController extends Controller
 
         $currentWeek = $currentWeekProgress->moduleWeek;
 
+        // Load assessment with questions and user's attempts
+        $currentWeek->load([
+            'assessment.questions',
+            'assessment.attempts' => function($q) use ($user, $enrollment) {
+                $q->where('user_id', $user->id)
+                  ->where('enrollment_id', $enrollment->id)
+                  ->where('status', 'submitted');
+            }
+        ]);
+
         // Get week contents with progress
         $contents = $currentWeek->publishedContents()
             ->with(['contentProgress' => function($query) use ($user, $enrollment) {
@@ -63,7 +72,7 @@ class LearningController extends Controller
             ->orderBy('order')
             ->get();
 
-        // Prepare content data for JavaScript (moved from view)
+        // Prepare content data for JavaScript
         $contentsJson = $contents->map(function($content) {
             $progress = $content->contentProgress->first();
             
@@ -170,7 +179,9 @@ class LearningController extends Controller
         $progress = $content->getProgressFor($user, $enrollment);
         
         // Mark as started and update last accessed
-        $progress->markAsStarted();
+        $progress->update([
+            'last_accessed_at' => now(),
+        ]);
 
         return view('learner.learning.content', compact('enrollment', 'content', 'progress', 'weekProgress'));
     }
@@ -193,12 +204,13 @@ class LearningController extends Controller
         $progress->markAsCompleted();
 
         // Get updated week progress
-        $weekProgress = $progress->weekContent->moduleWeek->getProgressFor($user, $enrollment);
+        $weekProgress = $content->moduleWeek->getProgressFor($user, $enrollment);
+        $weekProgress->recalculateCompletion();
 
         return response()->json([
             'success' => true,
             'message' => 'Content marked as complete!',
-            'week_completion' => $weekProgress->completion_percentage
+            'week_completion' => $weekProgress->progress_percentage
         ]);
     }
 
@@ -239,7 +251,13 @@ class LearningController extends Controller
      */
     private function calculateLearningStats($user, $enrollment)
     {
-        $totalWeeks = $enrollment->program->getPublishedWeeks()->count();
+        $totalWeeks = $enrollment->program->publishedModules()
+            ->withCount(['weeks' => function($q) {
+                $q->where('status', 'published');
+            }])
+            ->get()
+            ->sum('weeks_count');
+
         $completedWeeks = WeekProgress::where('enrollment_id', $enrollment->id)
             ->where('is_completed', true)
             ->count();

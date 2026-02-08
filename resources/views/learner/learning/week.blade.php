@@ -45,39 +45,52 @@
         </div>
 
         <!-- Week Header -->
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                        <h6 class="text-muted mb-1">Week {{ $week->week_number }}</h6>
-                        <h3 class="mb-0">{{ $week->title }}</h3>
-                    </div>
-                    <div class="text-center">
-                        <h2 class="mb-0" style="color: #7571f9;">{{ $weekProgress->progress_percentage }}%</h2>
-                        <small class="text-muted">Complete</small>
-                    </div>
-                </div>
+        <!-- Replace the week-header section in curriculum/index.blade.php with this updated version -->
 
-                @if($week->description)
-                <p class="mb-3">{{ $week->description }}</p>
+        <div class="week-header" onclick="toggleWeek({{ $week->id }})">
+            <div class="week-title-area">
+                <div class="week-number {{ $isUnlocked ? 'unlocked' : '' }}">
+                    W{{ $week->week_number }}
+                </div>
+                <span class="week-title-text">{{ $week->title }}</span>
+            </div>
+            
+            <div class="week-status">
+                <!-- Content Progress -->
+                <span style="font-size: 13px; color: #666; margin-right: 12px;">
+                    Content: {{ $weekCompletedCount }}/{{ $weekContentsCount }}
+                </span>
+                
+                <!-- Assessment Status (if week has assessment) -->
+                @if($week->has_assessment && $week->assessment)
+                    @php
+                        $assessmentScore = $weekProgress ? $weekProgress->assessment_score : null;
+                        $assessmentAttempts = $weekProgress ? $weekProgress->assessment_attempts : 0;
+                    @endphp
+                    
+                    @if($assessmentScore !== null)
+                        <span class="assessment-score" style="font-size: 13px; color: #2e7d32; font-weight: 600; margin-right: 12px;">
+                            Assessment: {{ number_format($assessmentScore, 1) }}%
+                        </span>
+                    @elseif($assessmentAttempts === 0 && $isUnlocked)
+                        <span class="assessment-pending" style="font-size: 13px; color: #f57c00; margin-right: 12px;">
+                            Assessment: Pending
+                        </span>
+                    @endif
                 @endif
-
-                @if($week->learning_outcomes && count($week->learning_outcomes) > 0)
-                <div class="mb-3">
-                    <strong class="text-muted" style="font-size: 12px;">LEARNING OUTCOMES:</strong>
-                    <ul class="pl-3 mb-0 mt-2">
-                        @foreach($week->learning_outcomes as $outcome)
-                            <li style="font-size: 14px;">{{ $outcome }}</li>
-                        @endforeach
-                    </ul>
+                
+                <!-- Week Status Icon -->
+                <div class="status-icon {{ $isCompleted ? 'status-completed' : ($isUnlocked ? 'status-in-progress' : 'status-locked') }}">
+                    @if($isCompleted)
+                        ✓
+                    @elseif($isUnlocked)
+                        ⋯
+                    @else
+                        🔒
+                    @endif
                 </div>
-                @endif
-
-                <div class="progress" style="height: 10px;">
-                    <div class="progress-bar" role="progressbar" 
-                         style="width: {{ $weekProgress->progress_percentage }}%; background-color: #7571f9;">
-                    </div>
-                </div>
+                
+                <span style="margin-left: 8px; margin-right: 8px;">{{ $chevron }}</span>
             </div>
         </div>
 

@@ -199,6 +199,8 @@ class PaymentController extends Controller
             $enrollment = $payment->enrollment;
             $enrollment->update(['status' => 'active']);
 
+            $enrollment->initializeWeekProgress();
+
             // Increment cohort enrollment count
             $enrollment->cohort->incrementEnrollment();
 
@@ -280,6 +282,8 @@ class PaymentController extends Controller
 
                     $enrollment = $payment->enrollment;
                     $enrollment->update(['status' => 'active']);
+
+                    $enrollment->initializeWeekProgress();
                     $enrollment->cohort->incrementEnrollment();
 
                     if ($payment->payment_plan === 'installment') {

@@ -149,6 +149,7 @@
         align-items: center;
         justify-content: center;
         transition: all 0.2s ease;
+        font-size: 12px;
     }
     
     .content-item.completed .status-check {
@@ -170,54 +171,12 @@
         padding: 24px 32px;
         background: #fff;
         border-bottom: 1px solid #e0e0e0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
     }
     
     .viewer-title {
         font-size: 20px;
         font-weight: 600;
         color: #333;
-    }
-    
-    .viewer-actions {
-        display: flex;
-        gap: 12px;
-    }
-    
-    .btn {
-        padding: 10px 20px;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-        border: none;
-        transition: all 0.2s ease;
-    }
-    
-    .btn-complete {
-        background: #4caf50;
-        color: white;
-    }
-    
-    .btn-complete:hover {
-        background: #43a047;
-    }
-    
-    .btn-complete:disabled {
-        background: #e0e0e0;
-        color: #999;
-        cursor: not-allowed;
-    }
-    
-    .btn-next {
-        background: #7571f9;
-        color: white;
-    }
-    
-    .btn-next:hover {
-        background: #5f5bd1;
     }
     
     .viewer-body {
@@ -227,7 +186,18 @@
     }
     
     .content-display {
-        padding: 32px;
+        padding: 48px;
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    .content-description {
+        color: #666;
+        font-size: 16px;
+        line-height: 1.6;
+        margin-bottom: 32px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid #f0f0f0;
     }
     
     .video-container {
@@ -237,6 +207,7 @@
         overflow: hidden;
         background: #000;
         border-radius: 8px;
+        margin-bottom: 24px;
     }
     
     .video-container iframe {
@@ -249,34 +220,44 @@
     
     .pdf-viewer {
         width: 100%;
-        height: 600px;
+        height: 700px;
         border: 1px solid #e0e0e0;
         border-radius: 8px;
+        margin-bottom: 24px;
     }
     
     .text-content {
         line-height: 1.8;
         font-size: 16px;
         color: #333;
+        margin-bottom: 48px;
     }
     
     .text-content h1, .text-content h2, .text-content h3 {
         margin-top: 1.5rem;
         margin-bottom: 1rem;
+        color: #1a1a1a;
     }
     
     .text-content p {
         margin-bottom: 1rem;
     }
+
+    .text-content ul, .text-content ol {
+        margin-bottom: 1rem;
+        padding-left: 2rem;
+    }
+
+    .text-content img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        margin: 1.5rem 0;
+    }
     
     .external-link-display {
         text-align: center;
-        padding: 60px 20px;
-    }
-    
-    .external-link-display .icon {
-        font-size: 64px;
-        margin-bottom: 20px;
+        padding: 80px 20px;
     }
     
     .external-link-display h3 {
@@ -289,32 +270,80 @@
     .external-link-display p {
         color: #666;
         margin-bottom: 24px;
+        font-size: 15px;
     }
     
     .btn-external {
         background: #7571f9;
         color: white;
         padding: 14px 32px;
-        border-radius: 8px;
+        border-radius: 6px;
         text-decoration: none;
         display: inline-block;
         font-weight: 500;
+        font-size: 15px;
+        transition: all 0.2s ease;
     }
     
     .btn-external:hover {
         background: #5f5bd1;
         color: white;
+        transform: translateY(-1px);
+    }
+
+    /* Content Actions - At Bottom */
+    .content-actions {
+        margin-top: 48px;
+        padding-top: 32px;
+        border-top: 2px solid #e0e0e0;
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+    }
+
+    .btn {
+        padding: 14px 28px;
+        border-radius: 6px;
+        font-size: 15px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-complete {
+        background: #4caf50;
+        color: white;
+    }
+    
+    .btn-complete:hover {
+        background: #43a047;
+        transform: translateY(-1px);
+    }
+    
+    .btn-complete:disabled {
+        background: #e0e0e0;
+        color: #999;
+        cursor: not-allowed;
+        transform: none;
+    }
+    
+    .btn-next {
+        background: #7571f9;
+        color: white;
+    }
+    
+    .btn-next:hover {
+        background: #5f5bd1;
+        transform: translateY(-1px);
     }
     
     /* Completion State */
     .completion-message {
         text-align: center;
         padding: 80px 20px;
-    }
-    
-    .completion-message .icon {
-        font-size: 80px;
-        margin-bottom: 24px;
     }
     
     .completion-message h2 {
@@ -336,6 +365,16 @@
         justify-content: center;
         flex-wrap: wrap;
     }
+
+    .btn-secondary {
+        background: #fff;
+        color: #7571f9;
+        border: 2px solid #7571f9;
+    }
+
+    .btn-secondary:hover {
+        background: #f8f8ff;
+    }
     
     /* Loading State */
     .loading {
@@ -344,6 +383,7 @@
         justify-content: center;
         height: 400px;
         color: #999;
+        font-size: 15px;
     }
     
     /* Empty State */
@@ -353,11 +393,129 @@
         color: #999;
     }
     
-    .empty-state .icon {
-        font-size: 64px;
+    .empty-state h3 {
+        font-size: 20px;
+        color: #666;
+        margin-bottom: 8px;
+    }
+
+    .empty-state p {
+        font-size: 15px;
+    }
+
+    /* Assessment Section Styles */
+    .assessment-section {
+        padding: 32px;
+        background: #fff;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    .assessment-card {
+        background: #f8f9fa;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .assessment-header-banner {
+        background: linear-gradient(135deg, #7571f9 0%, #9c98ff 100%);
+        padding: 24px 32px;
+        color: white;
+    }
+
+    .assessment-header-banner h3 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+    }
+
+    .assessment-info {
+        padding: 32px;
+    }
+
+    .assessment-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .stat-item {
+        text-align: center;
+        padding: 16px;
+        background: #fff;
+        border-radius: 6px;
+    }
+
+    .stat-label {
+        display: block;
+        font-size: 12px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+    }
+
+    .stat-value {
+        display: block;
+        font-size: 20px;
+        font-weight: 600;
+        color: #1a1a1a;
+    }
+
+    .best-score-display {
+        text-align: center;
+        padding: 20px;
+        background: #e8f5e9;
+        border-radius: 6px;
+        margin-bottom: 24px;
+    }
+
+    .score-label {
+        font-size: 14px;
+        color: #2e7d32;
+        margin-right: 8px;
+    }
+
+    .score-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: #2e7d32;
+    }
+
+    .assessment-locked,
+    .assessment-complete,
+    .assessment-ready {
+        text-align: center;
+        padding: 24px;
+    }
+
+    .assessment-locked p,
+    .assessment-complete p,
+    .assessment-ready p {
+        font-size: 15px;
+        color: #666;
         margin-bottom: 20px;
     }
-    
+
+    .btn-assessment-action {
+        display: inline-block;
+        background: #7571f9;
+        color: white;
+        padding: 14px 32px;
+        border-radius: 6px;
+        font-size: 15px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+
+    .btn-assessment-action:hover {
+        background: #5f5bd1;
+        color: white;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(117, 113, 249, 0.3);
+    }
+
     /* Responsive */
     @media (max-width: 968px) {
         .learning-container {
@@ -374,6 +532,18 @@
         .content-viewer {
             height: 60vh;
         }
+
+        .content-display {
+            padding: 24px;
+        }
+
+        .content-actions {
+            flex-direction: column;
+        }
+
+        .content-actions .btn {
+            width: 100%;
+        }
     }
 </style>
 @endpush
@@ -389,9 +559,9 @@
             </div>
             <div class="week-progress">
                 <div class="progress-bar">
-                    <div class="progress-fill" style="width: {{ $currentWeekProgress->completion_percentage }}%"></div>
+                    <div class="progress-fill" style="width: {{ $currentWeekProgress->progress_percentage ?? 0 }}%"></div>
                 </div>
-                <div class="progress-text">{{ $currentWeekProgress->completion_percentage }}%</div>
+                <div class="progress-text">{{ $currentWeekProgress->progress_percentage ?? 0 }}%</div>
             </div>
         </div>
         
@@ -439,8 +609,7 @@
                     </div>
                 </div>
             @empty
-                <div class="empty-state">
-                    <div class="icon">📚</div>
+                <div class="empty-state" style="padding: 40px 20px;">
                     <p>No content available yet</p>
                 </div>
             @endforelse
@@ -457,14 +626,6 @@
                     Select Content
                 @endif
             </div>
-            <div class="viewer-actions">
-                <button class="btn btn-complete" id="btnComplete" onclick="markComplete()" style="display: none;">
-                    Mark Complete
-                </button>
-                <button class="btn btn-next" id="btnNext" onclick="nextContent()" style="display: none;">
-                    Next →
-                </button>
-            </div>
         </div>
         
         <div class="viewer-body" id="viewerBody">
@@ -472,7 +633,6 @@
                 <div class="loading">Loading content...</div>
             @else
                 <div class="empty-state">
-                    <div class="icon">📝</div>
                     <h3>No Content This Week</h3>
                     <p>Check back later or view the calendar for upcoming sessions.</p>
                 </div>
@@ -486,6 +646,25 @@
     // Store all content data (prepared by controller)
     const contentsData = {!! json_encode($contentsJson) !!};
     
+    // Assessment data
+    const hasAssessment = {{ $currentWeek->has_assessment && $currentWeek->assessment && $currentWeek->assessment->is_active ? 'true' : 'false' }};
+    @if($currentWeek->has_assessment && $currentWeek->assessment && $currentWeek->assessment->is_active)
+    const assessmentData = {
+        id: {{ $currentWeek->assessment->id }},
+        questions_count: {{ $currentWeek->assessment->questions->count() }},
+        total_points: {{ $currentWeek->assessment->total_points }},
+        time_limit: {{ $currentWeek->assessment->time_limit_minutes ?? 'null' }},
+        max_attempts: {{ $currentWeek->assessment->max_attempts }},
+        attempts_used: {{ $currentWeek->assessment->attempts->where('status', 'submitted')->count() }},
+        best_score: {{ $currentWeek->assessment->attempts->where('status', 'submitted')->max('percentage') ?? 'null' }},
+        start_url: '{{ route("learner.assessments.start", $currentWeek->assessment->id) }}'
+    };
+    const weekCompletion = {{ $currentWeekProgress->progress_percentage ?? 0 }};
+    @else
+    const assessmentData = null;
+    const weekCompletion = 0;
+    @endif
+    
     let currentContentIndex = 0;
     let progressTrackingInterval = null;
     let contentStartTime = null;
@@ -494,6 +673,18 @@
     document.addEventListener('DOMContentLoaded', function() {
         if (contentsData.length > 0) {
             loadContent(contentsData[0].id);
+            
+            // If all content already complete, render assessment
+            const allComplete = contentsData.every(c => c.is_completed);
+            if (allComplete && hasAssessment) {
+                // Assessment will be rendered by renderContent
+                setTimeout(() => {
+                    const assessmentSection = document.querySelector('.assessment-section');
+                    if (assessmentSection) {
+                        // Already visible, no need to scroll
+                    }
+                }, 100);
+            }
         }
     });
     
@@ -511,11 +702,6 @@
         // Update title
         document.getElementById('viewerTitle').textContent = content.title;
         
-        // Show/hide buttons
-        const isCompleted = content.is_completed;
-        document.getElementById('btnComplete').style.display = isCompleted ? 'none' : 'block';
-        document.getElementById('btnNext').style.display = currentContentIndex < contentsData.length - 1 ? 'block' : 'none';
-        
         // Render content
         renderContent(content);
         
@@ -529,7 +715,7 @@
         
         // Add description if available
         if (content.description) {
-            html += `<p style="color: #666; margin-bottom: 24px;">${content.description}</p>`;
+            html += `<div class="content-description">${content.description}</div>`;
         }
         
         // Render based on type
@@ -547,34 +733,69 @@
                 html += renderText(content);
                 break;
         }
+
+        // Add action buttons at the bottom
+        html += renderActions(content);
+
+        // Check if all content is complete and add assessment
+        const allComplete = contentsData.every(c => c.is_completed);
+        if (allComplete && hasAssessment) {
+            html += renderAssessment();
+        }
         
         html += '</div>';
         viewerBody.innerHTML = html;
     }
+
+    function renderActions(content) {
+        const isCompleted = content.is_completed;
+        const hasNext = currentContentIndex < contentsData.length - 1;
+
+        let html = '<div class="content-actions">';
+        
+        if (!isCompleted) {
+            html += `<button class="btn btn-complete" onclick="markComplete()">Mark Complete</button>`;
+        }
+        
+        if (hasNext) {
+            html += `<button class="btn btn-next" onclick="nextContent()">Next</button>`;
+        }
+        
+        html += '</div>';
+        return html;
+    }
     
     function renderVideo(content) {
         let embedUrl = '';
-        if (content.video_url.includes('youtube.com') || content.video_url.includes('youtu.be')) {
+        if (content.video_url && (content.video_url.includes('youtube.com') || content.video_url.includes('youtu.be'))) {
             const videoId = content.video_url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/)?.[1];
-            embedUrl = `https://www.youtube.com/embed/${videoId}`;
-        } else if (content.video_url.includes('vimeo.com')) {
+            if (videoId) {
+                embedUrl = `https://www.youtube.com/embed/${videoId}`;
+            }
+        } else if (content.video_url && content.video_url.includes('vimeo.com')) {
             const videoId = content.video_url.match(/vimeo\.com\/(\d+)/)?.[1];
-            embedUrl = `https://player.vimeo.com/video/${videoId}`;
+            if (videoId) {
+                embedUrl = `https://player.vimeo.com/video/${videoId}`;
+            }
         }
         
         if (embedUrl) {
             return `
                 <div class="video-container">
-                    <iframe src="${embedUrl}" frameborder="0" allowfullscreen></iframe>
+                    <iframe src="${embedUrl}" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
                 </div>
-                ${content.video_duration ? `<p style="margin-top: 12px; color: #999; font-size: 14px;">Duration: ${content.video_duration} minutes</p>` : ''}
+                ${content.video_duration ? `<p style="color: #999; font-size: 14px;">Duration: ${content.video_duration} minutes</p>` : ''}
             `;
         }
         
-        return `<p style="color: #999;">Video format not supported. <a href="${content.video_url}" target="_blank">Watch on external site</a></p>`;
+        return `<p style="color: #999;">Video format not supported. <a href="${content.video_url || '#'}" target="_blank">Watch on external site</a></p>`;
     }
     
     function renderPDF(content) {
+        if (!content.file_url) {
+            return '<p style="color: #999;">PDF file not available.</p>';
+        }
+        
         return `
             <iframe src="${content.file_url}" class="pdf-viewer"></iframe>
             <div style="text-align: center; margin-top: 16px;">
@@ -584,21 +805,24 @@
     }
     
     function renderLink(content) {
+        if (!content.external_url) {
+            return '<p style="color: #999;">External link not available.</p>';
+        }
+        
         return `
             <div class="external-link-display">
-                <div class="icon">🔗</div>
                 <h3>External Resource</h3>
                 <p>This content is hosted on an external website.</p>
-                <a href="${content.external_url}" target="_blank" class="btn-external">
+                <a href="${content.external_url}" target="_blank" rel="noopener noreferrer" class="btn-external">
                     Open Resource
                 </a>
-                <p style="margin-top: 16px; font-size: 13px; color: #999;">${content.external_url}</p>
+                <p style="margin-top: 16px; font-size: 13px; color: #999; word-break: break-all;">${content.external_url}</p>
             </div>
         `;
     }
     
     function renderText(content) {
-        return `<div class="text-content">${content.text_content || ''}</div>`;
+        return `<div class="text-content">${content.text_content || '<p style="color: #999;">No content available.</p>'}</div>`;
     }
     
     function startProgressTracking(contentId) {
@@ -625,9 +849,11 @@
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                progress_percentage: 50, // Basic tracking
+                progress_percentage: 50,
                 time_spent: timeSpent
             })
+        }).catch(() => {
+            // Silently fail progress updates
         });
         
         contentStartTime = Date.now();
@@ -651,27 +877,46 @@
                 // Update UI
                 content.is_completed = true;
                 document.querySelector(`[data-content-id="${content.id}"]`).classList.add('completed');
-                document.getElementById('btnComplete').style.display = 'none';
                 
                 // Update progress bar
                 updateProgressBar(data.week_completion);
                 
-                // Auto-move to next or show completion
-                if (currentContentIndex < contentsData.length - 1) {
+                // Re-render to update buttons and possibly show assessment
+                renderContent(content);
+                
+                // Check if all content is complete
+                const allComplete = contentsData.every(c => c.is_completed);
+                
+                if (allComplete) {
+                    // Scroll to assessment section
+                    if (hasAssessment) {
+                        setTimeout(() => {
+                            const assessmentSection = document.querySelector('.assessment-section');
+                            if (assessmentSection) {
+                                assessmentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                        }, 500);
+                    } else {
+                        // No assessment, show completion message
+                        setTimeout(() => showCompletion(), 500);
+                    }
+                } else if (currentContentIndex < contentsData.length - 1) {
+                    // Auto-move to next content
                     setTimeout(() => nextContent(), 1000);
-                } else {
-                    setTimeout(() => showCompletion(), 1000);
                 }
             }
         })
         .catch(error => {
             toastr.error('Failed to mark as complete');
+            console.error(error);
         });
     }
     
     function nextContent() {
         if (currentContentIndex < contentsData.length - 1) {
             loadContent(contentsData[currentContentIndex + 1].id);
+            // Scroll to top
+            document.getElementById('viewerBody').scrollTop = 0;
         }
     }
     
@@ -679,23 +924,97 @@
         document.querySelector('.progress-fill').style.width = percentage + '%';
         document.querySelector('.progress-text').textContent = percentage + '%';
     }
+
+    function renderAssessment() {
+        if (!assessmentData) return '';
+
+        const isLocked = weekCompletion < 100;
+        const maxAttemptsReached = assessmentData.attempts_used >= assessmentData.max_attempts;
+        const hasBestScore = assessmentData.best_score !== null;
+
+        let html = `
+        <div class="assessment-section" style="margin-top: 48px;">
+            <div class="assessment-card">
+                <div class="assessment-header-banner">
+                    <h3>Week Assessment</h3>
+                </div>
+                <div class="assessment-info">
+                    <div class="assessment-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Questions</span>
+                            <span class="stat-value">${assessmentData.questions_count}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Points</span>
+                            <span class="stat-value">${assessmentData.total_points}</span>
+                        </div>`;
+        
+        if (assessmentData.time_limit) {
+            html += `
+                        <div class="stat-item">
+                            <span class="stat-label">Time Limit</span>
+                            <span class="stat-value">${assessmentData.time_limit} min</span>
+                        </div>`;
+        }
+        
+        html += `
+                        <div class="stat-item">
+                            <span class="stat-label">Attempts</span>
+                            <span class="stat-value">${assessmentData.attempts_used}/${assessmentData.max_attempts}</span>
+                        </div>
+                    </div>`;
+
+        if (hasBestScore) {
+            html += `
+                    <div class="best-score-display">
+                        <span class="score-label">Your Best Score:</span>
+                        <span class="score-value">${assessmentData.best_score.toFixed(1)}%</span>
+                    </div>`;
+        }
+
+        if (isLocked) {
+            html += `
+                    <div class="assessment-locked">
+                        <p>Complete all content above to unlock the assessment</p>
+                    </div>`;
+        } else if (maxAttemptsReached) {
+            html += `
+                    <div class="assessment-complete">
+                        <p>Assessment complete. Your score of ${assessmentData.best_score.toFixed(1)}% has been recorded.</p>
+                        <a href="{{ route('learner.learning.index') }}" class="btn-assessment-action">
+                            Continue to Next Week
+                        </a>
+                    </div>`;
+        } else {
+            html += `
+                    <div class="assessment-ready">
+                        <p>${assessmentData.attempts_used > 0 ? 'You can retake this assessment to improve your score.' : 'Ready to test your knowledge?'}</p>
+                        <a href="${assessmentData.start_url}" class="btn-assessment-action">
+                            ${assessmentData.attempts_used > 0 ? 'Retake Assessment' : 'Take Assessment'}
+                        </a>
+                    </div>`;
+        }
+
+        html += `
+                </div>
+            </div>
+        </div>`;
+
+        return html;
+    }
     
     function showCompletion() {
         const viewerBody = document.getElementById('viewerBody');
         viewerBody.innerHTML = `
             <div class="completion-message">
-                <div class="icon">🎉</div>
                 <h2>Week Completed!</h2>
                 <p>Great job! You've completed all content for this week.</p>
                 <div class="completion-actions">
                     <a href="{{ route('learner.curriculum') }}" class="btn btn-next">View Curriculum</a>
-                    <a href="{{ route('learner.calendar') }}" class="btn" style="background: #fff; color: #7571f9; border: 2px solid #7571f9;">Check Calendar</a>
+                    <a href="{{ route('learner.calendar') }}" class="btn btn-secondary">Check Calendar</a>
                 </div>
             </div>
         `;
-        
-        document.getElementById('btnComplete').style.display = 'none';
-        document.getElementById('btnNext').style.display = 'none';
     }
     
     // Cleanup on page unload

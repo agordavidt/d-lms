@@ -1,4 +1,3 @@
-{{-- File Path: resources/views/learner/learning/content.blade.php --}}
 @extends('layouts.admin')
 
 @section('title', $content->title)

@@ -1,0 +1,648 @@
+<?php
+
+namespace App\Http\Controllers\Learner;
+
+use App\Http\Controllers\Controller;
+use App\Models\ContentProgress;
+use App\Models\Enrollment;
+use App\Models\LiveSession;
+use App\Models\WeekContent;
+use App\Models\WeekProgress;
+use Illuminate\Http\Request;
+
+class LearningController extends Controller
+{
+    /**
+     * Main learning page - shows current week's content only
+     */
+    public function index()
+    {
+        $user = auth()->user();
+
+        // Get active enrollment
+        $enrollment = $user->enrollments()
+            ->with(['program', 'cohort'])
+            ->where('status', 'active')
+            ->first();
+
+        if (!$enrollment) {
+            return redirect()->route('learner.programs.index')
+                ->with(['message' => 'Please enroll in a program to start learning.', 'alert-type' => 'info']);
+        }
+
+        // Get current week progress (unlocked but not completed)
+        $currentWeekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+            ->where('is_unlocked', true)
+            ->where('is_completed', false)
+            ->with('moduleWeek.programModule')
+            ->orderBy('created_at')
+            ->first();
+
+        if (!$currentWeekProgress) {
+            // Check if all weeks are completed
+            $allCompleted = WeekProgress::where('enrollment_id', $enrollment->id)
+                ->where('is_completed', true)
+                ->count() === $enrollment->program->getPublishedWeeks()->count();
+
+            if ($allCompleted) {
+                return view('learner.learning.completed', compact('enrollment'));
+            }
+
+            return view('learner.learning.no-content', compact('enrollment'));
+        }
+
+        $currentWeek = $currentWeekProgress->moduleWeek;
+
+        // Load assessment with questions and user's attempts
+        $currentWeek->load([
+            'assessment.questions',
+            'assessment.attempts' => function($q) use ($user, $enrollment) {
+                $q->where('user_id', $user->id)
+                  ->where('enrollment_id', $enrollment->id)
+                  ->where('status', 'submitted');
+            }
+        ]);
+
+        // Get week contents with progress
+        $contents = $currentWeek->publishedContents()
+            ->with(['contentProgress' => function($query) use ($user, $enrollment) {
+                $query->where('user_id', $user->id)
+                      ->where('enrollment_id', $enrollment->id);
+            }])
+            ->orderBy('order')
+            ->get();
+
+        // Prepare content data for JavaScript
+        $contentsJson = $contents->map(function($content) {
+            $progress = $content->contentProgress->first();
+            
+            return [
+                'id' => $content->id,
+                'title' => $content->title,
+                'type' => $content->content_type,
+                'description' => $content->description,
+                'video_url' => $content->video_url,
+                'video_duration' => $content->video_duration_minutes,
+                'file_url' => $content->file_url,
+                'external_url' => $content->external_url,
+                'text_content' => $content->text_content,
+                'is_completed' => $progress ? $progress->is_completed : false
+            ];
+        });
+
+        // Calculate learning stats
+        $stats = $this->calculateLearningStats($user, $enrollment);
+
+        return view('learner.learning.index', compact(
+            'enrollment',
+            'currentWeek',
+            'currentWeekProgress',
+            'contents',
+            'contentsJson',
+            'stats'
+        ));
+    }
+
+    /**
+     * Show specific week content (if unlocked)
+     */
+    public function showWeek($weekId)
+    {
+        $user = auth()->user();
+        $enrollment = $user->enrollments()->where('status', 'active')->first();
+
+        if (!$enrollment) {
+            return redirect()->route('learner.programs.index');
+        }
+
+        // Check if week is unlocked
+        $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+            ->where('module_week_id', $weekId)
+            ->first();
+
+        if (!$weekProgress || !$weekProgress->is_unlocked) {
+            return redirect()->route('learner.learning.index')
+                ->with(['message' => 'This week is not yet unlocked.', 'alert-type' => 'warning']);
+        }
+
+        $week = $weekProgress->moduleWeek()->with('programModule')->first();
+
+        // Get week contents with progress
+        $contents = $week->publishedContents()
+            ->with(['contentProgress' => function($query) use ($user, $enrollment) {
+                $query->where('user_id', $user->id)
+                      ->where('enrollment_id', $enrollment->id);
+            }])
+            ->orderBy('order')
+            ->get();
+
+        // Get live sessions for this week
+        $sessions = LiveSession::where('cohort_id', $enrollment->cohort_id)
+            ->where('week_id', $week->id)
+            ->orderBy('start_time')
+            ->get();
+
+        return view('learner.learning.week', compact(
+            'enrollment',
+            'week',
+            'weekProgress',
+            'contents',
+            'sessions'
+        ));
+    }
+
+    /**
+     * Show specific content
+     */
+    public function showContent($contentId)
+    {
+        $user = auth()->user();
+        $enrollment = $user->enrollments()->where('status', 'active')->first();
+
+        if (!$enrollment) {
+            return redirect()->route('learner.programs.index');
+        }
+
+        $content = WeekContent::with(['moduleWeek.programModule'])->findOrFail($contentId);
+
+        // Check if week is unlocked
+        $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+            ->where('module_week_id', $content->module_week_id)
+            ->first();
+
+        if (!$weekProgress || !$weekProgress->is_unlocked) {
+            return redirect()->route('learner.learning.index')
+                ->with(['message' => 'This content is not yet available.', 'alert-type' => 'warning']);
+        }
+
+        // Get or create progress
+        $progress = $content->getProgressFor($user, $enrollment);
+        
+        // Mark as started and update last accessed
+        $progress->update([
+            'last_accessed_at' => now(),
+        ]);
+
+        return view('learner.learning.content', compact('enrollment', 'content', 'progress', 'weekProgress'));
+    }
+
+    /**
+     * Mark content as completed
+     */
+    public function markContentComplete(Request $request, $contentId)
+    {
+        $user = auth()->user();
+        $enrollment = $user->enrollments()->where('status', 'active')->first();
+
+        if (!$enrollment) {
+            return response()->json(['success' => false, 'message' => 'No active enrollment'], 400);
+        }
+
+        $content = WeekContent::findOrFail($contentId);
+        $progress = $content->getProgressFor($user, $enrollment);
+
+        $progress->markAsCompleted();
+
+        // Get updated week progress
+        $weekProgress = $content->moduleWeek->getProgressFor($user, $enrollment);
+        $weekProgress->recalculateCompletion();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Content marked as complete!',
+            'week_completion' => $weekProgress->progress_percentage
+        ]);
+    }
+
+    /**
+     * Update content progress (for videos)
+     */
+    public function updateContentProgress(Request $request, $contentId)
+    {
+        $request->validate([
+            'progress_percentage' => 'required|integer|min:0|max:100',
+            'time_spent' => 'nullable|integer|min:0',
+        ]);
+
+        $user = auth()->user();
+        $enrollment = $user->enrollments()->where('status', 'active')->first();
+
+        if (!$enrollment) {
+            return response()->json(['success' => false], 400);
+        }
+
+        $content = WeekContent::findOrFail($contentId);
+        $progress = $content->getProgressFor($user, $enrollment);
+
+        $progress->updateProgress($request->progress_percentage);
+        
+        if ($request->time_spent) {
+            $progress->addTimeSpent($request->time_spent);
+        }
+
+        return response()->json([
+            'success' => true,
+            'is_completed' => $progress->is_completed,
+        ]);
+    }
+
+    /**
+     * Calculate learning stats
+     */
+    private function calculateLearningStats($user, $enrollment)
+    {
+        $totalWeeks = $enrollment->program->publishedModules()
+            ->withCount(['weeks' => function($q) {
+                $q->where('status', 'published');
+            }])
+            ->get()
+            ->sum('weeks_count');
+
+        $completedWeeks = WeekProgress::where('enrollment_id', $enrollment->id)
+            ->where('is_completed', true)
+            ->count();
+
+        $totalContents = WeekContent::whereHas('moduleWeek.programModule', function($query) use ($enrollment) {
+            $query->where('program_id', $enrollment->program_id);
+        })
+        ->where('status', 'published')
+        ->where('is_required', true)
+        ->count();
+
+        $completedContents = ContentProgress::where('user_id', $user->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->where('is_completed', true)
+            ->whereHas('weekContent', function($query) {
+                $query->where('is_required', true);
+            })
+            ->count();
+
+        $cohortIds = collect([$enrollment->cohort_id]);
+        $totalSessions = LiveSession::whereIn('cohort_id', $cohortIds)
+            ->where('status', 'completed')
+            ->count();
+
+        $attendedSessions = LiveSession::whereIn('cohort_id', $cohortIds)
+            ->where('status', 'completed')
+            ->whereJsonContains('attendees', $user->id)
+            ->count();
+
+        return [
+            'overall_progress' => $totalWeeks > 0 ? round(($completedWeeks / $totalWeeks) * 100, 1) : 0,
+            'completed_weeks' => $completedWeeks,
+            'total_weeks' => $totalWeeks,
+            'completed_contents' => $completedContents,
+            'total_contents' => $totalContents,
+            'attended_sessions' => $attendedSessions,
+            'total_sessions' => $totalSessions,
+            'attendance_rate' => $totalSessions > 0 ? round(($attendedSessions / $totalSessions) * 100, 1) : 0,
+        ];
+    }
+}
+
+
+=== layout file ===C:\laragon\www\d-lms\resources\views\layouts\admin.blade.php
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    
+    <title>@yield('title', 'Dashboard') | G-Luper LMS</title>
+    
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ asset('assets/images/favicon.png') }}">
+    <link href="{{ asset('assets/plugins/pg-calendar/css/pignose.calendar.min.css') }}" rel="stylesheet">
+    <link href="{{ asset('assets/css/style.css') }}" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    
+    @stack('styles')
+</head>
+
+<body>
+    <div id="preloader">
+        <div class="loader">
+            <svg class="circular" viewBox="25 25 50 50">
+                <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="3" stroke-miterlimit="10" />
+            </svg>
+        </div>
+    </div>
+
+    <div id="main-wrapper">
+        <!-- Nav Header -->
+        <div class="nav-header">
+            <div class="brand-logo">
+                <a href="{{ auth()->user()->isAdmin() ? route('admin.dashboard') : (auth()->user()->isMentor() ? route('mentor.dashboard') : route('learner.dashboard')) }}">
+                    <b class="logo-abbr">
+                        <span style="font-size: 24px; font-weight: 900; color: #7571f9;">G</span>
+                    </b>
+                    <span class="brand-title">
+                        <span style="font-size: 20px; font-weight: 700; color: #333;">Luper LMS</span>
+                    </span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Header -->
+        <div class="header">    
+            <div class="header-content clearfix">
+                <div class="nav-control">
+                    <div class="hamburger">
+                        <span class="toggle-icon"><i class="icon-menu"></i></span>
+                    </div>
+                </div>
+                
+                <div class="header-left">
+                    <div class="input-group icons">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text bg-transparent border-0 pr-2 pr-sm-3"><i class="mdi mdi-magnify"></i></span>
+                        </div>
+                        <input type="search" class="form-control" placeholder="Search Dashboard">
+                    </div>
+                </div>
+                
+                <div class="header-right">
+                    <ul class="clearfix">
+                        <!-- Notifications -->
+                        <li class="icons dropdown">
+                            <a href="javascript:void(0)" data-toggle="dropdown">
+                                <i class="mdi mdi-bell"></i>
+                                <span class="badge badge-pill gradient-2">3</span>
+                            </a>
+                            <div class="drop-down animated fadeIn dropdown-menu dropdown-notfication">
+                                <div class="dropdown-content-heading d-flex justify-content-between">
+                                    <span>3 New Notifications</span>  
+                                </div>
+                                <div class="dropdown-content-body">
+                                    <ul>
+                                        <li>
+                                            <a href="javascript:void()">
+                                                <span class="mr-3 avatar-icon bg-success-lighten-2"><i class="icon-calendar"></i></span>
+                                                <div class="notification-content">
+                                                    <h6 class="notification-heading">Upcoming Session</h6>
+                                                    <span class="notification-text">You have a session in 2 hours</span> 
+                                                </div>
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </li>
+
+                        <!-- User Profile -->
+                        <li class="icons dropdown">
+                            <div class="user-img c-pointer position-relative" data-toggle="dropdown">
+                                <span class="activity active"></span>
+                                <img src="{{ auth()->user()->avatar_url }}" height="40" width="40" alt="" style="border-radius: 50%;">
+                            </div>
+                            <div class="drop-down dropdown-profile dropdown-menu">
+                                <div class="dropdown-content-body">
+                                    <ul>
+                                        <li>
+                                            <a href="javascript:void()">
+                                                <i class="icon-user"></i> 
+                                                <span>{{ auth()->user()->name }}</span>
+                                            </a>
+                                        </li>
+                                       
+                                        <hr class="my-2">
+                                        
+                                        <li>
+                                            <form action="{{ route('logout') }}" method="POST">
+                                                @csrf
+                                                <button type="submit" class="dropdown-item">
+                                                    <i class="icon-key"></i> 
+                                                    <span>Logout</span>
+                                                </button>
+                                            </form>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="nk-sidebar">           
+            <div class="nk-nav-scroll">
+                <ul class="metismenu" id="menu">
+                    <!-- Admin Sidebar -->
+                    @if(auth()->user()->isAdmin())
+                    <li class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
+                        <a href="{{ route('admin.dashboard') }}">
+                            <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('admin.learners.*') ? 'active' : '' }}" 
+                        href="{{ route('admin.learners.index') }}">
+                            <i class="bi bi-people-fill"></i>
+                            <span>Learners</span>
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('admin.mentors.*') ? 'active' : '' }}" 
+                        href="{{ route('admin.mentors.index') }}">
+                            <i class="bi bi-person-badge-fill"></i>
+                            <span>Mentors</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('admin.programs.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.programs.index') }}">
+                            <i class="icon-book-open menu-icon"></i><span class="nav-text">Programs</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('admin.modules.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.modules.index') }}">
+                            <i class="icon-layers menu-icon"></i><span class="nav-text">Modules</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('admin.weeks.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.weeks.index') }}">
+                            <i class="icon-grid menu-icon"></i><span class="nav-text">Weeks</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('admin.contents.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.contents.index') }}">
+                            <i class="icon-docs menu-icon"></i><span class="nav-text">Contents</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('admin.cohorts.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.cohorts.index') }}">
+                            <i class="icon-people menu-icon"></i><span class="nav-text">Cohorts</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('admin.sessions.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.sessions.calendar') }}">
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Sessions</span>
+                        </a>
+                    </li>
+
+                   <li class="{{ request()->routeIs('admin.payments.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.payments.index') }}">
+                            <i class="icon-credit-card menu-icon"></i><span class="nav-text">Payments</span>
+                        </a>
+                    </li>
+
+
+                    <li class="{{ request()->routeIs('admin.activity-log*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.activity-log') }}">
+                            <i class="icon-note menu-icon"></i><span class="nav-text">Activity Log</span>
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="#">
+                            <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
+                        </a>
+                    </li>
+                    @endif
+
+                    <!-- Mentor Sidebar -->
+                    @if(auth()->user()->isMentor())
+                    <li class="{{ request()->routeIs('mentor.dashboard') ? 'active' : '' }}">
+                        <a href="{{ route('mentor.dashboard') }}">
+                            <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('mentor.sessions.*') ? 'active' : '' }}">
+                        <a href="{{ route('mentor.sessions.calendar') }}">
+                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Classes</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('mentor.students.*') ? 'active' : '' }}">
+                        <a href="{{ route('mentor.students.index') }}">
+                            <i class="icon-people menu-icon"></i><span class="nav-text">Students</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ request()->routeIs('mentor.contents.*') ? 'active' : '' }}">
+                        <a href="{{ route('mentor.contents.index') }}">
+                            <i class="icon-docs menu-icon"></i><span class="nav-text">Content</span>
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="#">
+                            <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
+                        </a>
+                    </li>
+                    @endif
+
+                    <!-- Learner Sidebar -->
+                    @if(auth()->user()->isLearner())
+                        @php
+                            $hasActiveEnrollment = auth()->user()->enrollments()->where('status', 'active')->exists();
+                        @endphp
+
+                        @if(!$hasActiveEnrollment)
+                            <!-- Pre-Enrollment Navigation -->
+                            <li class="{{ request()->routeIs('learner.programs.*') ? 'active' : '' }}">
+                                <a href="{{ route('learner.programs.index') }}">
+                                    <i class="icon-book-open menu-icon"></i><span class="nav-text">Programs</span>
+                                </a>
+                            </li>
+                        @else
+                            <!-- Post-Enrollment Navigation -->
+                            <li class="{{ request()->routeIs('learner.learning.*') ? 'active' : '' }}">
+                                <a href="{{ route('learner.learning.index') }}">
+                                    <i class="icon-graduation menu-icon"></i><span class="nav-text">Learning</span>
+                                </a>
+                            </li>
+
+                            <li class="{{ request()->routeIs('learner.curriculum') ? 'active' : '' }}">
+                                <a href="{{ route('learner.curriculum') }}">
+                                    <i class="icon-layers menu-icon"></i><span class="nav-text">Curriculum</span>
+                                </a>
+                            </li>
+
+                            <li class="{{ request()->routeIs('learner.calendar') ? 'active' : '' }}">
+                                <a href="{{ route('learner.calendar') }}">
+                                    <i class="icon-calendar menu-icon"></i><span class="nav-text">Calendar</span>
+                                </a>
+                            </li>
+                        @endif
+
+                        <li class="{{ request()->routeIs('learner.profile.*') ? 'active' : '' }}">
+                            <a href="{{ route('learner.profile.edit') }}">
+                                <i class="icon-user menu-icon"></i><span class="nav-text">Profile</span>
+                            </a>
+                        </li>
+
+                        <li>
+                            <a href="#">
+                                <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
+                            </a>
+                        </li>
+                    @endif
+                </ul>
+            </div>
+        </div>
+
+        <!-- Content Body -->
+        <div class="content-body">
+            <div class="row page-titles mx-0">
+                <div class="col p-md-0">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="javascript:void(0)">@yield('breadcrumb-parent', 'Dashboard')</a></li>
+                        <li class="breadcrumb-item active"><a href="javascript:void(0)">@yield('breadcrumb-current', 'Home')</a></li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="container-fluid">
+                @yield('content')
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="copyright">
+                <p>Copyright &copy; {{ date('Y') }} G-Luper Learning Management System. All rights reserved.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ asset('assets/plugins/common/common.min.js') }}"></script>
+    <script src="{{ asset('assets/js/custom.min.js') }}"></script>
+    <script src="{{ asset('assets/js/settings.js') }}"></script>
+    <script src="{{ asset('assets/js/gleek.js') }}"></script>
+    <script src="{{ asset('assets/js/styleSwitcher.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
+    <script>
+        toastr.options = {
+            "progressBar": true,
+            "positionClass": "toast-top-right",
+            "closeButton": true,
+            "timeOut": "5000"
+        };
+
+        @if(Session::has('message'))
+            var type = "{{ Session::get('alert-type','info') }}";
+            switch (type) {
+                case 'info': toastr.info("{{ Session::get('message') }}"); break;
+                case 'success': toastr.success("{{ Session::get('message') }}"); break;
+                case 'warning': toastr.warning("{{ Session::get('message') }}"); break;
+                case 'error': toastr.error("{{ Session::get('message') }}"); break;
+            }
+        @endif
+    </script>
+
+    @stack('scripts')
+</body>
+</html>

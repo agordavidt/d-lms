@@ -6,13 +6,22 @@
 
 @push('styles')
 <style>
+    /* Programs Grid */
+    .programs-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+    }
+    
     .program-card {
         border: 1px solid #e0e0e0;
         border-radius: 8px;
         padding: 24px;
-        margin-bottom: 20px;
         background: #fff;
         transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
     }
     
     .program-card:hover {
@@ -46,6 +55,7 @@
         font-weight: 700;
         color: #7571f9;
         margin-bottom: 16px;
+        margin-top: auto;
     }
     
     .enroll-btn {
@@ -57,6 +67,7 @@
         font-weight: 600;
         cursor: pointer;
         transition: background 0.3s ease;
+        width: 100%;
     }
     
     .enroll-btn:hover {
@@ -124,6 +135,19 @@
         font-size: 64px;
         margin-bottom: 16px;
     }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .programs-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .programs-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
 </style>
 @endpush
 
@@ -135,28 +159,30 @@
                 <h4 class="card-title mb-4">Available Programs</h4>
                 
                 @if($programs->count() > 0)
-                    @foreach($programs as $program)
-                        <div class="program-card">
-                            <div class="program-name">{{ $program->name }}</div>
-                            
-                            <div class="program-details">
-                                <div class="program-detail-item">
-                                    <i class="icon-clock"></i>
-                                    <span>{{ $program->duration }}</span>
+                    <div class="programs-grid">
+                        @foreach($programs as $program)
+                            <div class="program-card">
+                                <div class="program-name">{{ $program->name }}</div>
+                                
+                                <div class="program-details">
+                                    <div class="program-detail-item">
+                                        <i class="icon-clock"></i>
+                                        <span>{{ $program->duration }}</span>
+                                    </div>
+                                    <div class="program-detail-item">
+                                        <i class="icon-calendar"></i>
+                                        <span>Starts: {{ $program->cohorts->first()->start_date->format('M d, Y') }}</span>
+                                    </div>
                                 </div>
-                                <div class="program-detail-item">
-                                    <i class="icon-calendar"></i>
-                                    <span>Starts: {{ $program->cohorts->first()->start_date->format('M d, Y') }}</span>
-                                </div>
+                                
+                                <div class="program-price">₦{{ number_format($program->price, 2) }}</div>
+                                
+                                <button class="enroll-btn" onclick="openEnrollModal({{ $program->id }}, '{{ addslashes($program->name) }}', {{ $program->price }})">
+                                    Enroll Now
+                                </button>
                             </div>
-                            
-                            <div class="program-price">₦{{ number_format($program->price, 2) }}</div>
-                            
-                            <button class="enroll-btn" onclick="openEnrollModal({{ $program->id }}, '{{ $program->name }}', {{ $program->price }})">
-                                Enroll Now
-                            </button>
-                        </div>
-                    @endforeach
+                        @endforeach
+                    </div>
                 @else
                     <div class="empty-state">
                         <i class="icon-book-open"></i>
