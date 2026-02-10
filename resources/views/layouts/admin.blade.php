@@ -186,12 +186,24 @@
                         </a>
                     </li>
 
-                   <li class="{{ request()->routeIs('admin.payments.*') ? 'active' : '' }}">
+                    <li class="{{ request()->routeIs('admin.graduations.*') ? 'active' : '' }}">
+                        <a href="{{ route('admin.graduations.index') }}">
+                            <i class="icon-graduation menu-icon"></i>
+                            <span class="nav-text">Graduations</span>
+                            @php
+                                $pendingCount = \App\Models\Enrollment::where('graduation_status', 'pending_review')->count();
+                            @endphp
+                            @if($pendingCount > 0)
+                                <span class="badge badge-warning ml-auto">{{ $pendingCount }}</span>
+                            @endif
+                        </a>
+                    </li>
+
+                <li class="{{ request()->routeIs('admin.payments.*') ? 'active' : '' }}">
                         <a href="{{ route('admin.payments.index') }}">
                             <i class="icon-credit-card menu-icon"></i><span class="nav-text">Payments</span>
                         </a>
                     </li>
-
 
                     <li class="{{ request()->routeIs('admin.activity-log*') ? 'active' : '' }}">
                         <a href="{{ route('admin.activity-log') }}">
