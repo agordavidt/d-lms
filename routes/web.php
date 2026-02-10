@@ -78,6 +78,7 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('/learners/data', [LearnerController::class, 'getData'])->name('learners.data');
         Route::get('/learners/{id}', [LearnerController::class, 'show'])->name('learners.show');
         Route::post('/learners/{id}/status', [LearnerController::class, 'updateStatus'])->name('learners.update-status');
+        Route::get('/learners/{learner}/assessments/{attempt}/attempt', [LearnerController::class, 'showAssessmentAttempt'])->name('learners.assessment-attempt');
 
         // Mentor Management
         Route::get('/mentors', [MentorManagementController::class, 'index'])->name('mentors.index');
