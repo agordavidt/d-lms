@@ -1,300 +1,177 @@
-@extends('layouts.admin')
+@extends('layouts.learner')
 
-@section('title', 'Program Status')
-@section('breadcrumb-parent', 'Learning')
-@section('breadcrumb-current', 'Status')
+@section('title', 'Program Complete — ' . $enrollment->program->name)
+
+@push('styles')
+<style>
+@keyframes pop-in {
+    0%   { opacity: 0; transform: scale(0.85) translateY(20px); }
+    70%  { transform: scale(1.03) translateY(-4px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-10px); }
+}
+@keyframes confetti-fall {
+    0%   { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+.pop-in    { animation: pop-in 0.5s cubic-bezier(.34,1.56,.64,1) both; }
+.float     { animation: float 3s ease-in-out infinite; }
+.confetti  { position: fixed; top: -20px; width: 10px; height: 10px; border-radius: 2px; animation: confetti-fall linear forwards; pointer-events: none; }
+</style>
+@endpush
 
 @section('content')
 
-@php
-    $graduationStatus = $enrollment->graduation_status ?? 'active';
-    $finalGrade = $enrollment->final_grade_avg;
-    $minGrade = $enrollment->program->min_passing_average ?? 70;
-    $isEligible = $enrollment->isEligibleForGraduation();
-    $allContentComplete = $enrollment->hasCompletedAllContent();
-    $allAssessmentsComplete = $enrollment->hasAttemptedAllAssessments();
-    $meetsGradeRequirement = $enrollment->meetsMinimumGradeRequirement();
-    
-    $totalWeeks = \App\Models\ModuleWeek::whereHas('programModule', fn($q) => $q->where('program_id', $enrollment->program_id))->where('status', 'published')->count();
-    $completedWeeks = \App\Models\WeekProgress::where('enrollment_id', $enrollment->id)->where('is_completed', true)->count();
-    
-    $totalAssessments = \App\Models\ModuleWeek::whereHas('programModule', fn($q) => $q->where('program_id', $enrollment->program_id))
-        ->where('status', 'published')
-        ->where('has_assessment', true)
-        ->whereHas('assessment')
-        ->count();
-    $completedAssessments = \App\Models\WeekProgress::where('enrollment_id', $enrollment->id)
-        ->whereIn('module_week_id', \App\Models\ModuleWeek::whereHas('programModule', fn($q) => $q->where('program_id', $enrollment->program_id))
-            ->where('has_assessment', true)
-            ->whereHas('assessment')
-            ->pluck('id'))
-        ->where('assessment_attempts', '>', 0)
-        ->count();
-        
-    $sessionsAttended = \App\Models\LiveSession::where('cohort_id', $enrollment->cohort_id)
-        ->where('status', 'completed')
-        ->whereJsonContains('attendees', auth()->id())
-        ->count();
-@endphp
+{{-- Confetti canvas (JS generated) --}}
+<div id="confetti-container" aria-hidden="true"></div>
 
-<div class="row">
-    <div class="col-12">
-        <!-- Status Alert -->
-        @if($graduationStatus === 'graduated')
-            <div class="alert alert-success">
-                <h4 class="alert-heading">Congratulations!</h4>
-                <p class="mb-0">You have successfully completed {{ $enrollment->program->name }}</p>
-                @if($finalGrade)
-                <p class="mb-0 mt-2"><strong>Final Grade:</strong> {{ number_format($finalGrade, 1) }}%</p>
-                @endif
-            </div>
-        @elseif($graduationStatus === 'pending_review')
-            <div class="alert alert-warning">
-                <h4 class="alert-heading">Graduation Under Review</h4>
-                <p class="mb-0">Your graduation request is being reviewed. This typically takes 2-3 business days.</p>
-                @if($enrollment->graduation_requested_at)
-                <p class="mb-0 mt-2"><small>Submitted: {{ $enrollment->graduation_requested_at->format('M d, Y') }}</small></p>
-                @endif
-            </div>
-        @elseif($isEligible)
-            <div class="alert alert-info">
-                <h4 class="alert-heading">Ready for Graduation</h4>
-                <p class="mb-3">You have completed all requirements for {{ $enrollment->program->name }}</p>
-                <button type="button" class="btn btn-success" onclick="requestGraduation()">
-                    Request Graduation
-                </button>
-            </div>
-        @else
-            <div class="alert alert-primary">
-                <h4 class="alert-heading">Program In Progress</h4>
-                <p class="mb-0">{{ $enrollment->program->name }}</p>
-                @if($finalGrade)
-                <p class="mb-0 mt-2"><strong>Current Grade:</strong> {{ number_format($finalGrade, 1) }}%</p>
-                @endif
-            </div>
-        @endif
-    </div>
-</div>
+<div class="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 flex items-center justify-center px-4 py-16">
+    <div class="max-w-2xl w-full text-center">
 
-<div class="row">
-    <!-- Main Content -->
-    <div class="col-lg-8">
-        <!-- Graduation Requirements -->
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Graduation Requirements</h5>
-            </div>
-            <div class="card-body">
-                <table class="table table-borderless">
-                    <tbody>
-                        <tr>
-                            <td width="50">
-                                @if($allContentComplete)
-                                    <span class="badge badge-success">✓</span>
-                                @else
-                                    <span class="badge badge-secondary">○</span>
-                                @endif
-                            </td>
-                            <td>
-                                <strong>Complete All Course Content</strong>
-                                <br><small class="text-muted">{{ $completedWeeks }} of {{ $totalWeeks }} weeks completed</small>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                @if($allAssessmentsComplete)
-                                    <span class="badge badge-success">✓</span>
-                                @else
-                                    <span class="badge badge-secondary">○</span>
-                                @endif
-                            </td>
-                            <td>
-                                <strong>Complete All Assessments</strong>
-                                <br><small class="text-muted">{{ $completedAssessments }} of {{ $totalAssessments }} assessments taken</small>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                @if($meetsGradeRequirement)
-                                    <span class="badge badge-success">✓</span>
-                                @else
-                                    <span class="badge badge-secondary">○</span>
-                                @endif
-                            </td>
-                            <td>
-                                <strong>Achieve Minimum Grade Average</strong>
-                                <br><small class="text-muted">
-                                    @if($finalGrade)
-                                        Current: {{ number_format($finalGrade, 1) }}% • Required: {{ $minGrade }}%
-                                    @else
-                                        Required: {{ $minGrade }}% average
-                                    @endif
-                                </small>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+        {{-- Trophy --}}
+        <div class="float mb-8 inline-block">
+            <div class="w-28 h-28 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl shadow-amber-400/40 pop-in">
+                <span class="text-5xl" role="img" aria-label="Trophy">🏆</span>
             </div>
         </div>
 
-        <!-- Certificate Section -->
-        @if($graduationStatus === 'graduated')
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5 class="mb-0">Certificate</h5>
-            </div>
-            <div class="card-body text-center">
-                <h5 class="mb-3">Certificate of Completion</h5>
-                
-                @if($enrollment->certificate_key)
-                <div class="mb-3">
-                    <small class="text-muted">Certificate ID:</small><br>
-                    <code>{{ $enrollment->certificate_key }}</code>
-                </div>
-                @endif
+        {{-- Headline --}}
+        <div class="pop-in" style="animation-delay:.1s">
+            <p class="text-xs font-black uppercase tracking-[0.25em] text-indigo-500 mb-3">
+                Program Complete
+            </p>
+            <h1 class="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight leading-tight mb-4">
+                You did it, {{ auth()->user()->first_name }}!
+            </h1>
+            <p class="text-lg text-slate-500 font-medium max-w-lg mx-auto mb-10">
+                You've completed every week of
+                <span class="font-bold text-slate-800">{{ $enrollment->program->name }}</span>.
+                Your achievement is now pending review for graduation.
+            </p>
+        </div>
 
-                <button class="btn btn-primary" onclick="alert('Certificate generation coming soon!')">
+        {{-- Stats strip --}}
+        <div class="pop-in grid grid-cols-3 gap-4 mb-10" style="animation-delay:.2s">
+            @php
+                $completedWeeks = \App\Models\WeekProgress::where('enrollment_id', $enrollment->id)
+                    ->where('is_completed', true)->count();
+                $totalWeeks     = $enrollment->program->getPublishedWeeks()->count();
+                $completedItems = \App\Models\ContentProgress::where('enrollment_id', $enrollment->id)
+                    ->where('is_completed', true)->count();
+                $attendedCount  = \App\Models\LiveSession::where('cohort_id', $enrollment->cohort_id)
+                    ->where('status', 'completed')
+                    ->whereJsonContains('attendees', auth()->id())->count();
+            @endphp
+
+            <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <p class="text-3xl font-black text-indigo-600 mb-1">{{ $completedWeeks }}</p>
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Weeks Done</p>
+            </div>
+            <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <p class="text-3xl font-black text-green-600 mb-1">{{ $completedItems }}</p>
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Lessons Done</p>
+            </div>
+            <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <p class="text-3xl font-black text-purple-600 mb-1">{{ $attendedCount }}</p>
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Sessions Attended</p>
+            </div>
+        </div>
+
+        {{-- Graduation status --}}
+        <div class="pop-in mb-10" style="animation-delay:.3s">
+            @if($enrollment->graduation_status === 'graduated')
+                {{-- Already graduated — show certificate CTA --}}
+                <div class="bg-green-50 border border-green-200 rounded-2xl p-6 mb-6">
+                    <p class="text-green-800 font-bold text-lg mb-1">🎓 Graduation approved!</p>
+                    <p class="text-green-700 text-sm">Your certificate is ready to download.</p>
+                </div>
+                <a href="{{ route('learner.certificate.download', $enrollment->certificate_key) }}"
+                   class="inline-flex items-center gap-2 bg-indigo-600 text-white font-bold px-8 py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-300/30 hover:shadow-indigo-400/30 hover:-translate-y-0.5">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
                     Download Certificate
-                </button>
-                
-                @if($enrollment->certificate_key)
-                <div class="mt-3">
-                    <a href="{{ route('certificate.verify', $enrollment->certificate_key) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
-                        Verify Certificate
-                    </a>
+                </a>
+            @elseif($enrollment->graduation_status === 'pending_review')
+                {{-- Under review --}}
+                <div class="bg-amber-50 border border-amber-200 rounded-2xl p-6 mb-6">
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-amber-900 font-bold text-sm mb-1">Under review</p>
+                            <p class="text-amber-700 text-sm">Your graduation is being reviewed by our team. You'll be notified by email once your certificate is ready — usually within 2 business days.</p>
+                        </div>
+                    </div>
                 </div>
-                @endif
-            </div>
-        </div>
-        @endif
+            @else
+                {{-- Not yet requested --}}
+                <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 mb-6">
+                    <p class="text-indigo-900 font-bold text-sm mb-1">Ready to graduate?</p>
+                    <p class="text-indigo-700 text-sm mb-4">Submit your graduation request and our team will review your progress and issue your certificate.</p>
 
-        <!-- Actions -->
-        @if($graduationStatus === 'graduated')
-        <div class="card mt-3">
-            <div class="card-body text-center">
-                <h5 class="mb-3">Continue Your Learning Journey</h5>
-                <a href="{{ route('learner.programs.index') }}" class="btn btn-primary">
-                    Browse More Programs
-                </a>
-            </div>
-        </div>
-        @elseif(!$isEligible && $graduationStatus !== 'pending_review')
-        <div class="card mt-3">
-            <div class="card-body text-center">
-                <a href="{{ route('learner.learning.index') }}" class="btn btn-primary">
-                    Continue Learning
-                </a>
-            </div>
-        </div>
-        @endif
-    </div>
-
-    <!-- Sidebar -->
-    <div class="col-lg-4">
-        <!-- Stats -->
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Progress Summary</h5>
-            </div>
-            <div class="card-body">
-                <table class="table table-borderless table-sm mb-0">
-                    @if($finalGrade)
-                    <tr>
-                        <td><strong>Final Grade</strong></td>
-                        <td class="text-right">
-                            <span class="badge badge-{{ $meetsGradeRequirement ? 'success' : 'warning' }} badge-lg">
-                                {{ number_format($finalGrade, 1) }}%
-                            </span>
-                        </td>
-                    </tr>
-                    @endif
-                    <tr>
-                        <td>Weeks Completed</td>
-                        <td class="text-right"><strong>{{ $completedWeeks }}</strong> / {{ $totalWeeks }}</td>
-                    </tr>
-                    <tr>
-                        <td>Assessments Taken</td>
-                        <td class="text-right"><strong>{{ $completedAssessments }}</strong> / {{ $totalAssessments }}</td>
-                    </tr>
-                    <tr>
-                        <td>Sessions Attended</td>
-                        <td class="text-right"><strong>{{ $sessionsAttended }}</strong></td>
-                    </tr>
-                </table>
-            </div>
+                    <form action="{{ route('learner.graduation.request') }}" method="POST">
+                        @csrf
+                        <input type="hidden" name="enrollment_id" value="{{ $enrollment->id }}">
+                        <button type="submit"
+                            class="inline-flex items-center gap-2 bg-indigo-600 text-white font-bold px-6 py-3 rounded-xl hover:bg-indigo-700 transition-all text-sm shadow-lg shadow-indigo-300/30">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                            </svg>
+                            Request Graduation Certificate
+                        </button>
+                    </form>
+                </div>
+            @endif
         </div>
 
-        <!-- Program Details -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5 class="mb-0">Program Details</h5>
-            </div>
-            <div class="card-body">
-                <table class="table table-borderless table-sm mb-0">
-                    <tr>
-                        <td class="text-muted">Program</td>
-                        <td class="text-right"><strong>{{ $enrollment->program->name }}</strong></td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Cohort</td>
-                        <td class="text-right">{{ $enrollment->cohort->name }}</td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted">Started</td>
-                        <td class="text-right">{{ $enrollment->enrolled_at->format('M d, Y') }}</td>
-                    </tr>
-                    @if($graduationStatus === 'graduated' && $enrollment->graduation_approved_at)
-                    <tr>
-                        <td class="text-muted">Graduated</td>
-                        <td class="text-right">{{ $enrollment->graduation_approved_at->format('M d, Y') }}</td>
-                    </tr>
-                    @endif
-                </table>
-            </div>
+        {{-- Secondary actions --}}
+        <div class="pop-in flex flex-wrap justify-center gap-3" style="animation-delay:.4s">
+            <a href="{{ route('learner.my-learning') }}"
+               class="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors px-5 py-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50">
+                ← Back to My Learning
+            </a>
+            <a href="{{ route('explore') }}"
+               class="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-700 transition-colors px-5 py-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100">
+                Explore More Programs
+            </a>
         </div>
 
-        <!-- Quick Links -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5 class="mb-0">Quick Links</h5>
-            </div>
-            <div class="card-body">
-                <a href="{{ route('learner.curriculum') }}" class="btn btn-outline-primary btn-block btn-sm mb-2">
-                    View Curriculum
-                </a>
-                <a href="{{ route('learner.dashboard') }}" class="btn btn-outline-primary btn-block btn-sm">
-                    Dashboard
-                </a>
-            </div>
-        </div>
     </div>
 </div>
 @endsection
 
 @push('scripts')
 <script>
-function requestGraduation() {
-    if (confirm('Submit your graduation request for review?\n\nYour request will be reviewed by our team within 2-3 business days.')) {
-        fetch('{{ route("learner.graduation.request") }}', {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                toastr.success('Graduation request submitted successfully!');
-                setTimeout(() => location.reload(), 1500);
-            } else {
-                toastr.error(data.message || 'Failed to submit request');
-            }
-        })
-        .catch(error => {
-            toastr.error('An error occurred. Please try again.');
-        });
+// ── Confetti burst ──────────────────────────────────────────────────────────
+(function spawnConfetti() {
+    var colors = ['#4f46e5','#7c3aed','#059669','#d97706','#db2777','#0891b2'];
+    var container = document.getElementById('confetti-container');
+    var count = 80;
+
+    for (var i = 0; i < count; i++) {
+        (function(i) {
+            setTimeout(function() {
+                var el = document.createElement('div');
+                el.className = 'confetti';
+                el.style.left            = Math.random() * 100 + 'vw';
+                el.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                el.style.width           = (Math.random() * 8 + 6) + 'px';
+                el.style.height          = (Math.random() * 8 + 6) + 'px';
+                el.style.borderRadius    = Math.random() > 0.5 ? '50%' : '2px';
+                el.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                el.style.animationDelay  = (Math.random() * 0.5) + 's';
+                container.appendChild(el);
+                setTimeout(function() { el.remove(); }, 4000);
+            }, i * 30);
+        })(i);
     }
-}
+})();
 </script>
 @endpush

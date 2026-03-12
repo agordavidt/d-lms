@@ -19,22 +19,24 @@ class LoginController extends Controller
             return $this->redirectToDashboard(Auth::user());
         }
 
+        // Redirect to home — login is now a modal on the landing page.
+        // The dedicated /login page still works as a fallback.
         return view('auth.login');
     }
 
     public function login(Request $request)
     {
         $request->validate([
-            'email' => 'required|email',
+            'email'    => 'required|email',
             'password' => 'required|string',
         ]);
 
-        // Rate limiting
+        // ── Rate limiting ────────────────────────────────
         $key = 'login.' . $request->ip();
-        
+
         if (RateLimiter::tooManyAttempts($key, 5)) {
             $seconds = RateLimiter::availableIn($key);
-            
+
             throw ValidationException::withMessages([
                 'email' => ["Too many login attempts. Please try again in {$seconds} seconds."],
             ]);
@@ -42,86 +44,88 @@ class LoginController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
-        // Check if user exists
-        if (!$user) {
+        // ── User not found ───────────────────────────────
+        if (! $user) {
             RateLimiter::hit($key, 60);
-            
+
             throw ValidationException::withMessages([
                 'email' => ['These credentials do not match our records.'],
             ]);
         }
 
-        // Check if account is locked
+        // ── Account locked ───────────────────────────────
         if ($user->isLocked()) {
             $minutesRemaining = now()->diffInMinutes($user->locked_until);
-            
+
             throw ValidationException::withMessages([
                 'email' => ["Account locked due to multiple failed attempts. Try again in {$minutesRemaining} minutes."],
             ]);
         }
 
-        // Verify password
-        if (!Hash::check($request->password, $user->password)) {
+        // ── Wrong password ───────────────────────────────
+        if (! Hash::check($request->password, $user->password)) {
             $user->recordLoginAttempt();
             RateLimiter::hit($key, 60);
-            
+
             AuditLog::log('failed_login', $user, [
-                'description' => 'Failed login attempt - incorrect password'
+                'description' => 'Failed login attempt - incorrect password',
             ]);
-            
+
             throw ValidationException::withMessages([
                 'email' => ['These credentials do not match our records.'],
             ]);
         }
 
-        // Check user status
-        if (!$user->isActive()) {
-            $message = $user->isSuspended() 
+        // ── Account inactive / suspended ─────────────────
+        if (! $user->isActive()) {
+            $message = $user->isSuspended()
                 ? 'Your account has been suspended. Please contact support.'
                 : 'Your account is inactive. Please contact support.';
-            
+
             throw ValidationException::withMessages([
                 'email' => [$message],
             ]);
         }
 
-        // Clear rate limiter
+        // ── Success ──────────────────────────────────────
         RateLimiter::clear($key);
 
-        // Record successful login
         $user->recordLogin($request->ip());
-        
-        // Logout other devices if needed (optional - uncomment if desired)
-        // Auth::logoutOtherDevices($request->password);
 
-        // Login user
-        Auth::login($user, $request->filled('remember'));
+        Auth::login($user, $request->boolean('remember'));
 
-        // Regenerate session
         $request->session()->regenerate();
 
-        // Log successful login
         AuditLog::log('login', $user, [
-            'description' => 'User logged in successfully'
+            'description' => 'User logged in successfully',
         ]);
 
-        // Redirect to appropriate dashboard
-        $notification = [
-            'message' => 'Welcome back, ' . $user->name . '!',
-            'alert-type' => 'success'
-        ];
+        $redirectPath = $this->redirectPath($user);
 
-        return redirect()->intended($this->redirectPath($user))
-            ->with($notification);
+        // JSON response for AJAX modal submissions
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success'  => true,
+                'redirect' => $redirectPath,
+                'message'  => 'Welcome back, ' . $user->first_name . '!',
+            ]);
+        }
+
+        // Standard redirect for direct /login form submissions (fallback page)
+        return redirect()->intended($redirectPath)
+            ->with([
+                'message'    => 'Welcome back, ' . $user->name . '!',
+                'alert-type' => 'success',
+            ]);
     }
 
     public function logout(Request $request)
     {
         $user = Auth::user();
-        
+
         if ($user) {
             AuditLog::log('logout', $user, [
-                'description' => 'User logged out'
+                'description' => 'User logged out',
             ]);
         }
 
@@ -130,21 +134,19 @@ class LoginController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        $notification = [
-            'message' => 'You have been logged out successfully.',
-            'alert-type' => 'info'
-        ];
-
-        return redirect()->route('login')->with($notification);
+        return redirect()->route('login')->with([
+            'message'    => 'You have been logged out successfully.',
+            'alert-type' => 'info',
+        ]);
     }
 
     protected function redirectPath(User $user): string
     {
-        return match($user->role) {
+        return match ($user->role) {
             'superadmin', 'admin' => route('admin.dashboard'),
-            'mentor' => route('mentor.dashboard'),
-            'learner' => route('learner.dashboard'),
-            default => route('home')
+            'mentor'              => route('mentor.dashboard'),
+            'learner'             => route('learner.dashboard'),
+            default               => route('home'),
         };
     }
 

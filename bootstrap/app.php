@@ -28,4 +28,12 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
+        // Return JSON for CSRF token mismatch on AJAX requests
+        $exceptions->render(function (\Illuminate\Session\TokenMismatchException $e, \Illuminate\Http\Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Your session has expired. Please refresh the page and try again.'
+                ], 419);
+            }
+        });
     })->create();

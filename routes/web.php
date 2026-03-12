@@ -12,8 +12,9 @@ use App\Http\Controllers\Admin\ModuleController;
 use App\Http\Controllers\Admin\WeekController;
 use App\Http\Controllers\Admin\ContentController as AdminContentController;
 use App\Http\Controllers\Admin\GraduationController;
-use App\Http\Controllers\Learner\DashboardController as LearnerDashboardController;
-use App\Http\Controllers\Learner\CalendarController;
+use App\Http\Controllers\ExploreController;
+use App\Http\Controllers\Learner\CertificationsController;
+use App\Http\Controllers\Learner\MyLearningController;
 use App\Http\Controllers\Learner\ProgramController as LearnerProgramController;
 use App\Http\Controllers\Learner\ProfileController;
 use App\Http\Controllers\Learner\LearningController;
@@ -27,48 +28,144 @@ use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
+use Illuminate\Auth\Events\Verified;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-// Public Routes
-Route::get('/', function () {
-    return view('welcome');
-})->name('home');
+// ══════════════════════════════════════════════════════════════════════════════
+// PUBLIC ROUTES
+// ══════════════════════════════════════════════════════════════════════════════
 
-// Certificate Verification (Public)
-Route::get('/certificate/verify/{key}', function($key) {
+// Home — passes active programs to the landing page for the courses section
+Route::get('/', function () {
+    $programs = \App\Models\Program::where('status', 'active')
+        ->latest()
+        ->take(6)
+        ->get();
+
+    return view('welcome', compact('programs'));
+})->name('home');
+Route::get('/explore', [ExploreController::class, 'index'])->name('explore');
+
+// Certificate Verification (Public — no auth required)
+Route::get('/certificate/verify/{key}', function ($key) {
     $enrollment = \App\Models\Enrollment::where('certificate_key', $key)->first();
-    
-    if (!$enrollment || $enrollment->graduation_status !== 'graduated') {
+
+    if (! $enrollment || $enrollment->graduation_status !== 'graduated') {
         abort(404, 'Certificate not found');
     }
-    
+
     return view('public.certificate-verify', compact('enrollment'));
 })->name('certificate.verify');
 
-// Guest Routes (only accessible when not logged in)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GUEST ROUTES (only accessible when NOT logged in)
+// ══════════════════════════════════════════════════════════════════════════════
+
 Route::middleware('guest')->group(function () {
+    // These views are now fallback pages — the primary flow uses modals on the
+    // landing page. They remain useful for direct URL access and email redirects.
     Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
     Route::post('/login', [LoginController::class, 'login']);
+
     Route::get('/register', [RegisterController::class, 'showRegistrationForm'])->name('register');
     Route::post('/register', [RegisterController::class, 'register']);
+
+    // Password Reset
     Route::get('/forgot-password', [ForgotPasswordController::class, 'showLinkRequestForm'])->name('password.request');
     Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail'])->name('password.email');
     Route::get('/reset-password/{token}', [ResetPasswordController::class, 'showResetForm'])->name('password.reset');
     Route::post('/reset-password', [ResetPasswordController::class, 'reset'])->name('password.update');
 });
 
-// Authenticated Routes
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTHENTICATED ROUTES
+// ══════════════════════════════════════════════════════════════════════════════
+
 Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () {
-    
+
+    // ── Logout ─────────────────────────────────────────────────────────────
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 
-    // Payment Routes
+    // ── Email Verification ─────────────────────────────────────────────────
+    // (Accessible to authenticated users regardless of verification status
+    //  so unverified users can reach the notice and resend pages.)
+
+    // 1. Notice — shown after registration: "Check your inbox"
+    Route::get('/email/verify', function () {
+        // If already verified, send them to their dashboard immediately
+        if (auth()->user()->hasVerifiedEmail()) {
+            return redirect()->route(
+                match(auth()->user()->role) {
+                    'superadmin', 'admin' => 'admin.dashboard',
+                    'mentor'              => 'mentor.dashboard',
+                    default               => 'learner.dashboard',
+                }
+            );
+        }
+
+        return view('auth.verify-email');
+    })->name('verification.notice');
+
+    // 2. Verification link handler — signed URL from the email
+    Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+        $request->fulfill(); // Sets email_verified_at + fires Verified event
+
+        $user = $request->user();
+
+        $redirectRoute = match($user->role) {
+            'superadmin', 'admin' => 'admin.dashboard',
+            'mentor'              => 'mentor.dashboard',
+            default               => 'learner.dashboard',
+        };
+
+        return redirect()->route($redirectRoute)->with([
+            'message'    => 'Email verified! Welcome to G-Luper, ' . $user->first_name . '.',
+            'alert-type' => 'success',
+        ]);
+    })->middleware('signed')->name('verification.verify');
+
+    // 3. Resend verification email (rate-limited: 6 attempts per minute)
+    Route::post('/email/verification-notification', function (Request $request) {
+        if ($request->user()->hasVerifiedEmail()) {
+            return redirect()->route(
+                match($request->user()->role) {
+                    'superadmin', 'admin' => 'admin.dashboard',
+                    'mentor'              => 'mentor.dashboard',
+                    default               => 'learner.dashboard',
+                }
+            );
+        }
+
+        $request->user()->sendEmailVerificationNotification();
+
+        return back()->with([
+            'status'     => 'verification-link-sent',
+            'message'    => 'Verification link sent! Check your inbox.',
+            'alert-type' => 'success',
+        ]);
+    })->middleware('throttle:6,1')->name('verification.send');
+
+
+    // ── Payments ───────────────────────────────────────────────────────────
+    // Payment routes do NOT require verified email — a user should be able
+    // to complete payment even before verifying (edge case guard).
     Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment'])->name('payment.initiate');
     Route::get('/payment/callback', [PaymentController::class, 'callback'])->name('payment.callback');
     Route::post('/payment/installment', [PaymentController::class, 'payInstallment'])->name('payment.installment');
 
-    // Admin Routes
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ADMIN ROUTES
+    // Note: Admin/SuperAdmin accounts are created by the system (not
+    // self-registered), so the `verified` middleware is intentionally
+    // omitted here. Add it if admins ever self-register.
+    // ══════════════════════════════════════════════════════════════════════
     Route::middleware(['check.role:admin,superadmin'])->prefix('admin')->name('admin.')->group(function () {
+
         Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
         Route::get('/activity-log', [ActivityLogController::class, 'index'])->name('activity-log');
         Route::get('/activity-log/{id}', [ActivityLogController::class, 'show'])->name('activity-log.show');
@@ -104,7 +201,7 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
         Route::resource('weeks', WeekController::class);
         Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])->name('weeks.modules-by-program');
-        
+
         // Content Management
         Route::resource('contents', AdminContentController::class);
         Route::post('contents/upload-image', [AdminContentController::class, 'uploadImage'])->name('contents.upload-image');
@@ -112,7 +209,7 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])->name('contents.weeks-by-module');
         Route::post('contents/reorder', [AdminContentController::class, 'reorder'])->name('contents.reorder');
 
-        // Sessions/Calendar
+        // Sessions / Calendar
         Route::get('/sessions/calendar', [AdminSessionController::class, 'calendar'])->name('sessions.calendar');
         Route::get('/sessions/events', [AdminSessionController::class, 'getEvents'])->name('sessions.events');
         Route::resource('sessions', AdminSessionController::class);
@@ -140,7 +237,7 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('/assessments/{assessment}/questions/import', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'showImport'])->name('assessments.questions.import-form');
         Route::post('/assessments/{assessment}/questions/import', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'import'])->name('assessments.questions.import');
         Route::get('/assessments/questions/template', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'downloadTemplate'])->name('assessments.questions.template');
-       
+
         // Graduation Management
         Route::get('/graduations', [GraduationController::class, 'index'])->name('graduations.index');
         Route::get('/graduations/{enrollment}/review', [GraduationController::class, 'review'])->name('graduations.review');
@@ -150,7 +247,11 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('/graduations/graduated', [GraduationController::class, 'graduated'])->name('graduations.graduated');
     });
 
-    // Mentor Routes
+
+    // ══════════════════════════════════════════════════════════════════════
+    // MENTOR ROUTES
+    // Same note as admin — mentor accounts are system-created, no `verified`.
+    // ══════════════════════════════════════════════════════════════════════
     Route::middleware(['check.role:mentor'])->prefix('mentor')->name('mentor.')->group(function () {
         Route::get('/dashboard', [MentorDashboardController::class, 'index'])->name('dashboard');
         Route::get('/sessions/calendar', [MentorSessionController::class, 'calendar'])->name('sessions.calendar');
@@ -162,32 +263,60 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::resource('contents', MentorContentController::class);
     });
 
-    // Learner Routes
-    Route::middleware(['check.role:learner'])->prefix('learner')->name('learner.')->group(function () {
-        Route::get('/dashboard', [LearnerDashboardController::class, 'index'])->name('dashboard');
-        Route::get('/programs', [LearnerProgramController::class, 'index'])->name('programs.index');
-        Route::post('/programs/{program}/enroll', [LearnerProgramController::class, 'enroll'])->name('programs.enroll');
-        Route::get('/learning', [LearningController::class, 'index'])->name('learning.index');
-        Route::get('/learning/week/{week}', [LearningController::class, 'showWeek'])->name('learning.week');
-        Route::get('/learning/content/{content}', [LearningController::class, 'showContent'])->name('learning.content');
-        Route::post('/learning/content/{content}/complete', [LearningController::class, 'markContentComplete'])->name('learning.content.complete');
-        Route::post('/learning/content/{content}/progress', [LearningController::class, 'updateContentProgress'])->name('learning.content.progress');
 
-        // Learner Assessment Routes
-        Route::get('/assessments/{assessment}/start', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'start'])->name('assessments.start');
-        Route::post('/assessments/{assessment}/attempt', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'createAttempt'])->name('assessments.attempt');
-        Route::get('/attempts/{attempt}', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'show'])->name('attempts.show');
-        Route::post('/attempts/{attempt}/submit', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'submit'])->name('attempts.submit');
-        Route::get('/attempts/{attempt}/results', [App\Http\Controllers\Learner\AssessmentAttemptController::class, 'results'])->name('attempts.results');
+ 
 
-        // Graduation
-        Route::post('/graduation/request', [App\Http\Controllers\Learner\GraduationController::class, 'request'])->name('graduation.request');
 
-        Route::get('/curriculum', [CurriculumController::class, 'index'])->name('curriculum');
-        Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
-        Route::get('/sessions/events', [CalendarController::class, 'getEvents'])->name('sessions.events');
-        Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-        Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
-        Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
-    });
-});
+    // ── LEARNER AUTH GROUP ────────────────────────────────────────────────────────
+        // Replace your existing learner group with this block,
+        // or just add the new routes into your existing group.
+        Route::middleware(['verified'])->prefix('learner')->name('learner.')->group(function () {
+
+            // ── My Learning (replaces DashboardController + CalendarController) ──
+            // Both URLs point to the same controller — /dashboard kept for backward
+            // compatibility with any existing hard-coded links or email links.
+            Route::get('/dashboard',   [MyLearningController::class, 'index'])->name('dashboard');
+            Route::get('/my-learning', [MyLearningController::class, 'index'])->name('my-learning');
+
+            // AJAX — calendar events for the schedule panel
+            Route::get('/my-learning/events', [MyLearningController::class, 'events'])->name('my-learning.events');
+
+            // ── Certifications ────────────────────────────────────────────────────
+            Route::get('/certifications', [CertificationsController::class, 'index'])->name('certifications');
+
+            // ── Programs — ENROLL ENDPOINT ONLY (index moved to public /explore) ──
+            // Keep this for the AJAX enroll call from the Explore page.
+            Route::post('/programs/{program}/enroll', [\App\Http\Controllers\Learner\ProgramController::class, 'enroll'])
+                ->name('programs.enroll');
+
+            // ── Learning — NOW REQUIRES enrollmentId (Batch 2 will also add showWeek/content) ──
+            // The old route was: Route::get('/learning', [...]) with no param.
+            // Changed to accept an enrollment ID so My Learning can link to the
+            // correct course when a learner has multiple enrollments.
+            Route::get('/learning/{enrollmentId}',         [\App\Http\Controllers\Learner\LearningController::class, 'index'])
+                ->name('learning.index');
+            Route::get('/learning/{enrollmentId}/week/{weekId}', [\App\Http\Controllers\Learner\LearningController::class, 'showWeek'])
+                ->name('learning.week');
+            Route::get('/learning/content/{contentId}',    [\App\Http\Controllers\Learner\LearningController::class, 'showContent'])
+                ->name('learning.content');
+
+            Route::get('/learning/{enrollmentId}/week/{weekId}/contents', [LearningController::class, 'getWeekContents'])->name('learning.week-contents');
+            Route::get('/learning/{enrollmentId}/assessment/{assessmentId}', [LearningController::class, 'getAssessmentData'])->name('learning.assessment-data');
+
+            // Progress update AJAX endpoints (unchanged)
+            Route::post('/learning/content/{contentId}/complete',  [\App\Http\Controllers\Learner\LearningController::class, 'markContentComplete'])
+                ->name('learning.complete');
+            Route::post('/learning/content/{contentId}/progress',  [\App\Http\Controllers\Learner\LearningController::class, 'updateContentProgress'])
+                ->name('learning.progress');
+
+            // Profile
+            Route::get('/profile/edit', [\App\Http\Controllers\Learner\ProfileController::class, 'edit'])
+                ->name('profile.edit');
+
+            // Certificate download (stub — implement in Batch 2)
+            Route::get('/certificate/{key}', [\App\Http\Controllers\Learner\CertificateController::class, 'download'])
+                ->name('certificate.download');
+
+        });
+
+}); 

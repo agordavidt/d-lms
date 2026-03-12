@@ -1,740 +1,978 @@
-==== lerner flow =====
-<?php
+{{--
+    ═══════════════════════════════════════════════════════════════════════
+    PATCH INSTRUCTIONS for resources/views/learner/learning/index.blade.php
+    ═══════════════════════════════════════════════════════════════════════
 
-namespace App\Http\Controllers\Admin;
+    1. In the @push('styles') block, add the CSS from SECTION A below.
+    2. In the Blade view, after the last </div> inside #content-body
+       (before the week-complete-toast div), add the HTML from SECTION B.
+    3. In the @push('scripts') block, REPLACE the entire <script> block
+       with the one in SECTION C (it's a full replacement, not a patch).
 
-use App\Http\Controllers\Controller;
-use App\Models\User;
-use App\Models\Enrollment;
-use App\Models\Program;
-use Illuminate\Http\Request;
+    The route additions required are documented in LearningController-batch3-additions.php
+    ═══════════════════════════════════════════════════════════════════════
+--}}
 
-class LearnerController extends Controller
-{
-    /**
-     * Display all learners with backend filtering
-     */
-    public function index(Request $request)
-    {
-        $query = User::where('role', 'learner')
-            ->with(['enrollments' => function($q) {
-                $q->whereIn('status', ['active', 'pending'])
-                  ->with(['program', 'cohort.mentor'])
-                  ->latest();
-            }]);
+{{-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION A — add inside @push('styles')
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ --}}
+<style>
+/* ── Assessment panel ─────────────────────────────────────────────────────── */
+.quiz-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+    user-select: none;
+}
+.quiz-option:hover:not(.locked)       { border-color: #818cf8; background: #f5f3ff; }
+.quiz-option.selected:not(.locked)    { border-color: #4f46e5; background: #eef2ff; }
+.quiz-option.correct                  { border-color: #16a34a; background: #f0fdf4; }
+.quiz-option.incorrect                { border-color: #dc2626; background: #fef2f2; }
+.quiz-option.locked                   { cursor: default; }
 
-        // Search by name or email
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('first_name', 'like', '%' . $search . '%')
-                  ->orWhere('last_name', 'like', '%' . $search . '%')
-                  ->orWhere('email', 'like', '%' . $search . '%');
-            });
-        }
+.quiz-radio {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #cbd5e1;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    transition: border-color 0.12s;
+}
+.quiz-option.selected .quiz-radio     { border-color: #4f46e5; }
+.quiz-option.selected .quiz-radio::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #4f46e5;
+    border-radius: 50%;
+    display: block;
+}
+.quiz-option.correct .quiz-radio  { border-color: #16a34a; background: #16a34a; }
+.quiz-option.correct .quiz-radio::after  { background: #fff; }
+.quiz-option.incorrect .quiz-radio { border-color: #dc2626; background: #dc2626; }
+.quiz-option.incorrect .quiz-radio::after { background: #fff; }
 
-        // Filter by status
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
-        // Filter by program
-        if ($request->filled('program_id')) {
-            $query->whereHas('enrollments', function($q) use ($request) {
-                $q->where('program_id', $request->program_id)
-                  ->whereIn('status', ['active', 'pending']);
-            });
-        }
-
-        $learners = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
-        
-        // Get programs for filter
-        $programs = Program::active()->orderBy('name')->get(['id', 'name']);
-
-        return view('admin.learners.index', compact('learners', 'programs'));
-    }
-
-    /**
-     * Show learner details
-     */
-    public function show($id)
-    {
-        $learner = User::where('role', 'learner')
-            ->with([
-                'enrollments.program',
-                'enrollments.cohort.mentor',
-                'enrollments.payments',
-            ])
-            ->findOrFail($id);
-
-        $enrollment = $learner->enrollments()
-            ->whereIn('status', ['active', 'pending'])
-            ->with(['program.modules.weeks.contents', 'cohort.mentor'])
-            ->first();
-        
-        // Calculate progress statistics if enrolled
-        $progressStats = null;
-        if ($enrollment) {
-            // Count total published content in the program
-            $totalContent = 0;
-            foreach ($enrollment->program->modules as $module) {
-                foreach ($module->weeks as $week) {
-                    $totalContent += $week->contents()->where('status', 'published')->count();
-                }
-            }
-
-            // Count completed content for this learner
-            $completedContent = $learner->contentProgress()
-                ->where('is_completed', true)
-                ->count();
-
-            $progressStats = [
-                'total_content' => $totalContent,
-                'completed_content' => $completedContent,
-                'completion_percentage' => $totalContent > 0 ? round(($completedContent / $totalContent) * 100, 2) : 0
-            ];
-        }
-
-        return view('admin.learners.show', compact('learner', 'enrollment', 'progressStats'));
-    }
-
-    /**
-     * Update learner status
-     */
-    public function updateStatus(Request $request, $id)
-    {
-        try {
-            $learner = User::where('role', 'learner')->findOrFail($id);
-
-            $request->validate([
-                'status' => 'required|in:active,suspended,inactive'
-            ]);
-
-            $learner->update(['status' => $request->status]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Learner status updated successfully!'
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update status.'
-            ], 500);
-        }
-    }
+.quiz-progress-bar {
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 9999px;
+    overflow: hidden;
+}
+.quiz-progress-fill {
+    height: 100%;
+    background: linear-gradient(to right, #4f46e5, #7c3aed);
+    border-radius: 9999px;
+    transition: width 0.3s ease;
 }
 
+/* Timer warning */
+.timer-warning { color: #dc2626 !important; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
----- \resources\views\admin\learners\index.blade.php
-@extends('layouts.admin')
+/* Results score ring */
+.score-ring { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+.score-ring svg { transform: rotate(-90deg); }
+.score-ring .score-text {
+    position: absolute;
+    font-size: 28px;
+    font-weight: 900;
+    color: #0f172a;
+    line-height: 1;
+}
 
-@section('title', 'Learner Management')
-@section('breadcrumb-parent', 'Users')
-@section('breadcrumb-current', 'Learners')
+/* Skeleton loader for week content swap */
+.skeleton {
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shine 1.4s infinite;
+    border-radius: 8px;
+}
+@keyframes skeleton-shine {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+</style>
 
-@section('content')
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <!-- Header -->
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h4 class="card-title mb-0">Learner Management</h4>
-                    <div class="text-muted">
-                        Total: {{ $learners->total() }} learners
-                    </div>
+{{-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION B — Assessment panel HTML
+Insert this inside #content-body, after all other view-* divs,
+just before the week-complete-toast div.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ --}}
+
+{{-- ─── ASSESSMENT PANEL ───────────────────────────────────────────── --}}
+<div id="view-assessment" class="hidden">
+    <div class="max-w-3xl mx-auto px-5 py-8">
+
+        {{-- Loading skeleton --}}
+        <div id="assessment-loading" class="hidden space-y-4">
+            <div class="skeleton h-8 w-1/2 mb-2"></div>
+            <div class="skeleton h-4 w-3/4 mb-6"></div>
+            <div class="skeleton h-16 w-full rounded-2xl"></div>
+            <div class="skeleton h-16 w-full rounded-2xl"></div>
+            <div class="skeleton h-16 w-full rounded-2xl"></div>
+        </div>
+
+        {{-- ── State: intro ─────────────────────────────────────────── --}}
+        <div id="assessment-intro" class="hidden">
+            <div class="mb-6">
+                <p class="text-xs font-black uppercase tracking-widest text-indigo-500 mb-2">Week Assessment</p>
+                <h2 class="text-2xl font-black text-slate-900 mb-2" id="a-title"></h2>
+                <p class="text-slate-500 text-sm" id="a-description"></p>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8" id="a-meta-grid">
+                <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1">Questions</p>
+                    <p class="text-2xl font-black text-slate-900" id="a-q-count">—</p>
                 </div>
-
-                <!-- Filters Form -->
-                <form method="GET" action="{{ route('admin.learners.index') }}" id="filterForm">
-                    <div class="row mb-4">
-                        <!-- Search -->
-                        <div class="col-md-4">
-                            <input type="text" 
-                                   class="form-control form-control-sm" 
-                                   name="search" 
-                                   placeholder="Search by name or email..." 
-                                   value="{{ request('search') }}"
-                                   id="searchInput">
-                        </div>
-
-                        <!-- Program Filter -->
-                        <div class="col-md-4">
-                            <select class="form-control form-control-sm" name="program_id" onchange="this.form.submit()">
-                                <option value="">All Programs</option>
-                                @foreach($programs as $program)
-                                    <option value="{{ $program->id }}" {{ request('program_id') == $program->id ? 'selected' : '' }}>
-                                        {{ $program->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <!-- Status Filter -->
-                        <div class="col-md-4">
-                            <select class="form-control form-control-sm" name="status" onchange="this.form.submit()">
-                                <option value="">All Status</option>
-                                <option value="active" {{ request('status') == 'active' ? 'selected' : '' }}>Active</option>
-                                <option value="suspended" {{ request('status') == 'suspended' ? 'selected' : '' }}>Suspended</option>
-                                <option value="inactive" {{ request('status') == 'inactive' ? 'selected' : '' }}>Inactive</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Active Filters & Clear -->
-                    @if(request()->hasAny(['program_id', 'status', 'search']))
-                    <div class="mb-3">
-                        <a href="{{ route('admin.learners.index') }}" class="btn btn-sm btn-outline-secondary">
-                            Clear All Filters
-                        </a>
-                    </div>
-                    @endif
-                </form>
-
-                <!-- Learners Table -->
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover">
-                        <thead class="thead-light">
-                            <tr>
-                                <th style="width: 25%;">Learner</th>
-                                <th style="width: 20%;">Contact</th>
-                                <th style="width: 20%;">Program</th>
-                                <th style="width: 15%;">Cohort</th>
-                                <th style="width: 10%;">Status</th>
-                                <th style="width: 10%;">Joined</th>
-                                <th style="width: 5%;" class="text-center">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse($learners as $learner)
-                            @php
-                                $enrollment = $learner->enrollments->first();
-                            @endphp
-                            <tr>
-                                <!-- Learner Name & Avatar -->
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <img src="{{ $learner->avatar_url }}" 
-                                             class="rounded mr-2" 
-                                             style="width: 35px; height: 35px; object-fit: cover;" 
-                                             alt="{{ $learner->name }}">
-                                        <div>
-                                            <div class="font-weight-bold">{{ $learner->name }}</div>
-                                        </div>
-                                    </div>
-                                </td>
-
-                                <!-- Contact -->
-                                <td>
-                                    <div class="small text-muted">{{ $learner->email }}</div>
-                                    @if($learner->phone)
-                                        <div class="small text-muted">{{ $learner->phone }}</div>
-                                    @endif
-                                </td>
-
-                                <!-- Program -->
-                                <td>
-                                    @if($enrollment && $enrollment->program)
-                                        <span class="small">{{ Str::limit($enrollment->program->name, 30) }}</span>
-                                    @else
-                                        <span class="text-muted small">Not Enrolled</span>
-                                    @endif
-                                </td>
-
-                                <!-- Cohort -->
-                                <td>
-                                    @if($enrollment && $enrollment->cohort)
-                                        <span class="small">{{ $enrollment->cohort->name }}</span>
-                                        @if($enrollment->cohort->mentor)
-                                            <div class="text-muted small">{{ $enrollment->cohort->mentor->name }}</div>
-                                        @endif
-                                    @else
-                                        <span class="text-muted">—</span>
-                                    @endif
-                                </td>
-
-                                <!-- Status -->
-                                <td>
-                                    @switch($learner->status)
-                                        @case('active')
-                                            <span class="badge badge-sm badge-success">Active</span>
-                                            @break
-                                        @case('suspended')
-                                            <span class="badge badge-sm badge-danger">Suspended</span>
-                                            @break
-                                        @case('inactive')
-                                            <span class="badge badge-sm badge-secondary">Inactive</span>
-                                            @break
-                                    @endswitch
-                                    
-                                    @if($enrollment && $enrollment->status === 'pending')
-                                        <br><span class="badge badge-sm badge-warning mt-1">Payment Pending</span>
-                                    @endif
-                                </td>
-
-                                <!-- Joined Date -->
-                                <td>
-                                    <small class="text-muted">{{ $learner->created_at->format('M d, Y') }}</small>
-                                </td>
-
-                                <!-- Actions -->
-                                <td class="text-center">
-                                    <div class="dropdown">
-                                        <button type="button" class="btn btn-sm btn-light" data-toggle="dropdown">
-                                            <i class="fa fa-ellipsis-v"></i>
-                                        </button>
-                                        <div class="dropdown-menu dropdown-menu-right">
-                                            <a href="{{ route('admin.learners.show', $learner->id) }}" class="dropdown-item">
-                                                <i class="fa fa-eye"></i> View Details
-                                            </a>
-                                            <div class="dropdown-divider"></div>
-                                            <button type="button" class="dropdown-item" onclick="changeStatus({{ $learner->id }}, '{{ $learner->status }}')">
-                                                <i class="fa fa-refresh"></i> Change Status
-                                            </button>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="7" class="text-center py-5">
-                                    <div class="text-muted">
-                                        <i class="fa fa-users fa-3x mb-3"></i>
-                                        <p>No learners found</p>
-                                        @if(request()->hasAny(['program_id', 'status', 'search']))
-                                            <a href="{{ route('admin.learners.index') }}" class="btn btn-sm btn-outline-primary">Clear Filters</a>
-                                        @endif
-                                    </div>
-                                </td>
-                            </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
+                <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1">Pass Mark</p>
+                    <p class="text-2xl font-black text-slate-900" id="a-pass-mark">—</p>
                 </div>
-
-                <!-- Pagination -->
-                @if($learners->hasPages())
-                <div class="d-flex justify-content-between align-items-center mt-4">
-                    <div class="text-muted">
-                        Showing {{ $learners->firstItem() }} to {{ $learners->lastItem() }} of {{ $learners->total() }} entries
-                    </div>
-                    <div>
-                        {{ $learners->links() }}
-                    </div>
+                <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100" id="a-time-box">
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1">Time Limit</p>
+                    <p class="text-2xl font-black text-slate-900" id="a-time-limit">—</p>
                 </div>
-                @endif
+            </div>
+
+            {{-- Previous attempt result --}}
+            <div id="a-prev-attempt" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex items-start gap-3">
+                <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <div>
+                    <p class="text-sm font-bold text-amber-900">Previous attempt: <span id="a-prev-score"></span></p>
+                    <p class="text-xs text-amber-700 mt-0.5" id="a-prev-date"></p>
+                    <p class="text-xs text-amber-700 mt-1">You can retake this assessment to improve your score.</p>
+                </div>
+            </div>
+
+            <button id="btn-start-assessment"
+                onclick="startAssessment()"
+                class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold px-8 py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-300/20 text-base">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                </svg>
+                <span id="btn-start-label">Start Assessment</span>
+            </button>
+        </div>
+
+        {{-- ── State: taking quiz ───────────────────────────────────── --}}
+        <div id="assessment-quiz" class="hidden">
+
+            {{-- Header: question counter + timer --}}
+            <div class="flex items-center justify-between mb-4">
+                <p class="text-sm font-bold text-slate-500">
+                    Question <span id="q-current-num" class="text-slate-800">1</span>
+                    of <span id="q-total-num" class="text-slate-800">1</span>
+                </p>
+                <div id="timer-display" class="hidden items-center gap-1.5 text-sm font-bold text-slate-700">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span id="timer-value">00:00</span>
+                </div>
+            </div>
+
+            {{-- Progress bar --}}
+            <div class="quiz-progress-bar mb-6">
+                <div class="quiz-progress-fill" id="quiz-progress-fill" style="width:0%"></div>
+            </div>
+
+            {{-- Question card --}}
+            <div class="bg-white rounded-2xl border border-slate-200 p-6 mb-6 shadow-sm">
+                <p class="text-base font-bold text-slate-900 leading-relaxed mb-6" id="q-text"></p>
+
+                {{-- Multiple choice / true-false options --}}
+                <div id="q-options" class="space-y-3"></div>
+
+                {{-- Short answer --}}
+                <div id="q-short-answer" class="hidden">
+                    <textarea
+                        id="q-textarea"
+                        rows="4"
+                        placeholder="Type your answer here…"
+                        class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 outline-none resize-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all"
+                        oninput="onShortAnswerInput()"></textarea>
+                </div>
+            </div>
+
+            {{-- Navigation --}}
+            <div class="flex items-center justify-between">
+                <button onclick="quizPrev()"
+                    id="btn-quiz-prev"
+                    class="text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors px-4 py-2.5 rounded-xl hover:bg-slate-100 disabled:opacity-30"
+                    disabled>
+                    ← Previous
+                </button>
+
+                <div class="flex items-center gap-3">
+                    <button onclick="quizNext()"
+                        id="btn-quiz-next"
+                        class="inline-flex items-center gap-2 bg-slate-800 text-white text-sm font-bold px-5 py-2.5 rounded-xl hover:bg-slate-700 transition-all disabled:opacity-40">
+                        Next →
+                    </button>
+                    <button onclick="submitAssessment()"
+                        id="btn-quiz-submit"
+                        class="hidden inline-flex items-center gap-2 bg-indigo-600 text-white text-sm font-bold px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-300/20">
+                        Submit Assessment
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Status Change Modal -->
-<div class="modal fade" id="statusModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Change Learner Status</h5>
-                <button type="button" class="close" data-dismiss="modal">
-                    <span>&times;</span>
+        {{-- ── State: submitting ────────────────────────────────────── --}}
+        <div id="assessment-submitting" class="hidden text-center py-16">
+            <div class="w-12 h-12 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p class="text-slate-500 font-medium">Submitting your answers…</p>
+        </div>
+
+        {{-- ── State: results ───────────────────────────────────────── --}}
+        <div id="assessment-results" class="hidden">
+            <div class="text-center mb-8">
+                <div class="score-ring mx-auto mb-4">
+                    <svg width="120" height="120" viewBox="0 0 120 120">
+                        <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e8f0" stroke-width="10"/>
+                        <circle cx="60" cy="60" r="52" fill="none" id="score-circle"
+                                stroke="#4f46e5" stroke-width="10"
+                                stroke-dasharray="326.7"
+                                stroke-dashoffset="326.7"
+                                stroke-linecap="round"
+                                style="transition: stroke-dashoffset 1s ease-in-out"/>
+                    </svg>
+                    <span class="score-text" id="result-pct">0%</span>
+                </div>
+                <h2 class="text-2xl font-black text-slate-900 mb-1" id="result-headline"></h2>
+                <p class="text-slate-500 text-sm" id="result-subline"></p>
+            </div>
+
+            {{-- Per-question breakdown --}}
+            <div class="bg-white rounded-2xl border border-slate-100 divide-y divide-slate-50 mb-8" id="result-breakdown"></div>
+
+            {{-- Retry / continue --}}
+            <div class="flex flex-wrap gap-3 justify-center">
+                <button onclick="retakeAssessment()"
+                    class="inline-flex items-center gap-2 text-sm font-bold text-slate-700 bg-white border border-slate-200 px-5 py-3 rounded-xl hover:bg-slate-50 transition-colors">
+                    Retake Assessment
+                </button>
+                <button onclick="navigateContent(1)"
+                    class="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-5 py-3 rounded-xl hover:bg-indigo-100 transition-colors">
+                    Continue →
                 </button>
             </div>
-            <form id="statusForm">
-                @csrf
-                <input type="hidden" id="statusLearnerId">
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="font-weight-bold">New Status</label>
-                        <select class="form-control" id="newStatus" required>
-                            <option value="active">Active</option>
-                            <option value="suspended">Suspended</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                    </div>
-                    <div class="alert alert-warning">
-                        <i class="fa fa-exclamation-triangle mr-2"></i>
-                        Changing status will affect the learner's access to the platform.
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Update Status</button>
-                </div>
-            </form>
         </div>
+
     </div>
 </div>
-@endsection
+{{-- end SECTION B --}}
 
-@push('scripts')
+
+{{-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION C — Full replacement <script> block for @push('scripts')
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ --}}
 <script>
-// Debounced search
-let searchTimeout;
-document.getElementById('searchInput').addEventListener('keyup', function(e) {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-        document.getElementById('filterForm').submit();
-    }, 500);
-});
+// ════════════════════════════════════════════════════════════════════════════
+// BASE DATA (from Blade)
+// ════════════════════════════════════════════════════════════════════════════
+var CONTENTS       = JSON.parse(document.getElementById('contents-data').textContent);
+var ENROLLMENT_ID  = JSON.parse(document.getElementById('enrollment-id').textContent);
+var CURRENT_WEEK_ID = JSON.parse(document.getElementById('current-week-id').textContent);
+var CSRF           = document.querySelector('meta[name="csrf-token"]').content;
 
-// Change Status
-function changeStatus(learnerId, currentStatus) {
-    $('#statusLearnerId').val(learnerId);
-    $('#newStatus').val(currentStatus);
-    $('#statusModal').modal('show');
+// Runtime state
+var currentIndex        = 0;
+var currentData         = null;
+var activeWeekId        = CURRENT_WEEK_ID;
+var videoProgressTimer  = null;
+
+// Assessment state
+var ASSESSMENT_DATA   = null;   // raw data from server
+var attemptId         = null;   // created on server when quiz starts
+var answers           = {};     // { questionId: answerValue }
+var currentQIndex     = 0;
+var timerInterval     = null;
+var timerSecondsLeft  = 0;
+
+// ════════════════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════════════════
+(function init() {
+    if (!CONTENTS.length) return;
+    var first = CONTENTS.findIndex(function(c) { return !c.is_completed; });
+    loadContent(CONTENTS[first >= 0 ? first : 0].id);
+})();
+
+// ════════════════════════════════════════════════════════════════════════════
+// SIDEBAR TOGGLE
+// ════════════════════════════════════════════════════════════════════════════
+function toggleSidebar() {
+    var sidebar = document.getElementById('sidebar');
+    var overlay = document.getElementById('sidebar-overlay');
+    var collapsed = sidebar.classList.toggle('collapsed');
+    overlay.classList.toggle('show', !collapsed && window.innerWidth <= 768);
 }
 
-$('#statusForm').on('submit', function(e) {
-    e.preventDefault();
-    
-    let learnerId = $('#statusLearnerId').val();
-    let newStatus = $('#newStatus').val();
-    
-    $.ajax({
-        url: '/admin/learners/' + learnerId + '/status',
-        type: 'POST',
-        data: {
-            _token: '{{ csrf_token() }}',
-            status: newStatus
-        },
-        success: function(response) {
-            $('#statusModal').modal('hide');
-            toastr.success(response.message);
-            setTimeout(() => window.location.reload(), 1000);
-        },
-        error: function(xhr) {
-            toastr.error(xhr.responseJSON?.message || 'Failed to update status');
-        }
+// ════════════════════════════════════════════════════════════════════════════
+// WEEK ACCORDION — with AJAX content swap
+// ════════════════════════════════════════════════════════════════════════════
+function toggleWeek(weekId, isLocked) {
+    if (isLocked) return;
+
+    var el   = document.getElementById('week-contents-' + weekId);
+    var chev = document.querySelector('.chevron-' + weekId);
+    var row  = document.getElementById('week-row-' + weekId);
+
+    // Close already-open week if different
+    if (!el.classList.contains('hidden')) {
+        // Clicking the already-open accordion — just collapse it
+        el.classList.add('hidden');
+        if (chev) chev.classList.remove('rotate-180');
+        row.classList.remove('open');
+        return;
+    }
+
+    // Close all other open weeks
+    document.querySelectorAll('[id^="week-contents-"]').forEach(function(e) {
+        e.classList.add('hidden');
     });
-});
+    document.querySelectorAll('[class*="chevron-"]').forEach(function(e) {
+        e.classList.remove('rotate-180');
+    });
+    document.querySelectorAll('.week-row').forEach(function(e) {
+        e.classList.remove('open');
+    });
+
+    // If this week's contents are already in the DOM (current week loaded on page), just open
+    if (weekId === CURRENT_WEEK_ID) {
+        el.classList.remove('hidden');
+        if (chev) chev.classList.add('rotate-180');
+        row.classList.add('open');
+        return;
+    }
+
+    // Show skeleton while loading
+    el.innerHTML = '<div class="px-4 py-3 space-y-2">'
+        + '<div class="skeleton h-8 rounded-xl"></div>'
+        + '<div class="skeleton h-8 rounded-xl"></div>'
+        + '<div class="skeleton h-8 rounded-xl"></div>'
+        + '</div>';
+    el.classList.remove('hidden');
+    if (chev) chev.classList.add('rotate-180');
+    row.classList.add('open');
+
+    // Fetch from server
+    fetch('/learner/learning/' + ENROLLMENT_ID + '/week/' + weekId + '/contents', {
+        headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.success) {
+            el.innerHTML = '<p class="px-5 py-3 text-xs text-red-500">' + data.message + '</p>';
+            return;
+        }
+
+        // Swap CONTENTS array for navigation
+        CONTENTS = data.contents;
+        if (data.assessment) {
+            // Append a virtual assessment entry so prev/next can reach it
+            CONTENTS.push({
+                id: 'assessment-' + data.assessment.id,
+                title: data.assessment.title,
+                type: 'assessment',
+                is_completed: data.assessment.is_submitted,
+                _assessment_id: data.assessment.id,
+                _assessment: data.assessment,
+            });
+        }
+        activeWeekId = weekId;
+        currentIndex = 0;
+
+        // Render sidebar items
+        el.innerHTML = buildSidebarItems(data.contents, data.assessment);
+
+        // Mark first content active and load it
+        if (data.contents.length > 0) {
+            loadContent(data.contents[0].id);
+        }
+    })
+    .catch(function() {
+        el.innerHTML = '<p class="px-5 py-3 text-xs text-red-500">Failed to load. Please try again.</p>';
+    });
+}
+
+function buildSidebarItems(contents, assessment) {
+    var html = '';
+
+    contents.forEach(function(c) {
+        var typeIcon = c.type === 'video' ? '▶' : c.type === 'article' ? '📄' : c.type === 'pdf' ? '📎' : '•';
+        var doneClass = c.is_completed ? 'done' : '';
+        var circleClass = c.is_completed
+            ? 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center bg-green-500'
+            : 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border border-slate-300';
+        var checkIcon = c.is_completed
+            ? '<svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>'
+            : '';
+        var dur = c.video_duration ? ' · ' + c.video_duration + ' min' : '';
+
+        html += '<div class="content-item ' + doneClass + '" id="sidebar-item-' + c.id + '" onclick="loadContent(' + c.id + ')">'
+            + '<div class="' + circleClass + '">' + checkIcon + '</div>'
+            + '<div class="min-w-0 flex-1">'
+            + '<p class="item-title text-[12px] text-slate-700 leading-snug line-clamp-2">' + escHtml(c.title) + '</p>'
+            + '<p class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1"><span>' + typeIcon + '</span><span>' + cap(c.type) + '</span>' + dur + '</p>'
+            + '</div></div>';
+    });
+
+    if (assessment) {
+        var aClass = assessment.is_submitted ? 'done' : '';
+        var aCircle = assessment.is_submitted
+            ? 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center bg-green-500'
+            : 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border border-slate-300';
+        var aCheck = assessment.is_submitted
+            ? '<svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>'
+            : '';
+        html += '<div class="content-item ' + aClass + '" id="sidebar-item-assessment-' + assessment.id + '" onclick="loadAssessment(' + assessment.id + ')">'
+            + '<div class="' + aCircle + '">' + aCheck + '</div>'
+            + '<div class="min-w-0">'
+            + '<p class="item-title text-[12px] text-slate-700 leading-snug">Week Assessment</p>'
+            + '<p class="text-[11px] text-slate-400 mt-0.5">✏️ Quiz · ' + assessment.question_count + ' questions</p>'
+            + '</div></div>';
+    }
+
+    return html;
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+// ════════════════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════════════════════════════════════
+function navigateContent(dir) {
+    var newIdx = currentIndex + dir;
+    if (newIdx < 0 || newIdx >= CONTENTS.length) return;
+    var item = CONTENTS[newIdx];
+    if (item.type === 'assessment') {
+        loadAssessment(item._assessment_id);
+    } else {
+        loadContent(item.id);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// LOAD CONTENT
+// ════════════════════════════════════════════════════════════════════════════
+function loadContent(contentId) {
+    var idx = CONTENTS.findIndex(function(c) { return c.id === contentId; });
+    if (idx === -1) return;
+
+    currentIndex = idx;
+    currentData  = CONTENTS[idx];
+
+    updateSidebarActive('sidebar-item-' + contentId);
+    document.getElementById('topbar-title').textContent = currentData.title;
+    document.getElementById('btn-prev').disabled = currentIndex === 0;
+    document.getElementById('btn-next').disabled = currentIndex === CONTENTS.length - 1;
+
+    if (videoProgressTimer) clearInterval(videoProgressTimer);
+    restoreNote(contentId);
+    hideAllViews();
+
+    switch (currentData.type) {
+        case 'video':    renderVideo(currentData);    break;
+        case 'article':  renderArticle(currentData);  break;
+        case 'pdf':      renderPdf(currentData);      break;
+        case 'external': renderExternal(currentData); break;
+        default:         renderArticle(currentData);  break;
+    }
+}
+
+function updateSidebarActive(activeId) {
+    document.querySelectorAll('.content-item').forEach(function(el) { el.classList.remove('active'); });
+    var el = document.getElementById(activeId);
+    if (el) el.classList.add('active');
+}
+
+function hideAllViews() {
+    ['view-video','view-article','view-pdf','view-external','view-default','view-assessment','loading-state']
+        .forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
+        });
+    stopTimer();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RENDER: VIDEO
+// ════════════════════════════════════════════════════════════════════════════
+function renderVideo(c) {
+    var view = document.getElementById('view-video');
+    view.classList.remove('hidden'); view.classList.add('flex');
+    document.getElementById('video-title').textContent       = c.title;
+    document.getElementById('video-description').textContent = c.description || '';
+    var player = document.getElementById('video-player');
+    document.getElementById('video-source').src = c.video_url || '';
+    player.load();
+    updateCompleteBtn('video-complete-btn', c.is_completed);
+    document.getElementById('video-complete-hint').textContent = c.is_completed
+        ? 'Completed ✓' : 'Or keep watching — it\'ll auto-complete at 90%';
+    videoProgressTimer = setInterval(function() {
+        if (!player.paused && player.duration > 0) {
+            pingProgress(c.id, Math.round((player.currentTime / player.duration) * 100), 15);
+        }
+    }, 15000);
+    switchTab('overview');
+}
+
+function onVideoTimeUpdate() {
+    var player = document.getElementById('video-player');
+    if (!currentData || currentData.type !== 'video' || !player.duration || currentData.is_completed) return;
+    if ((player.currentTime / player.duration) * 100 >= 90) markComplete(true);
+}
+
+function onVideoEnded() {
+    if (currentData && !currentData.is_completed) markComplete(true);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RENDER: ARTICLE
+// ════════════════════════════════════════════════════════════════════════════
+function renderArticle(c) {
+    var view = document.getElementById('view-article');
+    view.classList.remove('hidden');
+    document.getElementById('article-title').textContent = c.title;
+    document.getElementById('article-meta').textContent  = 'Article';
+    document.getElementById('article-body').innerHTML    = c.text_content || '<p class="text-slate-400">No content available.</p>';
+    updateCompleteBtn('article-complete-btn', c.is_completed);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RENDER: PDF
+// ════════════════════════════════════════════════════════════════════════════
+function renderPdf(c) {
+    var view = document.getElementById('view-pdf');
+    view.classList.remove('hidden'); view.classList.add('flex');
+    document.getElementById('pdf-title').textContent  = c.title;
+    document.getElementById('pdf-frame').src          = c.file_url || '';
+    document.getElementById('pdf-download-link').href = c.file_url || '#';
+    updateCompleteBtn('pdf-complete-btn', c.is_completed);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RENDER: EXTERNAL
+// ════════════════════════════════════════════════════════════════════════════
+function renderExternal(c) {
+    var view = document.getElementById('view-external');
+    view.classList.remove('hidden');
+    document.getElementById('external-title').textContent = c.title;
+    document.getElementById('external-link').href         = c.external_url || '#';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABS (video view)
+// ════════════════════════════════════════════════════════════════════════════
+function switchTab(tabName) {
+    ['overview','transcript','notes'].forEach(function(t) {
+        document.getElementById('pane-' + t).classList.toggle('hidden', t !== tabName);
+        document.getElementById('tab-'  + t).classList.toggle('active', t === tabName);
+    });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MARK COMPLETE
+// ════════════════════════════════════════════════════════════════════════════
+function markComplete(silent) {
+    if (!currentData || currentData.is_completed) return;
+
+    fetch('/learner/learning/content/' + currentData.id + '/complete', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.success) return;
+
+        CONTENTS[currentIndex].is_completed = true;
+        currentData.is_completed = true;
+
+        var si = document.getElementById('sidebar-item-' + currentData.id);
+        if (si) {
+            si.classList.add('done');
+            var circle = si.querySelector('.rounded-full.border, .rounded-full.border-slate-300');
+            if (circle) {
+                circle.className = 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center bg-green-500';
+                circle.innerHTML = '<svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+            }
+        }
+
+        ['video-complete-btn','article-complete-btn','pdf-complete-btn'].forEach(function(id) {
+            updateCompleteBtn(id, true);
+        });
+
+        if (!silent) showMiniToast('Marked as complete!');
+        if (data.week_completed) showWeekCompleteToast();
+        if (!silent && currentIndex < CONTENTS.length - 1) {
+            setTimeout(function() { navigateContent(1); }, 1500);
+        }
+    })
+    .catch(function() { if (!silent) showMiniToast('Could not save. Please try again.', true); });
+}
+
+function updateCompleteBtn(btnId, isDone) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    var checkSvg = '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+    if (isDone) {
+        btn.classList.add('done');
+        btn.innerHTML = checkSvg + ' Completed';
+        btn.onclick = null;
+    } else {
+        btn.classList.remove('done');
+        btn.innerHTML = checkSvg + ' Mark as Complete';
+        btn.onclick = function() { markComplete(); };
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PROGRESS PING
+// ════════════════════════════════════════════════════════════════════════════
+var lastPingedPct = -1;
+function pingProgress(contentId, pct, timeSpent) {
+    if (pct === lastPingedPct) return;
+    lastPingedPct = pct;
+    fetch('/learner/learning/content/' + contentId + '/progress', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progress_percentage: pct, time_spent: timeSpent })
+    }).catch(function() {});
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NOTES
+// ════════════════════════════════════════════════════════════════════════════
+function saveNote() {
+    if (!currentData) return;
+    try { localStorage.setItem('note_' + ENROLLMENT_ID + '_' + currentData.id, document.getElementById('notes-textarea').value); } catch(e) {}
+}
+function restoreNote(contentId) {
+    try { document.getElementById('notes-textarea').value = localStorage.getItem('note_' + ENROLLMENT_ID + '_' + contentId) || ''; } catch(e) {}
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ─── ASSESSMENT ENGINE ───────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+
+function loadAssessment(assessmentId) {
+    hideAllViews();
+    updateSidebarActive('sidebar-item-assessment-' + assessmentId);
+    document.getElementById('topbar-title').textContent = 'Week Assessment';
+    document.getElementById('btn-prev').disabled = currentIndex <= 0;
+    document.getElementById('btn-next').disabled = currentIndex >= CONTENTS.length - 1;
+
+    var view = document.getElementById('view-assessment');
+    view.classList.remove('hidden');
+    document.getElementById('assessment-loading').classList.remove('hidden');
+    document.getElementById('assessment-intro').classList.add('hidden');
+    document.getElementById('assessment-quiz').classList.add('hidden');
+    document.getElementById('assessment-results').classList.add('hidden');
+
+    fetch('/learner/learning/' + ENROLLMENT_ID + '/assessment/' + assessmentId, {
+        headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        document.getElementById('assessment-loading').classList.add('hidden');
+        if (!data.success) { showMiniToast(data.message || 'Could not load assessment.', true); return; }
+        ASSESSMENT_DATA = data;
+        renderAssessmentIntro(data);
+    })
+    .catch(function() {
+        document.getElementById('assessment-loading').classList.add('hidden');
+        showMiniToast('Failed to load assessment.', true);
+    });
+}
+
+// ── Intro screen ─────────────────────────────────────────────────────────
+function renderAssessmentIntro(data) {
+    var a = data.assessment;
+    document.getElementById('a-title').textContent       = a.title;
+    document.getElementById('a-description').textContent = a.description || '';
+    document.getElementById('a-q-count').textContent     = data.questions.length;
+    document.getElementById('a-pass-mark').textContent   = a.passing_score + '%';
+
+    if (a.time_limit) {
+        document.getElementById('a-time-limit').textContent = a.time_limit + ' min';
+        document.getElementById('a-time-box').classList.remove('hidden');
+    } else {
+        document.getElementById('a-time-box').classList.add('hidden');
+    }
+
+    if (data.latest_attempt) {
+        var la = data.latest_attempt;
+        document.getElementById('a-prev-score').textContent = la.score + '% — ' + (la.passed ? '✓ Passed' : '✗ Not passed');
+        document.getElementById('a-prev-date').textContent  = 'Submitted ' + la.submitted_at;
+        document.getElementById('a-prev-attempt').classList.remove('hidden');
+        document.getElementById('btn-start-label').textContent = 'Retake Assessment';
+    } else {
+        document.getElementById('a-prev-attempt').classList.add('hidden');
+        document.getElementById('btn-start-label').textContent = 'Start Assessment';
+    }
+
+    document.getElementById('assessment-intro').classList.remove('hidden');
+}
+
+// ── Start / retake ────────────────────────────────────────────────────────
+function startAssessment() {
+    if (!ASSESSMENT_DATA) return;
+
+    // Create attempt on server
+    fetch('/learner/assessments/' + ASSESSMENT_DATA.assessment.id + '/attempt', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enrollment_id: ENROLLMENT_ID })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.success && !data.attempt_id) {
+            // Fallback: use in-progress attempt id if returned
+            if (data.attempt_id) { attemptId = data.attempt_id; }
+            else { showMiniToast('Could not start attempt.', true); return; }
+        }
+        attemptId = data.attempt_id || (data.attempt && data.attempt.id);
+        answers   = {};
+        currentQIndex = 0;
+
+        document.getElementById('assessment-intro').classList.add('hidden');
+        document.getElementById('assessment-quiz').classList.remove('hidden');
+
+        renderQuestion(0);
+
+        // Start timer if applicable
+        if (ASSESSMENT_DATA.assessment.time_limit) {
+            timerSecondsLeft = ASSESSMENT_DATA.assessment.time_limit * 60;
+            document.getElementById('timer-display').classList.remove('hidden');
+            document.getElementById('timer-display').classList.add('flex');
+            timerInterval = setInterval(tickTimer, 1000);
+        }
+    })
+    .catch(function() { showMiniToast('Server error. Please try again.', true); });
+}
+
+function retakeAssessment() {
+    document.getElementById('assessment-results').classList.add('hidden');
+    renderAssessmentIntro(ASSESSMENT_DATA);
+    document.getElementById('assessment-intro').classList.remove('hidden');
+}
+
+// ── Timer ─────────────────────────────────────────────────────────────────
+function tickTimer() {
+    timerSecondsLeft--;
+    var m = Math.floor(timerSecondsLeft / 60);
+    var s = timerSecondsLeft % 60;
+    var display = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    var el = document.getElementById('timer-value');
+    el.textContent = display;
+    if (timerSecondsLeft <= 60) el.classList.add('timer-warning');
+    if (timerSecondsLeft <= 0) {
+        stopTimer();
+        submitAssessment();
+    }
+}
+function stopTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+}
+
+// ── Render question ───────────────────────────────────────────────────────
+function renderQuestion(idx) {
+    var questions = ASSESSMENT_DATA.questions;
+    var q = questions[idx];
+    currentQIndex = idx;
+
+    document.getElementById('q-current-num').textContent = idx + 1;
+    document.getElementById('q-total-num').textContent   = questions.length;
+    document.getElementById('q-text').textContent        = q.text;
+
+    var pct = ((idx + 1) / questions.length) * 100;
+    document.getElementById('quiz-progress-fill').style.width = pct + '%';
+
+    // Show/hide correct input type
+    var isShort = q.type === 'short_answer';
+    document.getElementById('q-options').classList.toggle('hidden', isShort);
+    document.getElementById('q-short-answer').classList.toggle('hidden', !isShort);
+
+    if (isShort) {
+        document.getElementById('q-textarea').value = answers[q.id] || '';
+    } else {
+        renderOptions(q);
+    }
+
+    // Prev / Next / Submit buttons
+    document.getElementById('btn-quiz-prev').disabled = idx === 0;
+
+    var isLast = idx === questions.length - 1;
+    document.getElementById('btn-quiz-next').classList.toggle('hidden', isLast);
+    document.getElementById('btn-quiz-submit').classList.toggle('hidden', !isLast);
+}
+
+function renderOptions(q) {
+    var container = document.getElementById('q-options');
+    container.innerHTML = '';
+    var saved = answers[q.id];
+
+    q.options.forEach(function(opt, i) {
+        var isSelected = saved === opt || saved === i;
+        var div = document.createElement('div');
+        div.className = 'quiz-option' + (isSelected ? ' selected' : '');
+        div.onclick   = function() { selectOption(q.id, opt, div, container); };
+        div.innerHTML = '<div class="quiz-radio"></div>'
+            + '<span class="text-sm text-slate-800 leading-snug">' + escHtml(opt) + '</span>';
+        container.appendChild(div);
+    });
+}
+
+function selectOption(questionId, value, clickedEl, container) {
+    // Clear all selections in this container
+    container.querySelectorAll('.quiz-option').forEach(function(el) {
+        el.classList.remove('selected');
+    });
+    clickedEl.classList.add('selected');
+    answers[questionId] = value;
+}
+
+function onShortAnswerInput() {
+    if (!ASSESSMENT_DATA) return;
+    var q = ASSESSMENT_DATA.questions[currentQIndex];
+    answers[q.id] = document.getElementById('q-textarea').value;
+}
+
+// ── Navigation within quiz ────────────────────────────────────────────────
+function quizPrev() {
+    if (currentQIndex > 0) renderQuestion(currentQIndex - 1);
+}
+function quizNext() {
+    var questions = ASSESSMENT_DATA.questions;
+    if (currentQIndex < questions.length - 1) renderQuestion(currentQIndex + 1);
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────
+function submitAssessment() {
+    if (!attemptId) return;
+    stopTimer();
+
+    document.getElementById('assessment-quiz').classList.add('hidden');
+    document.getElementById('assessment-submitting').classList.remove('hidden');
+
+    // Build answers array
+    var answersArray = [];
+    if (ASSESSMENT_DATA) {
+        ASSESSMENT_DATA.questions.forEach(function(q) {
+            answersArray.push({ question_id: q.id, answer: answers[q.id] !== undefined ? answers[q.id] : null });
+        });
+    }
+
+    fetch('/learner/attempts/' + attemptId + '/submit', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: answersArray })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        document.getElementById('assessment-submitting').classList.add('hidden');
+        if (data.success || data.score !== undefined) {
+            renderResults(data);
+        } else {
+            showMiniToast(data.message || 'Submission failed.', true);
+            document.getElementById('assessment-quiz').classList.remove('hidden');
+        }
+    })
+    .catch(function() {
+        document.getElementById('assessment-submitting').classList.add('hidden');
+        showMiniToast('Submission failed. Please try again.', true);
+        document.getElementById('assessment-quiz').classList.remove('hidden');
+    });
+}
+
+// ── Results ───────────────────────────────────────────────────────────────
+function renderResults(data) {
+    var score    = data.score || 0;
+    var passing  = ASSESSMENT_DATA ? ASSESSMENT_DATA.assessment.passing_score : 70;
+    var passed   = score >= passing;
+    var circumference = 326.7;
+    var offset   = circumference - (score / 100) * circumference;
+
+    var circle = document.getElementById('score-circle');
+    circle.style.stroke       = passed ? '#16a34a' : '#dc2626';
+    circle.style.strokeDashoffset = circumference; // reset first
+    setTimeout(function() { circle.style.strokeDashoffset = offset; }, 50);
+
+    document.getElementById('result-pct').textContent     = score + '%';
+    document.getElementById('result-headline').textContent = passed ? '🎉 You passed!' : 'Keep going — you can do this';
+    document.getElementById('result-subline').textContent  = passed
+        ? 'You scored ' + score + '% — above the ' + passing + '% pass mark.'
+        : 'You scored ' + score + '%. The pass mark is ' + passing + '%. Review and try again.';
+
+    // Per-question breakdown
+    var breakdown = document.getElementById('result-breakdown');
+    breakdown.innerHTML = '';
+    if (data.question_results && data.question_results.length) {
+        data.question_results.forEach(function(qr, i) {
+            var row = document.createElement('div');
+            row.className = 'px-5 py-4 flex items-start gap-3';
+            var icon = qr.is_correct
+                ? '<div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0 mt-0.5"><svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></div>'
+                : '<div class="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 mt-0.5"><svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></div>';
+            row.innerHTML = icon
+                + '<div class="min-w-0"><p class="text-sm text-slate-800 font-medium">'
+                + escHtml('Q' + (i + 1) + '. ' + (qr.question_text || ''))
+                + '</p>'
+                + (!qr.is_correct && qr.correct_answer
+                    ? '<p class="text-xs text-green-600 mt-1 font-medium">Correct: ' + escHtml(String(qr.correct_answer)) + '</p>'
+                    : '')
+                + '</div>';
+            breakdown.appendChild(row);
+        });
+    }
+
+    // Update sidebar assessment item to done
+    var sai = document.getElementById('sidebar-item-assessment-' + (ASSESSMENT_DATA ? ASSESSMENT_DATA.assessment.id : ''));
+    if (sai && passed) {
+        sai.classList.add('done');
+        var ac = sai.querySelector('.rounded-full');
+        if (ac) {
+            ac.className = 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center bg-green-500';
+            ac.innerHTML = '<svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+        }
+    }
+
+    document.getElementById('assessment-results').classList.remove('hidden');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOASTS
+// ════════════════════════════════════════════════════════════════════════════
+function showMiniToast(msg, isError) {
+    var color = isError ? 'bg-red-600' : 'bg-slate-900';
+    var el = document.createElement('div');
+    el.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 ' + color + ' text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl z-50';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(function() { el.remove(); }, 2500);
+}
+
+function showWeekCompleteToast() {
+    var toast = document.getElementById('week-complete-toast');
+    toast.classList.remove('translate-y-20', 'opacity-0');
+    setTimeout(function() { toast.classList.add('translate-y-20', 'opacity-0'); }, 4000);
+}
 </script>
-@endpush
-
----\resources\views\admin\learners\show.blade.php
-@extends('layouts.admin')
-
-@section('title', 'Learner Details')
-@section('breadcrumb-parent', 'Learners')
-@section('breadcrumb-current', 'Details')
-
-@section('content')
-<div class="container-fluid">
-    <!-- Back Button -->
-    <a href="{{ route('admin.learners.index') }}" class="btn btn-sm btn-outline-secondary mb-3">
-        <i class="fa fa-arrow-left mr-1"></i> Back to Learners
-    </a>
-
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col-md-8">
-                            <div class="d-flex align-items-center">
-                                <img src="{{ $learner->avatar_url }}" 
-                                     class="rounded mr-3" 
-                                     style="width: 80px; height: 80px; object-fit: cover;" 
-                                     alt="{{ $learner->name }}">
-                                <div>
-                                    <h3 class="mb-1 font-weight-bold">{{ $learner->name }}</h3>
-                                    <p class="text-muted mb-1">{{ $learner->email }}</p>
-                                    <p class="text-muted mb-0">{{ $learner->phone ?? 'No phone number' }}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4 text-right mt-3 mt-md-0">
-                            <div class="mb-2">
-                                @switch($learner->status)
-                                    @case('active')
-                                        <span class="badge badge-success px-3 py-2">
-                                            <i class="fa fa-check-circle mr-1"></i> Active
-                                        </span>
-                                        @break
-                                    @case('suspended')
-                                        <span class="badge badge-danger px-3 py-2">
-                                            <i class="fa fa-ban mr-1"></i> Suspended
-                                        </span>
-                                        @break
-                                    @default
-                                        <span class="badge badge-secondary px-3 py-2">
-                                            <i class="fa fa-minus-circle mr-1"></i> Inactive
-                                        </span>
-                                @endswitch
-                            </div>
-                            <div class="text-muted small">
-                                Joined {{ $learner->created_at->format('F d, Y') }}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    @if($enrollment)
-    <!-- Enrollment Information -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title font-weight-bold mb-4">
-                        <i class="fa fa-book text-primary mr-2"></i>Enrollment Information
-                    </h5>
-                    
-                    <div class="mb-3 pb-3 border-bottom">
-                        <label class="text-muted text-uppercase small font-weight-bold mb-1">Program</label>
-                        <p class="mb-0 font-weight-bold">{{ $enrollment->program->name }}</p>
-                    </div>
-
-                    <div class="mb-3 pb-3 border-bottom">
-                        <label class="text-muted text-uppercase small font-weight-bold mb-1">Cohort</label>
-                        <p class="mb-0">{{ $enrollment->cohort->name }}</p>
-                        <small class="text-muted">
-                            {{ $enrollment->cohort->start_date->format('M d, Y') }} - 
-                            {{ $enrollment->cohort->end_date->format('M d, Y') }}
-                        </small>
-                    </div>
-
-                    <div class="mb-3 pb-3 border-bottom">
-                        <label class="text-muted text-uppercase small font-weight-bold mb-1">Mentor</label>
-                        <p class="mb-0">{{ $enrollment->cohort->mentor ? $enrollment->cohort->mentor->name : 'Not Assigned' }}</p>
-                    </div>
-
-                    <div class="mb-3 pb-3 border-bottom">
-                        <label class="text-muted text-uppercase small font-weight-bold mb-1">Enrollment Status</label>
-                        <div>
-                            @switch($enrollment->status)
-                                @case('active')
-                                    <span class="badge badge-success">Active</span>
-                                    @break
-                                @case('pending')
-                                    <span class="badge badge-warning">Pending Payment</span>
-                                    @break
-                                @default
-                                    <span class="badge badge-secondary">{{ ucfirst($enrollment->status) }}</span>
-                            @endswitch
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="text-muted text-uppercase small font-weight-bold mb-1">Enrolled On</label>
-                        <p class="mb-0">{{ $enrollment->created_at->format('F d, Y') }}</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-body">
-                    <h5 class="card-title font-weight-bold mb-4">
-                        <i class="fa fa-credit-card text-success mr-2"></i>Payment Information
-                    </h5>
-
-                    @if($enrollment->payments->count() > 0)
-                        @foreach($enrollment->payments as $payment)
-                        <div class="mb-3 pb-3 border-bottom">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <div>
-                                    <label class="text-muted text-uppercase small font-weight-bold mb-1">
-                                        @if($payment->installment_number)
-                                            Installment {{ $payment->installment_number }}
-                                        @else
-                                            Full Payment
-                                        @endif
-                                    </label>
-                                    <p class="mb-0 h5 font-weight-bold text-dark">
-                                        ₦{{ number_format($payment->final_amount, 2) }}
-                                    </p>
-                                </div>
-                                <div>
-                                    @switch($payment->status)
-                                        @case('successful')
-                                            <span class="badge badge-success">Paid</span>
-                                            @break
-                                        @case('pending')
-                                            <span class="badge badge-warning">Pending</span>
-                                            @break
-                                        @default
-                                            <span class="badge badge-danger">Failed</span>
-                                    @endswitch
-                                </div>
-                            </div>
-                            
-                            @if($payment->discount_amount > 0)
-                            <p class="mb-1 small text-muted">
-                                <i class="fa fa-tag mr-1"></i>
-                                Discount Applied: ₦{{ number_format($payment->discount_amount, 2) }}
-                            </p>
-                            @endif
-                            
-                            <p class="mb-1 small text-muted">
-                                <i class="fa fa-calendar-check mr-1"></i>
-                                {{ $payment->paid_at ? $payment->paid_at->format('M d, Y @ h:i A') : 'Not paid yet' }}
-                            </p>
-                            
-                            <p class="mb-0 small text-muted">
-                                <i class="fa fa-hashtag mr-1"></i>
-                                Ref: {{ $payment->reference }}
-                            </p>
-                        </div>
-                        @endforeach
-
-                        @if($enrollment->payments->where('installment_number', 1)->where('status', 'successful')->count() > 0 && 
-                            $enrollment->payments->where('installment_number', 2)->count() === 0)
-                        <div class="alert alert-info">
-                            <i class="fa fa-info-circle mr-2"></i>
-                            Second installment pending
-                        </div>
-                        @endif
-                    @else
-                        <div class="alert alert-warning">
-                            <i class="fa fa-exclamation-triangle mr-2"></i>
-                            No payment records found
-                        </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Learning Progress -->
-    @if($progressStats)
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title font-weight-bold mb-4">
-                        <i class="fa fa-line-chart text-info mr-2"></i>Learning Progress
-                    </h5>
-
-                    <div class="row">
-                        <div class="col-md-4 mb-3">
-                            <div class="text-center p-4 bg-light rounded">
-                                <h2 class="mb-1 font-weight-bold text-primary">{{ $progressStats['completion_percentage'] }}%</h2>
-                                <p class="text-muted mb-0">Overall Completion</p>
-                            </div>
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <div class="text-center p-4 bg-light rounded">
-                                <h2 class="mb-1 font-weight-bold text-success">{{ $progressStats['completed_content'] }}</h2>
-                                <p class="text-muted mb-0">Content Completed</p>
-                            </div>
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <div class="text-center p-4 bg-light rounded">
-                                <h2 class="mb-1 font-weight-bold text-warning">{{ $progressStats['total_content'] - $progressStats['completed_content'] }}</h2>
-                                <p class="text-muted mb-0">Remaining</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="progress mt-3" style="height: 10px;">
-                        <div class="progress-bar bg-success" role="progressbar" 
-                             style="width: {{ $progressStats['completion_percentage'] }}%"
-                             aria-valuenow="{{ $progressStats['completion_percentage'] }}" 
-                             aria-valuemin="0" aria-valuemax="100"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Recent Activity -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title font-weight-bold mb-4">
-                        <i class="fa fa-clock-o text-secondary mr-2"></i>Recent Content Progress
-                    </h5>
-
-                    @php
-                        // Get recent content progress with proper relationship
-                        $recentProgress = $learner->contentProgress()
-                            ->with(['weekContent.moduleWeek'])
-                            ->latest()
-                            ->take(10)
-                            ->get();
-                    @endphp
-
-                    @if($recentProgress->count() > 0)
-                    <div class="table-responsive">
-                        <table class="table table-hover table-sm">
-                            <thead class="thead-light">
-                                <tr>
-                                    <th>Content</th>
-                                    <th>Week</th>
-                                    <th>Status</th>
-                                    <th>Progress</th>
-                                    <th>Last Updated</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach($recentProgress as $progress)
-                                <tr>
-                                    <td>
-                                        <div class="font-weight-medium">{{ $progress->weekContent->title }}</div>
-                                        <small class="text-muted">{{ $progress->weekContent->type_display }}</small>
-                                    </td>
-                                    <td>
-                                        <small class="text-muted">
-                                            {{ $progress->weekContent->moduleWeek->title }}
-                                        </small>
-                                    </td>
-                                    <td>
-                                        @if($progress->is_completed)
-                                            <span class="badge badge-success">
-                                                <i class="fa fa-check-circle mr-1"></i>Completed
-                                            </span>
-                                        @else
-                                            <span class="badge badge-warning">
-                                                <i class="fa fa-hourglass-half mr-1"></i>In Progress
-                                            </span>
-                                        @endif
-                                    </td>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="progress flex-grow-1 mr-2" style="height: 6px; width: 80px;">
-                                                <div class="progress-bar bg-success" 
-                                                     style="width: {{ $progress->progress_percentage ?? 0 }}%"></div>
-                                            </div>
-                                            <small class="text-muted">{{ $progress->progress_percentage ?? 0 }}%</small>
-                                        </div>
-                                    </td>
-                                    <td class="text-muted small">{{ $progress->updated_at->diffForHumans() }}</td>
-                                </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                    @else
-                    <div class="alert alert-info">
-                        <i class="fa fa-info-circle mr-2"></i>
-                        No learning activity yet
-                    </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-    </div>
-    @endif
-
-    @else
-    <!-- Not Enrolled -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body text-center py-5">
-                    <i class="fa fa-inbox text-muted" style="font-size: 48px;"></i>
-                    <h5 class="mt-3 mb-2">Not Enrolled</h5>
-                    <p class="text-muted">This learner has not enrolled in any program yet.</p>
-                </div>
-            </div>
-        </div>
-    </div>
-    @endif
-</div>
-@endsection
