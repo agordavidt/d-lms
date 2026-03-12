@@ -19,6 +19,7 @@ use App\Http\Controllers\Learner\ProgramController as LearnerProgramController;
 use App\Http\Controllers\Learner\ProfileController;
 use App\Http\Controllers\Learner\LearningController;
 use App\Http\Controllers\Learner\CurriculumController;
+use App\Http\Controllers\Learner\AssessmentAttemptController;
 use App\Http\Controllers\Mentor\DashboardController as MentorDashboardController;
 use App\Http\Controllers\Mentor\SessionController as MentorSessionController;
 use App\Http\Controllers\Mentor\StudentController;
@@ -308,6 +309,19 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
                 ->name('learning.complete');
             Route::post('/learning/content/{contentId}/progress',  [\App\Http\Controllers\Learner\LearningController::class, 'updateContentProgress'])
                 ->name('learning.progress');
+
+            Route::post('/assessments/{assessment}/attempt', [AssessmentAttemptController::class, 'createAttempt'])
+                ->name('assessments.attempt');
+            
+            // Submit answers (called when learner clicks "Submit Assessment")
+            Route::post('/attempts/{attempt}/submit', [AssessmentAttemptController::class, 'submit'])
+                ->name('attempts.submit');
+            
+            // Optional: keep the traditional full-page routes too
+            Route::get('/attempts/{attempt}',         [AssessmentAttemptController::class, 'show'])
+                ->name('attempts.show');
+            Route::get('/attempts/{attempt}/results', [AssessmentAttemptController::class, 'results'])
+                ->name('attempts.results');
 
             // Profile
             Route::get('/profile/edit', [\App\Http\Controllers\Learner\ProfileController::class, 'edit'])

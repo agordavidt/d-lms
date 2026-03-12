@@ -182,6 +182,90 @@
     .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 39; }
     .sidebar-overlay.show { display: block; }
 }
+
+/* ── Assessment panel ─────────────────────────────────────────────────────── */
+.quiz-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+    user-select: none;
+}
+.quiz-option:hover:not(.locked)       { border-color: #818cf8; background: #f5f3ff; }
+.quiz-option.selected:not(.locked)    { border-color: #4f46e5; background: #eef2ff; }
+.quiz-option.correct                  { border-color: #16a34a; background: #f0fdf4; }
+.quiz-option.incorrect                { border-color: #dc2626; background: #fef2f2; }
+.quiz-option.locked                   { cursor: default; }
+
+.quiz-radio {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #cbd5e1;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    transition: border-color 0.12s;
+}
+.quiz-option.selected .quiz-radio     { border-color: #4f46e5; }
+.quiz-option.selected .quiz-radio::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #4f46e5;
+    border-radius: 50%;
+    display: block;
+}
+.quiz-option.correct .quiz-radio  { border-color: #16a34a; background: #16a34a; }
+.quiz-option.correct .quiz-radio::after  { background: #fff; }
+.quiz-option.incorrect .quiz-radio { border-color: #dc2626; background: #dc2626; }
+.quiz-option.incorrect .quiz-radio::after { background: #fff; }
+
+.quiz-progress-bar {
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 9999px;
+    overflow: hidden;
+}
+.quiz-progress-fill {
+    height: 100%;
+    background: linear-gradient(to right, #4f46e5, #7c3aed);
+    border-radius: 9999px;
+    transition: width 0.3s ease;
+}
+
+/* Timer warning */
+.timer-warning { color: #dc2626 !important; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* Results score ring */
+.score-ring { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+.score-ring svg { transform: rotate(-90deg); }
+.score-ring .score-text {
+    position: absolute;
+    font-size: 28px;
+    font-weight: 900;
+    color: #0f172a;
+    line-height: 1;
+}
+
+/* Skeleton loader for week content swap */
+.skeleton {
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shine 1.4s infinite;
+    border-radius: 8px;
+}
+@keyframes skeleton-shine {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
 </style>
 @endpush
 
@@ -553,6 +637,169 @@
                 <p class="text-slate-400 text-sm">Choose any item from the course navigation on the left.</p>
             </div>
 
+            {{-- ─── ASSESSMENT PANEL ───────────────────────────────────────────── --}}
+            <div id="view-assessment" class="hidden">
+                <div class="max-w-3xl mx-auto px-5 py-8">
+
+                    {{-- Loading skeleton --}}
+                    <div id="assessment-loading" class="hidden space-y-4">
+                        <div class="skeleton h-8 w-1/2 mb-2"></div>
+                        <div class="skeleton h-4 w-3/4 mb-6"></div>
+                        <div class="skeleton h-16 w-full rounded-2xl"></div>
+                        <div class="skeleton h-16 w-full rounded-2xl"></div>
+                        <div class="skeleton h-16 w-full rounded-2xl"></div>
+                    </div>
+
+                    {{-- ── State: intro ─────────────────────────────────────────── --}}
+                    <div id="assessment-intro" class="hidden">
+                        <div class="mb-6">
+                            <p class="text-xs font-black uppercase tracking-widest text-indigo-500 mb-2">Week Assessment</p>
+                            <h2 class="text-2xl font-black text-slate-900 mb-2" id="a-title"></h2>
+                            <p class="text-slate-500 text-sm" id="a-description"></p>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8" id="a-meta-grid">
+                            <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                                <p class="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1">Questions</p>
+                                <p class="text-2xl font-black text-slate-900" id="a-q-count">—</p>
+                            </div>
+                            <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                                <p class="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1">Pass Mark</p>
+                                <p class="text-2xl font-black text-slate-900" id="a-pass-mark">—</p>
+                            </div>
+                            <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100" id="a-time-box">
+                                <p class="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1">Time Limit</p>
+                                <p class="text-2xl font-black text-slate-900" id="a-time-limit">—</p>
+                            </div>
+                        </div>
+
+                        {{-- Previous attempt result --}}
+                        <div id="a-prev-attempt" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            <div>
+                                <p class="text-sm font-bold text-amber-900">Previous attempt: <span id="a-prev-score"></span></p>
+                                <p class="text-xs text-amber-700 mt-0.5" id="a-prev-date"></p>
+                                <p class="text-xs text-amber-700 mt-1">You can retake this assessment to improve your score.</p>
+                            </div>
+                        </div>
+
+                        <button id="btn-start-assessment"
+                            onclick="startAssessment()"
+                            class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold px-8 py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-300/20 text-base">                           
+                            <span id="btn-start-label">Start Assessment</span>
+                        </button>
+                    </div>
+
+                    {{-- ── State: taking quiz ───────────────────────────────────── --}}
+                    <div id="assessment-quiz" class="hidden">
+
+                        {{-- Header: question counter + timer --}}
+                        <div class="flex items-center justify-between mb-4">
+                            <p class="text-sm font-bold text-slate-500">
+                                Question <span id="q-current-num" class="text-slate-800">1</span>
+                                of <span id="q-total-num" class="text-slate-800">1</span>
+                            </p>
+                            <div id="timer-display" class="hidden items-center gap-1.5 text-sm font-bold text-slate-700">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <span id="timer-value">00:00</span>
+                            </div>
+                        </div>
+
+                        {{-- Progress bar --}}
+                        <div class="quiz-progress-bar mb-6">
+                            <div class="quiz-progress-fill" id="quiz-progress-fill" style="width:0%"></div>
+                        </div>
+
+                        {{-- Question card --}}
+                        <div class="bg-white rounded-2xl border border-slate-200 p-6 mb-6 shadow-sm">
+                            <p class="text-base font-bold text-slate-900 leading-relaxed mb-6" id="q-text"></p>
+
+                            {{-- Multiple choice / true-false options --}}
+                            <div id="q-options" class="space-y-3"></div>
+
+                            {{-- Short answer --}}
+                            <div id="q-short-answer" class="hidden">
+                                <textarea
+                                    id="q-textarea"
+                                    rows="4"
+                                    placeholder="Type your answer here…"
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 outline-none resize-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all"
+                                    oninput="onShortAnswerInput()"></textarea>
+                            </div>
+                        </div>
+
+                        {{-- Navigation --}}
+                        <div class="flex items-center justify-between">
+                            <button onclick="quizPrev()"
+                                id="btn-quiz-prev"
+                                class="text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors px-4 py-2.5 rounded-xl hover:bg-slate-100 disabled:opacity-30"
+                                disabled>
+                                ← Previous
+                            </button>
+
+                            <div class="flex items-center gap-3">
+                                <button onclick="quizNext()"
+                                    id="btn-quiz-next"
+                                    class="inline-flex items-center gap-2 bg-slate-800 text-white text-sm font-bold px-5 py-2.5 rounded-xl hover:bg-slate-700 transition-all disabled:opacity-40">
+                                    Next →
+                                </button>
+                                <button onclick="submitAssessment()"
+                                    id="btn-quiz-submit"
+                                    class="hidden inline-flex items-center gap-2 bg-indigo-600 text-white text-sm font-bold px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-300/20">
+                                    Submit Assessment
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- ── State: submitting ────────────────────────────────────── --}}
+                    <div id="assessment-submitting" class="hidden text-center py-16">
+                        <div class="w-12 h-12 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                        <p class="text-slate-500 font-medium">Submitting your answers…</p>
+                    </div>
+
+                    {{-- ── State: results ───────────────────────────────────────── --}}
+                    <div id="assessment-results" class="hidden">
+                        <div class="text-center mb-8">
+                            <div class="score-ring mx-auto mb-4">
+                                <svg width="120" height="120" viewBox="0 0 120 120">
+                                    <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e8f0" stroke-width="10"/>
+                                    <circle cx="60" cy="60" r="52" fill="none" id="score-circle"
+                                            stroke="#4f46e5" stroke-width="10"
+                                            stroke-dasharray="326.7"
+                                            stroke-dashoffset="326.7"
+                                            stroke-linecap="round"
+                                            style="transition: stroke-dashoffset 1s ease-in-out"/>
+                                </svg>
+                                <span class="score-text" id="result-pct">0%</span>
+                            </div>
+                            <h2 class="text-2xl font-black text-slate-900 mb-1" id="result-headline"></h2>
+                            <p class="text-slate-500 text-sm" id="result-subline"></p>
+                        </div>
+
+                        {{-- Per-question breakdown --}}
+                        <div class="bg-white rounded-2xl border border-slate-100 divide-y divide-slate-50 mb-8" id="result-breakdown"></div>
+
+                        {{-- Retry / continue --}}
+                        <div class="flex flex-wrap gap-3 justify-center">
+                            <button onclick="retakeAssessment()"
+                                class="inline-flex items-center gap-2 text-sm font-bold text-slate-700 bg-white border border-slate-200 px-5 py-3 rounded-xl hover:bg-slate-50 transition-colors">
+                                Retake Assessment
+                            </button>
+                            <button onclick="navigateContent(1)"
+                                class="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-5 py-3 rounded-xl hover:bg-indigo-100 transition-colors">
+                                Continue →
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
         </div>{{-- end content-body --}}
 
         {{-- Week completion toast (hidden) --}}
@@ -574,59 +821,191 @@
 @push('scripts')
 <script>
 // ════════════════════════════════════════════════════════════════════════════
-// DATA
+// BASE DATA (from Blade)
 // ════════════════════════════════════════════════════════════════════════════
-var CONTENTS      = JSON.parse(document.getElementById('contents-data').textContent);
-var ENROLLMENT_ID = JSON.parse(document.getElementById('enrollment-id').textContent);
-var CSRF          = document.querySelector('meta[name="csrf-token"]').content;
+var CONTENTS       = JSON.parse(document.getElementById('contents-data').textContent);
+var ENROLLMENT_ID  = JSON.parse(document.getElementById('enrollment-id').textContent);
+var CURRENT_WEEK_ID = JSON.parse(document.getElementById('current-week-id').textContent);
+var CSRF           = document.querySelector('meta[name="csrf-token"]').content;
 
-var currentIndex  = 0;   // index within CONTENTS array
-var currentData   = null; // the active content object
-var videoProgressTimer = null;
+// Runtime state
+var currentIndex        = 0;
+var currentData         = null;
+var activeWeekId        = CURRENT_WEEK_ID;
+var videoProgressTimer  = null;
+
+// Assessment state
+var ASSESSMENT_DATA   = null;   // raw data from server
+var attemptId         = null;   // created on server when quiz starts
+var answers           = {};     // { questionId: answerValue }
+var currentQIndex     = 0;
+var timerInterval     = null;
+var timerSecondsLeft  = 0;
 
 // ════════════════════════════════════════════════════════════════════════════
-// INIT — load the first incomplete content automatically
+// INIT
 // ════════════════════════════════════════════════════════════════════════════
 (function init() {
     if (!CONTENTS.length) return;
-
-    // Find first incomplete, else start from 0
-    var firstIncomplete = CONTENTS.findIndex(function(c) { return !c.is_completed; });
-    loadContent(CONTENTS[firstIncomplete >= 0 ? firstIncomplete : 0].id);
+    var first = CONTENTS.findIndex(function(c) { return !c.is_completed; });
+    loadContent(CONTENTS[first >= 0 ? first : 0].id);
 })();
 
 // ════════════════════════════════════════════════════════════════════════════
 // SIDEBAR TOGGLE
 // ════════════════════════════════════════════════════════════════════════════
 function toggleSidebar() {
-    var sidebar  = document.getElementById('sidebar');
-    var overlay  = document.getElementById('sidebar-overlay');
+    var sidebar = document.getElementById('sidebar');
+    var overlay = document.getElementById('sidebar-overlay');
     var collapsed = sidebar.classList.toggle('collapsed');
     overlay.classList.toggle('show', !collapsed && window.innerWidth <= 768);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// WEEK ACCORDION
+// WEEK ACCORDION — with AJAX content swap
 // ════════════════════════════════════════════════════════════════════════════
 function toggleWeek(weekId, isLocked) {
     if (isLocked) return;
 
-    var el     = document.getElementById('week-contents-' + weekId);
-    var chev   = document.querySelector('.chevron-' + weekId);
-    var row    = document.getElementById('week-row-' + weekId);
-    var hidden = el.classList.toggle('hidden');
+    var el   = document.getElementById('week-contents-' + weekId);
+    var chev = document.querySelector('.chevron-' + weekId);
+    var row  = document.getElementById('week-row-' + weekId);
 
-    if (chev) chev.classList.toggle('rotate-180', !hidden);
-    row.classList.toggle('open', !hidden);
+    // Close already-open week if different
+    if (!el.classList.contains('hidden')) {
+        // Clicking the already-open accordion — just collapse it
+        el.classList.add('hidden');
+        if (chev) chev.classList.remove('rotate-180');
+        row.classList.remove('open');
+        return;
+    }
+
+    // Close all other open weeks
+    document.querySelectorAll('[id^="week-contents-"]').forEach(function(e) {
+        e.classList.add('hidden');
+    });
+    document.querySelectorAll('[class*="chevron-"]').forEach(function(e) {
+        e.classList.remove('rotate-180');
+    });
+    document.querySelectorAll('.week-row').forEach(function(e) {
+        e.classList.remove('open');
+    });
+
+    // If this week's contents are already in the DOM (current week loaded on page), just open
+    if (weekId === CURRENT_WEEK_ID) {
+        el.classList.remove('hidden');
+        if (chev) chev.classList.add('rotate-180');
+        row.classList.add('open');
+        return;
+    }
+
+    // Show skeleton while loading
+    el.innerHTML = '<div class="px-4 py-3 space-y-2">'
+        + '<div class="skeleton h-8 rounded-xl"></div>'
+        + '<div class="skeleton h-8 rounded-xl"></div>'
+        + '<div class="skeleton h-8 rounded-xl"></div>'
+        + '</div>';
+    el.classList.remove('hidden');
+    if (chev) chev.classList.add('rotate-180');
+    row.classList.add('open');
+
+    // Fetch from server
+    fetch('/learner/learning/' + ENROLLMENT_ID + '/week/' + weekId + '/contents', {
+        headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.success) {
+            el.innerHTML = '<p class="px-5 py-3 text-xs text-red-500">' + data.message + '</p>';
+            return;
+        }
+
+        // Swap CONTENTS array for navigation
+        CONTENTS = data.contents;
+        if (data.assessment) {
+            // Append a virtual assessment entry so prev/next can reach it
+            CONTENTS.push({
+                id: 'assessment-' + data.assessment.id,
+                title: data.assessment.title,
+                type: 'assessment',
+                is_completed: data.assessment.is_submitted,
+                _assessment_id: data.assessment.id,
+                _assessment: data.assessment,
+            });
+        }
+        activeWeekId = weekId;
+        currentIndex = 0;
+
+        // Render sidebar items
+        el.innerHTML = buildSidebarItems(data.contents, data.assessment);
+
+        // Mark first content active and load it
+        if (data.contents.length > 0) {
+            loadContent(data.contents[0].id);
+        }
+    })
+    .catch(function() {
+        el.innerHTML = '<p class="px-5 py-3 text-xs text-red-500">Failed to load. Please try again.</p>';
+    });
 }
+
+function buildSidebarItems(contents, assessment) {
+    var html = '';
+
+    contents.forEach(function(c) {
+        var typeIcon = c.type === 'video' ? '▶' : c.type === 'article' ? '📄' : c.type === 'pdf' ? '📎' : '•';
+        var doneClass = c.is_completed ? 'done' : '';
+        var circleClass = c.is_completed
+            ? 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center bg-green-500'
+            : 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border border-slate-300';
+        var checkIcon = c.is_completed
+            ? '<svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>'
+            : '';
+        var dur = c.video_duration ? ' · ' + c.video_duration + ' min' : '';
+
+        html += '<div class="content-item ' + doneClass + '" id="sidebar-item-' + c.id + '" onclick="loadContent(' + c.id + ')">'
+            + '<div class="' + circleClass + '">' + checkIcon + '</div>'
+            + '<div class="min-w-0 flex-1">'
+            + '<p class="item-title text-[12px] text-slate-700 leading-snug line-clamp-2">' + escHtml(c.title) + '</p>'
+            + '<p class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1"><span>' + typeIcon + '</span><span>' + cap(c.type) + '</span>' + dur + '</p>'
+            + '</div></div>';
+    });
+
+    if (assessment) {
+        var aClass = assessment.is_submitted ? 'done' : '';
+        var aCircle = assessment.is_submitted
+            ? 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center bg-green-500'
+            : 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border border-slate-300';
+        var aCheck = assessment.is_submitted
+            ? '<svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>'
+            : '';
+        html += '<div class="content-item ' + aClass + '" id="sidebar-item-assessment-' + assessment.id + '" onclick="loadAssessment(' + assessment.id + ')">'
+            + '<div class="' + aCircle + '">' + aCheck + '</div>'
+            + '<div class="min-w-0">'
+            + '<p class="item-title text-[12px] text-slate-700 leading-snug">Week Assessment</p>'
+            + '<p class="text-[11px] text-slate-400 mt-0.5">✏️ Quiz · ' + assessment.question_count + ' questions</p>'
+            + '</div></div>';
+    }
+
+    return html;
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
 
 // ════════════════════════════════════════════════════════════════════════════
 // NAVIGATION
 // ════════════════════════════════════════════════════════════════════════════
 function navigateContent(dir) {
-    var newIndex = currentIndex + dir;
-    if (newIndex >= 0 && newIndex < CONTENTS.length) {
-        loadContent(CONTENTS[newIndex].id);
+    var newIdx = currentIndex + dir;
+    if (newIdx < 0 || newIdx >= CONTENTS.length) return;
+    var item = CONTENTS[newIdx];
+    if (item.type === 'assessment') {
+        loadAssessment(item._assessment_id);
+    } else {
+        loadContent(item.id);
     }
 }
 
@@ -640,28 +1019,15 @@ function loadContent(contentId) {
     currentIndex = idx;
     currentData  = CONTENTS[idx];
 
-    // Update sidebar active state
-    document.querySelectorAll('.content-item').forEach(function(el) {
-        el.classList.remove('active');
-    });
-    var sidebarItem = document.getElementById('sidebar-item-' + contentId);
-    if (sidebarItem) sidebarItem.classList.add('active');
-
-    // Update topbar title
+    updateSidebarActive('sidebar-item-' + contentId);
     document.getElementById('topbar-title').textContent = currentData.title;
-
-    // Prev / Next buttons
     document.getElementById('btn-prev').disabled = currentIndex === 0;
     document.getElementById('btn-next').disabled = currentIndex === CONTENTS.length - 1;
 
-    // Stop any ongoing video timer
     if (videoProgressTimer) clearInterval(videoProgressTimer);
-
-    // Restore notes
     restoreNote(contentId);
-
-    // Render by type
     hideAllViews();
+
     switch (currentData.type) {
         case 'video':    renderVideo(currentData);    break;
         case 'article':  renderArticle(currentData);  break;
@@ -671,13 +1037,19 @@ function loadContent(contentId) {
     }
 }
 
+function updateSidebarActive(activeId) {
+    document.querySelectorAll('.content-item').forEach(function(el) { el.classList.remove('active'); });
+    var el = document.getElementById(activeId);
+    if (el) el.classList.add('active');
+}
+
 function hideAllViews() {
-    ['view-video','view-article','view-pdf','view-external','view-default','loading-state']
+    ['view-video','view-article','view-pdf','view-external','view-default','view-assessment','loading-state']
         .forEach(function(id) {
             var el = document.getElementById(id);
-            el.classList.add('hidden');
-            el.classList.remove('flex');
+            if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
         });
+    stopTimer();
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -685,52 +1057,31 @@ function hideAllViews() {
 // ════════════════════════════════════════════════════════════════════════════
 function renderVideo(c) {
     var view = document.getElementById('view-video');
-    view.classList.remove('hidden');
-    view.classList.add('flex');
-
+    view.classList.remove('hidden'); view.classList.add('flex');
     document.getElementById('video-title').textContent       = c.title;
     document.getElementById('video-description').textContent = c.description || '';
-
     var player = document.getElementById('video-player');
-    var source = document.getElementById('video-source');
-
-    source.src = c.video_url || '';
+    document.getElementById('video-source').src = c.video_url || '';
     player.load();
-
     updateCompleteBtn('video-complete-btn', c.is_completed);
-
-    if (c.is_completed) {
-        document.getElementById('video-complete-hint').textContent = 'Completed ✓';
-    }
-
-    // Start periodic progress ping every 15s
+    document.getElementById('video-complete-hint').textContent = c.is_completed
+        ? 'Completed ✓' : 'Or keep watching — it\'ll auto-complete at 90%';
     videoProgressTimer = setInterval(function() {
         if (!player.paused && player.duration > 0) {
-            var pct = Math.round((player.currentTime / player.duration) * 100);
-            pingProgress(c.id, pct, 15);
+            pingProgress(c.id, Math.round((player.currentTime / player.duration) * 100), 15);
         }
     }, 15000);
-
     switchTab('overview');
 }
 
 function onVideoTimeUpdate() {
     var player = document.getElementById('video-player');
-    if (!currentData || currentData.type !== 'video') return;
-    if (!player.duration || currentData.is_completed) return;
-
-    var pct = (player.currentTime / player.duration) * 100;
-
-    // Auto-complete at 90%
-    if (pct >= 90) {
-        markComplete(true); // silent = true
-    }
+    if (!currentData || currentData.type !== 'video' || !player.duration || currentData.is_completed) return;
+    if ((player.currentTime / player.duration) * 100 >= 90) markComplete(true);
 }
 
 function onVideoEnded() {
-    if (currentData && !currentData.is_completed) {
-        markComplete(true);
-    }
+    if (currentData && !currentData.is_completed) markComplete(true);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -739,14 +1090,9 @@ function onVideoEnded() {
 function renderArticle(c) {
     var view = document.getElementById('view-article');
     view.classList.remove('hidden');
-
     document.getElementById('article-title').textContent = c.title;
     document.getElementById('article-meta').textContent  = 'Article';
-
-    // Render HTML or plain text
-    var body = document.getElementById('article-body');
-    body.innerHTML = c.text_content || '<p class="text-slate-400">No content available.</p>';
-
+    document.getElementById('article-body').innerHTML    = c.text_content || '<p class="text-slate-400">No content available.</p>';
     updateCompleteBtn('article-complete-btn', c.is_completed);
 }
 
@@ -755,13 +1101,10 @@ function renderArticle(c) {
 // ════════════════════════════════════════════════════════════════════════════
 function renderPdf(c) {
     var view = document.getElementById('view-pdf');
-    view.classList.remove('hidden');
-    view.classList.add('flex');
-
-    document.getElementById('pdf-title').textContent        = c.title;
-    document.getElementById('pdf-frame').src                = c.file_url || '';
-    document.getElementById('pdf-download-link').href       = c.file_url || '#';
-
+    view.classList.remove('hidden'); view.classList.add('flex');
+    document.getElementById('pdf-title').textContent  = c.title;
+    document.getElementById('pdf-frame').src          = c.file_url || '';
+    document.getElementById('pdf-download-link').href = c.file_url || '#';
     updateCompleteBtn('pdf-complete-btn', c.is_completed);
 }
 
@@ -771,7 +1114,6 @@ function renderPdf(c) {
 function renderExternal(c) {
     var view = document.getElementById('view-external');
     view.classList.remove('hidden');
-
     document.getElementById('external-title').textContent = c.title;
     document.getElementById('external-link').href         = c.external_url || '#';
 }
@@ -794,106 +1136,366 @@ function markComplete(silent) {
 
     fetch('/learner/learning/content/' + currentData.id + '/complete', {
         method: 'POST',
-        headers: {
-            'X-CSRF-TOKEN': CSRF,
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-        },
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({})
     })
-    .then(function(res) { return res.json(); })
+    .then(function(r) { return r.json(); })
     .then(function(data) {
         if (!data.success) return;
 
-        // Mark in local state
         CONTENTS[currentIndex].is_completed = true;
         currentData.is_completed = true;
 
-        // Update sidebar item
-        var sidebarItem = document.getElementById('sidebar-item-' + currentData.id);
-        if (sidebarItem) {
-            sidebarItem.classList.add('done');
-            var circle = sidebarItem.querySelector('.rounded-full.border');
+        var si = document.getElementById('sidebar-item-' + currentData.id);
+        if (si) {
+            si.classList.add('done');
+            var circle = si.querySelector('.rounded-full.border, .rounded-full.border-slate-300');
             if (circle) {
                 circle.className = 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center bg-green-500';
                 circle.innerHTML = '<svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
             }
         }
 
-        // Update complete buttons
         ['video-complete-btn','article-complete-btn','pdf-complete-btn'].forEach(function(id) {
             updateCompleteBtn(id, true);
         });
 
-        if (!silent) {
-            showMiniToast('Marked as complete!');
-        }
-
-        // Week completion
-        if (data.week_completed) {
-            showWeekCompleteToast();
-        }
-
-        // Auto-advance after 1.5s (non-silent only)
+        if (!silent) showMiniToast('Marked as complete!');
+        if (data.week_completed) showWeekCompleteToast();
         if (!silent && currentIndex < CONTENTS.length - 1) {
             setTimeout(function() { navigateContent(1); }, 1500);
         }
     })
-    .catch(function() {
-        if (!silent) showMiniToast('Could not save. Please try again.', true);
-    });
+    .catch(function() { if (!silent) showMiniToast('Could not save. Please try again.', true); });
 }
 
 function updateCompleteBtn(btnId, isDone) {
     var btn = document.getElementById(btnId);
     if (!btn) return;
+    var checkSvg = '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
     if (isDone) {
         btn.classList.add('done');
-        btn.innerHTML = '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Completed';
+        btn.innerHTML = checkSvg + ' Completed';
         btn.onclick = null;
     } else {
         btn.classList.remove('done');
-        btn.innerHTML = '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg> Mark as Complete';
+        btn.innerHTML = checkSvg + ' Mark as Complete';
         btn.onclick = function() { markComplete(); };
     }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// PROGRESS PING (video)
+// PROGRESS PING
 // ════════════════════════════════════════════════════════════════════════════
 var lastPingedPct = -1;
 function pingProgress(contentId, pct, timeSpent) {
     if (pct === lastPingedPct) return;
     lastPingedPct = pct;
-
     fetch('/learner/learning/content/' + contentId + '/progress', {
         method: 'POST',
-        headers: {
-            'X-CSRF-TOKEN': CSRF,
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-        },
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ progress_percentage: pct, time_spent: timeSpent })
     }).catch(function() {});
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// NOTES (localStorage — browser only)
+// NOTES
 // ════════════════════════════════════════════════════════════════════════════
 function saveNote() {
     if (!currentData) return;
-    var key = 'note_' + ENROLLMENT_ID + '_' + currentData.id;
-    try {
-        localStorage.setItem(key, document.getElementById('notes-textarea').value);
-    } catch(e) {}
+    try { localStorage.setItem('note_' + ENROLLMENT_ID + '_' + currentData.id, document.getElementById('notes-textarea').value); } catch(e) {}
+}
+function restoreNote(contentId) {
+    try { document.getElementById('notes-textarea').value = localStorage.getItem('note_' + ENROLLMENT_ID + '_' + contentId) || ''; } catch(e) {}
 }
 
-function restoreNote(contentId) {
-    var key = 'note_' + ENROLLMENT_ID + '_' + contentId;
-    try {
-        var val = localStorage.getItem(key) || '';
-        document.getElementById('notes-textarea').value = val;
-    } catch(e) {}
+// ════════════════════════════════════════════════════════════════════════════
+// ─── ASSESSMENT ENGINE ───────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+
+function loadAssessment(assessmentId) {
+    hideAllViews();
+    updateSidebarActive('sidebar-item-assessment-' + assessmentId);
+    document.getElementById('topbar-title').textContent = 'Week Assessment';
+    document.getElementById('btn-prev').disabled = currentIndex <= 0;
+    document.getElementById('btn-next').disabled = currentIndex >= CONTENTS.length - 1;
+
+    var view = document.getElementById('view-assessment');
+    view.classList.remove('hidden');
+    document.getElementById('assessment-loading').classList.remove('hidden');
+    document.getElementById('assessment-intro').classList.add('hidden');
+    document.getElementById('assessment-quiz').classList.add('hidden');
+    document.getElementById('assessment-results').classList.add('hidden');
+
+    fetch('/learner/learning/' + ENROLLMENT_ID + '/assessment/' + assessmentId, {
+        headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        document.getElementById('assessment-loading').classList.add('hidden');
+        if (!data.success) { showMiniToast(data.message || 'Could not load assessment.', true); return; }
+        ASSESSMENT_DATA = data;
+        renderAssessmentIntro(data);
+    })
+    .catch(function() {
+        document.getElementById('assessment-loading').classList.add('hidden');
+        showMiniToast('Failed to load assessment.', true);
+    });
+}
+
+// ── Intro screen ─────────────────────────────────────────────────────────
+function renderAssessmentIntro(data) {
+    var a = data.assessment;
+    document.getElementById('a-title').textContent       = a.title;
+    document.getElementById('a-description').textContent = a.description || '';
+    document.getElementById('a-q-count').textContent     = data.questions.length;
+    document.getElementById('a-pass-mark').textContent   = a.passing_score + '%';
+
+    if (a.time_limit) {
+        document.getElementById('a-time-limit').textContent = a.time_limit + ' min';
+        document.getElementById('a-time-box').classList.remove('hidden');
+    } else {
+        document.getElementById('a-time-box').classList.add('hidden');
+    }
+
+    if (data.latest_attempt) {
+        var la = data.latest_attempt;
+        document.getElementById('a-prev-score').textContent = la.score + '% — ' + (la.passed ? '✓ Passed' : '✗ Not passed');
+        document.getElementById('a-prev-date').textContent  = 'Submitted ' + la.submitted_at;
+        document.getElementById('a-prev-attempt').classList.remove('hidden');
+        document.getElementById('btn-start-label').textContent = 'Retake Assessment';
+    } else {
+        document.getElementById('a-prev-attempt').classList.add('hidden');
+        document.getElementById('btn-start-label').textContent = 'Start Assessment';
+    }
+
+    document.getElementById('assessment-intro').classList.remove('hidden');
+}
+
+// ── Start / retake ────────────────────────────────────────────────────────
+function startAssessment() {
+    if (!ASSESSMENT_DATA) return;
+
+    // Create attempt on server
+    fetch('/learner/assessments/' + ASSESSMENT_DATA.assessment.id + '/attempt', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enrollment_id: ENROLLMENT_ID })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.success && !data.attempt_id) {
+            // Fallback: use in-progress attempt id if returned
+            if (data.attempt_id) { attemptId = data.attempt_id; }
+            else { showMiniToast('Could not start attempt.', true); return; }
+        }
+        attemptId = data.attempt_id || (data.attempt && data.attempt.id);
+        answers   = {};
+        currentQIndex = 0;
+
+        document.getElementById('assessment-intro').classList.add('hidden');
+        document.getElementById('assessment-quiz').classList.remove('hidden');
+
+        renderQuestion(0);
+
+        // Start timer if applicable
+        if (ASSESSMENT_DATA.assessment.time_limit) {
+            timerSecondsLeft = ASSESSMENT_DATA.assessment.time_limit * 60;
+            document.getElementById('timer-display').classList.remove('hidden');
+            document.getElementById('timer-display').classList.add('flex');
+            timerInterval = setInterval(tickTimer, 1000);
+        }
+    })
+    .catch(function() { showMiniToast('Server error. Please try again.', true); });
+}
+
+function retakeAssessment() {
+    document.getElementById('assessment-results').classList.add('hidden');
+    renderAssessmentIntro(ASSESSMENT_DATA);
+    document.getElementById('assessment-intro').classList.remove('hidden');
+}
+
+// ── Timer ─────────────────────────────────────────────────────────────────
+function tickTimer() {
+    timerSecondsLeft--;
+    var m = Math.floor(timerSecondsLeft / 60);
+    var s = timerSecondsLeft % 60;
+    var display = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    var el = document.getElementById('timer-value');
+    el.textContent = display;
+    if (timerSecondsLeft <= 60) el.classList.add('timer-warning');
+    if (timerSecondsLeft <= 0) {
+        stopTimer();
+        submitAssessment();
+    }
+}
+function stopTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+}
+
+// ── Render question ───────────────────────────────────────────────────────
+function renderQuestion(idx) {
+    var questions = ASSESSMENT_DATA.questions;
+    var q = questions[idx];
+    currentQIndex = idx;
+
+    document.getElementById('q-current-num').textContent = idx + 1;
+    document.getElementById('q-total-num').textContent   = questions.length;
+    document.getElementById('q-text').textContent        = q.text;
+
+    var pct = ((idx + 1) / questions.length) * 100;
+    document.getElementById('quiz-progress-fill').style.width = pct + '%';
+
+    // Show/hide correct input type
+    var isShort = q.type === 'short_answer';
+    document.getElementById('q-options').classList.toggle('hidden', isShort);
+    document.getElementById('q-short-answer').classList.toggle('hidden', !isShort);
+
+    if (isShort) {
+        document.getElementById('q-textarea').value = answers[q.id] || '';
+    } else {
+        renderOptions(q);
+    }
+
+    // Prev / Next / Submit buttons
+    document.getElementById('btn-quiz-prev').disabled = idx === 0;
+
+    var isLast = idx === questions.length - 1;
+    document.getElementById('btn-quiz-next').classList.toggle('hidden', isLast);
+    document.getElementById('btn-quiz-submit').classList.toggle('hidden', !isLast);
+}
+
+function renderOptions(q) {
+    var container = document.getElementById('q-options');
+    container.innerHTML = '';
+    var saved = answers[q.id];
+
+    q.options.forEach(function(opt, i) {
+        var isSelected = saved === opt || saved === i;
+        var div = document.createElement('div');
+        div.className = 'quiz-option' + (isSelected ? ' selected' : '');
+        div.onclick   = function() { selectOption(q.id, opt, div, container); };
+        div.innerHTML = '<div class="quiz-radio"></div>'
+            + '<span class="text-sm text-slate-800 leading-snug">' + escHtml(opt) + '</span>';
+        container.appendChild(div);
+    });
+}
+
+function selectOption(questionId, value, clickedEl, container) {
+    // Clear all selections in this container
+    container.querySelectorAll('.quiz-option').forEach(function(el) {
+        el.classList.remove('selected');
+    });
+    clickedEl.classList.add('selected');
+    answers[questionId] = value;
+}
+
+function onShortAnswerInput() {
+    if (!ASSESSMENT_DATA) return;
+    var q = ASSESSMENT_DATA.questions[currentQIndex];
+    answers[q.id] = document.getElementById('q-textarea').value;
+}
+
+// ── Navigation within quiz ────────────────────────────────────────────────
+function quizPrev() {
+    if (currentQIndex > 0) renderQuestion(currentQIndex - 1);
+}
+function quizNext() {
+    var questions = ASSESSMENT_DATA.questions;
+    if (currentQIndex < questions.length - 1) renderQuestion(currentQIndex + 1);
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────
+function submitAssessment() {
+    if (!attemptId) return;
+    stopTimer();
+
+    document.getElementById('assessment-quiz').classList.add('hidden');
+    document.getElementById('assessment-submitting').classList.remove('hidden');
+
+    // Build answers array
+    var answersArray = [];
+    if (ASSESSMENT_DATA) {
+        ASSESSMENT_DATA.questions.forEach(function(q) {
+            answersArray.push({ question_id: q.id, answer: answers[q.id] !== undefined ? answers[q.id] : null });
+        });
+    }
+
+    fetch('/learner/attempts/' + attemptId + '/submit', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: answersArray })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        document.getElementById('assessment-submitting').classList.add('hidden');
+        if (data.success || data.score !== undefined) {
+            renderResults(data);
+        } else {
+            showMiniToast(data.message || 'Submission failed.', true);
+            document.getElementById('assessment-quiz').classList.remove('hidden');
+        }
+    })
+    .catch(function() {
+        document.getElementById('assessment-submitting').classList.add('hidden');
+        showMiniToast('Submission failed. Please try again.', true);
+        document.getElementById('assessment-quiz').classList.remove('hidden');
+    });
+}
+
+// ── Results ───────────────────────────────────────────────────────────────
+function renderResults(data) {
+    var score    = data.score || 0;
+    var passing  = ASSESSMENT_DATA ? ASSESSMENT_DATA.assessment.passing_score : 70;
+    var passed   = score >= passing;
+    var circumference = 326.7;
+    var offset   = circumference - (score / 100) * circumference;
+
+    var circle = document.getElementById('score-circle');
+    circle.style.stroke       = passed ? '#16a34a' : '#dc2626';
+    circle.style.strokeDashoffset = circumference; // reset first
+    setTimeout(function() { circle.style.strokeDashoffset = offset; }, 50);
+
+    document.getElementById('result-pct').textContent     = score + '%';
+    document.getElementById('result-headline').textContent = passed ? '🎉 You passed!' : 'Keep going — you can do this';
+    document.getElementById('result-subline').textContent  = passed
+        ? 'You scored ' + score + '% — above the ' + passing + '% pass mark.'
+        : 'You scored ' + score + '%. The pass mark is ' + passing + '%. Review and try again.';
+
+    // Per-question breakdown
+    var breakdown = document.getElementById('result-breakdown');
+    breakdown.innerHTML = '';
+    if (data.question_results && data.question_results.length) {
+        data.question_results.forEach(function(qr, i) {
+            var row = document.createElement('div');
+            row.className = 'px-5 py-4 flex items-start gap-3';
+            var icon = qr.is_correct
+                ? '<div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0 mt-0.5"><svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></div>'
+                : '<div class="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 mt-0.5"><svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg></div>';
+            row.innerHTML = icon
+                + '<div class="min-w-0"><p class="text-sm text-slate-800 font-medium">'
+                + escHtml('Q' + (i + 1) + '. ' + (qr.question_text || ''))
+                + '</p>'
+                + (!qr.is_correct && qr.correct_answer
+                    ? '<p class="text-xs text-green-600 mt-1 font-medium">Correct: ' + escHtml(String(qr.correct_answer)) + '</p>'
+                    : '')
+                + '</div>';
+            breakdown.appendChild(row);
+        });
+    }
+
+    // Update sidebar assessment item to done
+    var sai = document.getElementById('sidebar-item-assessment-' + (ASSESSMENT_DATA ? ASSESSMENT_DATA.assessment.id : ''));
+    if (sai && passed) {
+        sai.classList.add('done');
+        var ac = sai.querySelector('.rounded-full');
+        if (ac) {
+            ac.className = 'w-4 h-4 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center bg-green-500';
+            ac.innerHTML = '<svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+        }
+    }
+
+    document.getElementById('assessment-results').classList.remove('hidden');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -902,7 +1504,7 @@ function restoreNote(contentId) {
 function showMiniToast(msg, isError) {
     var color = isError ? 'bg-red-600' : 'bg-slate-900';
     var el = document.createElement('div');
-    el.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 ' + color + ' text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl z-50 transition-all';
+    el.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 ' + color + ' text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-xl z-50';
     el.textContent = msg;
     document.body.appendChild(el);
     setTimeout(function() { el.remove(); }, 2500);
@@ -911,17 +1513,7 @@ function showMiniToast(msg, isError) {
 function showWeekCompleteToast() {
     var toast = document.getElementById('week-complete-toast');
     toast.classList.remove('translate-y-20', 'opacity-0');
-    setTimeout(function() {
-        toast.classList.add('translate-y-20', 'opacity-0');
-    }, 4000);
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// ASSESSMENT placeholder — Batch 3
-// ════════════════════════════════════════════════════════════════════════════
-function loadAssessment(assessmentId) {
-    // Assessment rendering will be implemented in Batch 3
-    showMiniToast('Assessment view coming in the next update.');
+    setTimeout(function() { toast.classList.add('translate-y-20', 'opacity-0'); }, 4000);
 }
 </script>
 @endpush

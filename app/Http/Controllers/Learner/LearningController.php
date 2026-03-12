@@ -422,74 +422,77 @@ class LearningController extends Controller
      * Route: GET /learner/learning/{enrollmentId}/assessment/{assessmentId}
      * Name:  learner.learning.assessment-data
      */
-    public function getAssessmentData($enrollmentId, $assessmentId)
-    {
-        try {
-            $user       = auth()->user();
-            $enrollment = $this->resolveEnrollment($user, $enrollmentId);
-
-            $assessment = \App\Models\Assessment::with('questions')->findOrFail($assessmentId);
-
-            // Check if the week is unlocked for this enrollment
-            $week = $assessment->moduleWeek;
-            $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
-                ->where('module_week_id', $week->id)
-                ->firstOrFail();
-
-            if (!$weekProgress->is_unlocked) {
-                return response()->json(['success' => false, 'message' => 'Assessment not yet available.'], 403);
+     public function getAssessmentData($enrollmentId, $assessmentId)
+        {
+            try {
+                $user       = auth()->user();
+                $enrollment = $this->resolveEnrollment($user, $enrollmentId);
+    
+                $assessment = \App\Models\Assessment::with('questions')->findOrFail($assessmentId);
+    
+                $week = $assessment->moduleWeek;
+                $weekProgress = \App\Models\WeekProgress::where('enrollment_id', $enrollment->id)
+                    ->where('module_week_id', $week->id)
+                    ->firstOrFail();
+    
+                if (!$weekProgress->is_unlocked) {
+                    return response()->json(['success' => false, 'message' => 'Assessment not yet available.'], 403);
+                }
+    
+                // Latest submitted attempt (if any)
+                $latestAttempt = $assessment->attempts()
+                    ->where('user_id', $user->id)
+                    ->where('enrollment_id', $enrollment->id)
+                    ->where('status', 'submitted')
+                    ->latest()
+                    ->first();
+    
+                // In-progress attempt (not yet submitted)
+                $inProgressAttempt = $assessment->attempts()
+                    ->where('user_id', $user->id)
+                    ->where('enrollment_id', $enrollment->id)
+                    ->where('status', 'in_progress')
+                    ->latest()
+                    ->first();
+    
+                $questions = $assessment->questions->map(function ($q) {
+                    return [
+                        'id'      => $q->id,
+                        'text'    => $q->question_text,
+                        'type'    => $q->question_type,  // multiple_choice | true_false | short_answer
+                        'options' => array_values($q->options ?? []),  // ensure indexed array for JS
+                        'points'  => $q->points ?? 1,
+                    ];
+                });
+    
+                // FIX #4: use pass_percentage (the actual DB column), not passing_score
+                $passMark = $assessment->pass_percentage ?? 70;
+    
+                return response()->json([
+                    'success'    => true,
+                    'assessment' => [
+                        'id'            => $assessment->id,
+                        'title'         => $assessment->title ?? 'Week Assessment',
+                        'description'   => $assessment->description ?? '',
+                        'passing_score' => $passMark,
+                        'time_limit'    => $assessment->time_limit_minutes ?? null,
+                    ],
+                    'questions'           => $questions,
+                    'latest_attempt'      => $latestAttempt ? [
+                        'id'           => $latestAttempt->id,
+                        // FIX: use ->percentage (the scored float column), not ->score
+                        'score'        => (float) $latestAttempt->percentage,
+                        'passed'       => (float) $latestAttempt->percentage >= $passMark,
+                        'submitted_at' => $latestAttempt->submitted_at?->diffForHumans(),
+                    ] : null,
+                    'in_progress_attempt' => $inProgressAttempt ? [
+                        'id' => $inProgressAttempt->id,
+                    ] : null,
+                    'enrollment_id'       => $enrollment->id,
+                ]);
+    
+            } catch (\Exception $e) {
+                return response()->json(['success' => false, 'message' => 'Could not load assessment.'], 500);
             }
-
-            // Latest submitted attempt (if any)
-            $latestAttempt = $assessment->attempts()
-                ->where('user_id', $user->id)
-                ->where('enrollment_id', $enrollment->id)
-                ->where('status', 'submitted')
-                ->latest()
-                ->first();
-
-            // In-progress attempt (not yet submitted)
-            $inProgressAttempt = $assessment->attempts()
-                ->where('user_id', $user->id)
-                ->where('enrollment_id', $enrollment->id)
-                ->where('status', 'in_progress')
-                ->latest()
-                ->first();
-
-            $questions = $assessment->questions->map(function ($q) {
-                return [
-                    'id'      => $q->id,
-                    'text'    => $q->question_text,
-                    'type'    => $q->question_type, // multiple_choice | true_false | short_answer
-                    'options' => $q->options ?? [],  // array of option strings
-                    'points'  => $q->points ?? 1,
-                ];
-            });
-
-            return response()->json([
-                'success'     => true,
-                'assessment'  => [
-                    'id'            => $assessment->id,
-                    'title'         => $assessment->title ?? 'Week Assessment',
-                    'description'   => $assessment->description ?? '',
-                    'passing_score' => $assessment->passing_score ?? 70,
-                    'time_limit'    => $assessment->time_limit_minutes ?? null,
-                ],
-                'questions'         => $questions,
-                'latest_attempt'    => $latestAttempt ? [
-                    'id'         => $latestAttempt->id,
-                    'score'      => $latestAttempt->score,
-                    'passed'     => $latestAttempt->score >= ($assessment->passing_score ?? 70),
-                    'submitted_at' => $latestAttempt->submitted_at?->diffForHumans(),
-                ] : null,
-                'in_progress_attempt' => $inProgressAttempt ? [
-                    'id' => $inProgressAttempt->id,
-                ] : null,
-                'enrollment_id' => $enrollment->id,
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => 'Could not load assessment.'], 500);
         }
-    }
 }

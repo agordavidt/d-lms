@@ -134,10 +134,7 @@ class LoginController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('login')->with([
-            'message'    => 'You have been logged out successfully.',
-            'alert-type' => 'info',
-        ]);
+        return redirect()->route('home');
     }
 
     protected function redirectPath(User $user): string
