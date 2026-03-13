@@ -687,7 +687,10 @@
 
                         <button id="btn-start-assessment"
                             onclick="startAssessment()"
-                            class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold px-8 py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-300/20 text-base">                           
+                            class="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold px-8 py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-300/20 text-base">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                            </svg>
                             <span id="btn-start-label">Start Assessment</span>
                         </button>
                     </div>
@@ -762,14 +765,14 @@
                         <p class="text-slate-500 font-medium">Submitting your answers…</p>
                     </div>
 
-                    {{-- ── State: results ───────────────────────────────────────── --}}
-                    <div id="assessment-results" class="hidden">
+                    {{-- ── State: results — PASSED ─────────────────────────────── --}}
+                    <div id="assessment-results-pass" class="hidden">
                         <div class="text-center mb-8">
                             <div class="score-ring mx-auto mb-4">
                                 <svg width="120" height="120" viewBox="0 0 120 120">
                                     <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e8f0" stroke-width="10"/>
                                     <circle cx="60" cy="60" r="52" fill="none" id="score-circle"
-                                            stroke="#4f46e5" stroke-width="10"
+                                            stroke="#16a34a" stroke-width="10"
                                             stroke-dasharray="326.7"
                                             stroke-dashoffset="326.7"
                                             stroke-linecap="round"
@@ -781,10 +784,9 @@
                             <p class="text-slate-500 text-sm" id="result-subline"></p>
                         </div>
 
-                        {{-- Per-question breakdown --}}
+                        {{-- Per-question breakdown (pass only) --}}
                         <div class="bg-white rounded-2xl border border-slate-100 divide-y divide-slate-50 mb-8" id="result-breakdown"></div>
 
-                        {{-- Retry / continue --}}
                         <div class="flex flex-wrap gap-3 justify-center">
                             <button onclick="retakeAssessment()"
                                 class="inline-flex items-center gap-2 text-sm font-bold text-slate-700 bg-white border border-slate-200 px-5 py-3 rounded-xl hover:bg-slate-50 transition-colors">
@@ -793,6 +795,31 @@
                             <button onclick="navigateContent(1)"
                                 class="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-5 py-3 rounded-xl hover:bg-indigo-100 transition-colors">
                                 Continue →
+                            </button>
+                        </div>
+                    </div>
+
+                    {{-- ── State: results — FAILED (retake wall) ───────────────── --}}
+                    <div id="assessment-results-fail" class="hidden">
+                        <div class="text-center py-10">
+                            <div class="w-24 h-24 rounded-full bg-red-50 border-4 border-red-200 flex items-center justify-center mx-auto mb-6">
+                                <svg class="w-10 h-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                            <h2 class="text-2xl font-black text-slate-900 mb-2">Below the pass mark</h2>
+                            <p class="text-slate-500 text-sm mb-2" id="fail-score-line"></p>
+                            <p class="text-slate-400 text-sm mb-8">
+                                Review the material and give it another go — you've got this.
+                            </p>
+                            <button onclick="retakeAssessment()"
+                                class="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white font-bold px-8 py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-300/20 text-base mx-auto">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                Retake Assessment
                             </button>
                         </div>
                     </div>
@@ -1049,6 +1076,11 @@ function hideAllViews() {
             var el = document.getElementById(id);
             if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
         });
+    // Also reset assessment sub-states so they're clean on next load
+    ['assessment-results-pass','assessment-results-fail'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
     stopTimer();
 }
 
@@ -1225,7 +1257,8 @@ function loadAssessment(assessmentId) {
     document.getElementById('assessment-loading').classList.remove('hidden');
     document.getElementById('assessment-intro').classList.add('hidden');
     document.getElementById('assessment-quiz').classList.add('hidden');
-    document.getElementById('assessment-results').classList.add('hidden');
+    document.getElementById('assessment-results-pass').classList.add('hidden');
+    document.getElementById('assessment-results-fail').classList.add('hidden');
 
     fetch('/learner/learning/' + ENROLLMENT_ID + '/assessment/' + assessmentId, {
         headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF }
@@ -1310,7 +1343,8 @@ function startAssessment() {
 }
 
 function retakeAssessment() {
-    document.getElementById('assessment-results').classList.add('hidden');
+    document.getElementById('assessment-results-pass').classList.add('hidden');
+    document.getElementById('assessment-results-fail').classList.add('hidden');
     renderAssessmentIntro(ASSESSMENT_DATA);
     document.getElementById('assessment-intro').classList.remove('hidden');
 }
@@ -1445,22 +1479,37 @@ function submitAssessment() {
 
 // ── Results ───────────────────────────────────────────────────────────────
 function renderResults(data) {
-    var score    = data.score || 0;
-    var passing  = ASSESSMENT_DATA ? ASSESSMENT_DATA.assessment.passing_score : 70;
-    var passed   = score >= passing;
+    var score   = data.score || 0;
+    var passing = ASSESSMENT_DATA ? ASSESSMENT_DATA.assessment.passing_score : 70;
+    var passed  = score >= passing;
+
+    // Hide quiz/submitting states
+    document.getElementById('assessment-quiz').classList.add('hidden');
+    document.getElementById('assessment-submitting').classList.add('hidden');
+    document.getElementById('assessment-results-pass').classList.add('hidden');
+    document.getElementById('assessment-results-fail').classList.add('hidden');
+
+    if (!passed) {
+        // ── FAIL: retake wall only — no score ring, no breakdown ─────────
+        document.getElementById('fail-score-line').textContent =
+            'You scored ' + score + '%. The pass mark is ' + passing + '%.';
+        document.getElementById('assessment-results-fail').classList.remove('hidden');
+        return;
+    }
+
+    // ── PASS: animate score ring + show full breakdown ────────────────────
     var circumference = 326.7;
-    var offset   = circumference - (score / 100) * circumference;
+    var offset = circumference - (score / 100) * circumference;
 
     var circle = document.getElementById('score-circle');
-    circle.style.stroke       = passed ? '#16a34a' : '#dc2626';
-    circle.style.strokeDashoffset = circumference; // reset first
+    circle.style.stroke = '#16a34a';
+    circle.style.strokeDashoffset = circumference;
     setTimeout(function() { circle.style.strokeDashoffset = offset; }, 50);
 
-    document.getElementById('result-pct').textContent     = score + '%';
-    document.getElementById('result-headline').textContent = passed ? '🎉 You passed!' : 'Keep going — you can do this';
-    document.getElementById('result-subline').textContent  = passed
-        ? 'You scored ' + score + '% — above the ' + passing + '% pass mark.'
-        : 'You scored ' + score + '%. The pass mark is ' + passing + '%. Review and try again.';
+    document.getElementById('result-pct').textContent      = score + '%';
+    document.getElementById('result-headline').textContent = '🎉 You passed!';
+    document.getElementById('result-subline').textContent  =
+        'You scored ' + score + '% — above the ' + passing + '% pass mark.';
 
     // Per-question breakdown
     var breakdown = document.getElementById('result-breakdown');
@@ -1484,9 +1533,9 @@ function renderResults(data) {
         });
     }
 
-    // Update sidebar assessment item to done
+    // Mark sidebar assessment item green only on pass
     var sai = document.getElementById('sidebar-item-assessment-' + (ASSESSMENT_DATA ? ASSESSMENT_DATA.assessment.id : ''));
-    if (sai && passed) {
+    if (sai) {
         sai.classList.add('done');
         var ac = sai.querySelector('.rounded-full');
         if (ac) {
@@ -1495,7 +1544,7 @@ function renderResults(data) {
         }
     }
 
-    document.getElementById('assessment-results').classList.remove('hidden');
+    document.getElementById('assessment-results-pass').classList.remove('hidden');
 }
 
 // ════════════════════════════════════════════════════════════════════════════

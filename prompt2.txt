@@ -1,1144 +1,220 @@
-<?php
+==== former complete view ===
+@extends('layouts.learner')
 
-namespace App\Models;
+@section('title', 'Program Complete — ' . $enrollment->program->name)
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
-
-class Assessment extends Model
-{
-    use HasFactory, SoftDeletes;
-
-    protected $fillable = [
-        'module_week_id',
-        'title',
-        'description',
-        'time_limit_minutes',
-        'max_attempts',
-        'pass_percentage',
-        'randomize_questions',
-        'randomize_options',
-        'show_correct_answers',
-        'is_active',
-        'created_by',
-    ];
-
-    protected $casts = [
-        'randomize_questions' => 'boolean',
-        'randomize_options' => 'boolean',
-        'show_correct_answers' => 'boolean',
-        'is_active' => 'boolean',
-    ];
-
-    // Relationships
-    public function moduleWeek()
-    {
-        return $this->belongsTo(ModuleWeek::class);
-    }
-
-    public function questions()
-    {
-        return $this->hasMany(AssessmentQuestion::class)->orderBy('order');
-    }
-
-    public function attempts()
-    {
-        return $this->hasMany(AssessmentAttempt::class);
-    }
-
-    public function creator()
-    {
-        return $this->belongsTo(User::class, 'created_by');
-    }
-
-    // Helper methods
-    public function getTotalPointsAttribute(): int
-    {
-        return $this->questions()->sum('points');
-    }
-
-    public function getTotalQuestionsAttribute(): int
-    {
-        return $this->questions()->count();
-    }
-
-    // Get user's attempts for this assessment
-    public function getUserAttempts(User $user)
-    {
-        return $this->attempts()
-            ->where('user_id', $user->id)
-            ->orderBy('attempt_number')
-            ->get();
-    }
-
-    // Get user's best score
-    public function getUserBestScore(User $user): ?float
-    {
-        $bestAttempt = $this->attempts()
-            ->where('user_id', $user->id)
-            ->where('status', 'submitted')
-            ->orderBy('percentage', 'desc')
-            ->first();
-
-        return $bestAttempt ? $bestAttempt->percentage : null;
-    }
-
-    // Check if user can take assessment
-    public function canUserTakeAssessment(User $user): bool
-    {
-        if (!$this->is_active) {
-            return false;
-        }
-
-        $attemptsCount = $this->attempts()
-            ->where('user_id', $user->id)
-            ->where('status', 'submitted')
-            ->count();
-
-        return $attemptsCount < $this->max_attempts;
-    }
-
-    // Get remaining attempts for user
-    public function getRemainingAttempts(User $user): int
-    {
-        $used = $this->attempts()
-            ->where('user_id', $user->id)
-            ->where('status', 'submitted')
-            ->count();
-
-        return max(0, $this->max_attempts - $used);
-    }
-
-    // Check if user passed
-    public function hasUserPassed(User $user): bool
-    {
-        $bestScore = $this->getUserBestScore($user);
-        return $bestScore && $bestScore >= $this->pass_percentage;
-    }
-
-    // Get questions (randomized if needed)
-    public function getQuestionsForAttempt()
-    {
-        $query = $this->questions();
-
-        if ($this->randomize_questions) {
-            return $query->inRandomOrder()->get();
-        }
-
-        return $query->get();
-    }
-
-    // Scopes
-    public function scopeActive($query)
-    {
-        return $query->where('is_active', true);
-    }
-
-    public function scopeForWeek($query, $weekId)
-    {
-        return $query->where('module_week_id', $weekId);
-    }
+@push('styles')
+<style>
+@keyframes pop-in {
+    0%   { opacity: 0; transform: scale(0.85) translateY(20px); }
+    70%  { transform: scale(1.03) translateY(-4px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
 }
-
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-
-class AssessmentAttempt extends Model
-{
-    use HasFactory;
-
-    protected $fillable = [
-        'assessment_id',
-        'user_id',
-        'enrollment_id',
-        'attempt_number',
-        'started_at',
-        'submitted_at',
-        'time_spent_seconds',
-        'total_questions',
-        'total_points',
-        'score_earned',
-        'percentage',
-        'passed',
-        'answers',
-        'status',
-    ];
-
-    protected $casts = [
-        'started_at' => 'datetime',
-        'submitted_at' => 'datetime',
-        'passed' => 'boolean',
-        'answers' => 'array',
-        'score_earned' => 'decimal:2',
-        'percentage' => 'decimal:2',
-    ];
-
-    // Relationships
-    public function assessment()
-    {
-        return $this->belongsTo(Assessment::class);
-    }
-
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    public function enrollment()
-    {
-        return $this->belongsTo(Enrollment::class);
-    }
-
-    // Status checks
-    public function isInProgress(): bool
-    {
-        return $this->status === 'in_progress';
-    }
-
-    public function isSubmitted(): bool
-    {
-        return $this->status === 'submitted';
-    }
-
-    public function isAbandoned(): bool
-    {
-        return $this->status === 'abandoned';
-    }
-
-    // Get formatted time spent
-    public function getFormattedTimeSpent(): string
-    {
-        $minutes = floor($this->time_spent_seconds / 60);
-        $seconds = $this->time_spent_seconds % 60;
-        
-        if ($minutes > 0) {
-            return "{$minutes} min {$seconds} sec";
-        }
-        return "{$seconds} sec";
-    }
-
-    // Get formatted score
-    public function getFormattedScore(): string
-    {
-        return "{$this->score_earned}/{$this->total_points} ({$this->percentage}%)";
-    }
-
-    // Get pass/fail badge
-    public function getStatusBadge(): string
-    {
-        if ($this->passed) {
-            return '<span class="badge badge-success">PASSED</span>';
-        }
-        return '<span class="badge badge-danger">FAILED</span>';
-    }
-
-    // Get answer for specific question
-    public function getAnswerForQuestion($questionId)
-    {
-        $questionKey = "question_{$questionId}";
-        return $this->answers[$questionKey] ?? null;
-    }
-
-    // Check if time limit exceeded
-    public function isTimeLimitExceeded(): bool
-    {
-        if (!$this->assessment->time_limit_minutes) {
-            return false;
-        }
-
-        $timeLimit = $this->assessment->time_limit_minutes * 60; // Convert to seconds
-        return $this->time_spent_seconds > $timeLimit;
-    }
-
-    // Scopes
-    public function scopeSubmitted($query)
-    {
-        return $query->where('status', 'submitted');
-    }
-
-    public function scopeInProgress($query)
-    {
-        return $query->where('status', 'in_progress');
-    }
-
-    public function scopePassed($query)
-    {
-        return $query->where('passed', true);
-    }
-
-    public function scopeFailed($query)
-    {
-        return $query->where('passed', false)->where('status', 'submitted');
-    }
-
-    public function scopeForUser($query, $userId)
-    {
-        return $query->where('user_id', $userId);
-    }
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-10px); }
 }
-
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
-
-class AssessmentQuestion extends Model
-{
-    use HasFactory, SoftDeletes;
-
-    protected $fillable = [
-        'assessment_id',
-        'question_type',
-        'question_text',
-        'question_image',
-        'points',
-        'order',
-        'explanation',
-        'options',
-        'correct_answer',
-    ];
-
-    protected $casts = [
-        'options' => 'array',
-        'correct_answer' => 'array',
-    ];
-
-    // Relationships
-    public function assessment()
-    {
-        return $this->belongsTo(Assessment::class);
-    }
-
-    // Question type checks
-    public function isMultipleChoice(): bool
-    {
-        return $this->question_type === 'multiple_choice';
-    }
-
-    public function isTrueFalse(): bool
-    {
-        return $this->question_type === 'true_false';
-    }
-
-    public function isMultipleSelect(): bool
-    {
-        return $this->question_type === 'multiple_select';
-    }
-
-    // Get options (randomized if assessment setting is on)
-    public function getOptionsForDisplay()
-    {
-        $options = $this->options;
-
-        if ($this->assessment->randomize_options && $this->isMultipleChoice()) {
-            // Randomize while maintaining key-value pairs
-            $keys = array_keys($options);
-            shuffle($keys);
-            $randomized = [];
-            foreach ($keys as $key) {
-                $randomized[$key] = $options[$key];
-            }
-            return $randomized;
-        }
-
-        return $options;
-    }
-
-    // Check if answer is correct
-    public function checkAnswer($userAnswer): bool
-    {
-        switch ($this->question_type) {
-            case 'multiple_choice':
-            case 'true_false':
-                return $userAnswer === $this->correct_answer['answer'];
-
-            case 'multiple_select':
-                $correctAnswers = $this->correct_answer['answers'] ?? [];
-                sort($correctAnswers);
-                sort($userAnswer);
-                return $userAnswer === $correctAnswers;
-
-            default:
-                return false;
-        }
-    }
-
-    // Calculate points earned (for partial credit in multiple_select)
-    public function calculatePoints($userAnswer): float
-    {
-        if ($this->checkAnswer($userAnswer)) {
-            return $this->points;
-        }
-
-        // Partial credit for multiple_select
-        if ($this->question_type === 'multiple_select') {
-            $correctAnswers = $this->correct_answer['answers'] ?? [];
-            $correctCount = count(array_intersect($userAnswer, $correctAnswers));
-            $incorrectCount = count(array_diff($userAnswer, $correctAnswers));
-            
-            // If they selected wrong answers, no partial credit
-            if ($incorrectCount > 0) {
-                return 0;
-            }
-
-            // Award partial credit based on correct selections
-            return ($correctCount / count($correctAnswers)) * $this->points;
-        }
-
-        return 0;
-    }
-
-    // Get correct answer display
-    public function getCorrectAnswerDisplay(): string
-    {
-        switch ($this->question_type) {
-            case 'multiple_choice':
-                $key = $this->correct_answer['answer'];
-                return "{$key}: {$this->options[$key]}";
-
-            case 'true_false':
-                return ucfirst($this->correct_answer['answer']);
-
-            case 'multiple_select':
-                $answers = [];
-                foreach ($this->correct_answer['answers'] as $key) {
-                    $answers[] = "{$key}: {$this->options[$key]}";
-                }
-                return implode(', ', $answers);
-
-            default:
-                return '';
-        }
-    }
-
-    // Scopes
-    public function scopeOrdered($query)
-    {
-        return $query->orderBy('order');
-    }
-
-    public function scopeByType($query, $type)
-    {
-        return $query->where('question_type', $type);
-    }
+@keyframes confetti-fall {
+    0%   { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
 }
+.pop-in    { animation: pop-in 0.5s cubic-bezier(.34,1.56,.64,1) both; }
+.float     { animation: float 3s ease-in-out infinite; }
+.confetti  { position: fixed; top: -20px; width: 10px; height: 10px; border-radius: 2px; animation: confetti-fall linear forwards; pointer-events: none; }
+</style>
+@endpush
 
-<?php
+@section('content')
 
-namespace App\Models;
+{{-- Confetti canvas (JS generated) --}}
+<div id="confetti-container" aria-hidden="true"></div>
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+<div class="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 flex items-center justify-center px-4 py-16">
+    <div class="max-w-2xl w-full text-center">
 
-class ContentProgress extends Model
-{
-    use HasFactory;
+        {{-- Trophy --}}
+        <div class="float mb-8 inline-block">
+            <div class="w-28 h-28 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl shadow-amber-400/40 pop-in">
+                <span class="text-5xl" role="img" aria-label="Trophy">🏆</span>
+            </div>
+        </div>
 
-    protected $fillable = [
-        'user_id',
-        'week_content_id',
-        'enrollment_id',
-        'is_completed',
-        'progress_percentage',
-        'time_spent_seconds',
-        'last_accessed_at',
-        'completed_at',
-    ];
+        {{-- Headline --}}
+        <div class="pop-in" style="animation-delay:.1s">
+            <p class="text-xs font-black uppercase tracking-[0.25em] text-indigo-500 mb-3">
+                Program Complete
+            </p>
+            <h1 class="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight leading-tight mb-4">
+                You did it, {{ auth()->user()->first_name }}!
+            </h1>
+            <p class="text-lg text-slate-500 font-medium max-w-lg mx-auto mb-10">
+                You've completed every week of
+                <span class="font-bold text-slate-800">{{ $enrollment->program->name }}</span>.
+                Your achievement is now pending review for graduation.
+            </p>
+        </div>
 
-    protected $casts = [
-        'is_completed' => 'boolean',
-        'progress_percentage' => 'integer',
-        'time_spent_seconds' => 'integer',
-        'last_accessed_at' => 'datetime',
-        'completed_at' => 'datetime',
-    ];
+        {{-- Stats strip --}}
+        <div class="pop-in grid grid-cols-3 gap-4 mb-10" style="animation-delay:.2s">
+            @php
+                $completedWeeks = \App\Models\WeekProgress::where('enrollment_id', $enrollment->id)
+                    ->where('is_completed', true)->count();
+                $totalWeeks     = $enrollment->program->getPublishedWeeks()->count();
+                $completedItems = \App\Models\ContentProgress::where('enrollment_id', $enrollment->id)
+                    ->where('is_completed', true)->count();
+                $attendedCount  = \App\Models\LiveSession::where('cohort_id', $enrollment->cohort_id)
+                    ->where('status', 'completed')
+                    ->whereJsonContains('attendees', auth()->id())->count();
+            @endphp
 
-    // Relationships
-    
-    /**
-     * The user who is making progress
-     */
-    public function user()
-    {
-        return $this->belongsTo(User::class);
+            <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <p class="text-3xl font-black text-indigo-600 mb-1">{{ $completedWeeks }}</p>
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Weeks Done</p>
+            </div>
+            <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <p class="text-3xl font-black text-green-600 mb-1">{{ $completedItems }}</p>
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Lessons Done</p>
+            </div>
+            <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <p class="text-3xl font-black text-purple-600 mb-1">{{ $attendedCount }}</p>
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Sessions Attended</p>
+            </div>
+        </div>
+
+        {{-- Graduation status --}}
+        <div class="pop-in mb-10" style="animation-delay:.3s">
+            @if($enrollment->graduation_status === 'graduated')
+                {{-- Already graduated — show certificate CTA --}}
+                <div class="bg-green-50 border border-green-200 rounded-2xl p-6 mb-6">
+                    <p class="text-green-800 font-bold text-lg mb-1">🎓 Graduation approved!</p>
+                    <p class="text-green-700 text-sm">Your certificate is ready to download.</p>
+                </div>
+                <a href="{{ route('learner.certificate.download', $enrollment->certificate_key) }}"
+                   class="inline-flex items-center gap-2 bg-indigo-600 text-white font-bold px-8 py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-300/30 hover:shadow-indigo-400/30 hover:-translate-y-0.5">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    Download Certificate
+                </a>
+            @elseif($enrollment->graduation_status === 'pending_review')
+                {{-- Under review --}}
+                <div class="bg-amber-50 border border-amber-200 rounded-2xl p-6 mb-6">
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-amber-900 font-bold text-sm mb-1">Under review</p>
+                            <p class="text-amber-700 text-sm">Your graduation is being reviewed by our team. You'll be notified by email once your certificate is ready — usually within 2 business days.</p>
+                        </div>
+                    </div>
+                </div>
+            @else
+                {{-- Not yet requested --}}
+                <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 mb-6">
+                    <p class="text-indigo-900 font-bold text-sm mb-1">Ready to graduate?</p>
+                    <p class="text-indigo-700 text-sm mb-4">Submit your graduation request and our team will review your progress and issue your certificate.</p>
+
+                    <form action="{{ route('learner.graduation.request') }}" method="POST">
+                        @csrf
+                        <input type="hidden" name="enrollment_id" value="{{ $enrollment->id }}">
+                        <button type="submit"
+                            class="inline-flex items-center gap-2 bg-indigo-600 text-white font-bold px-6 py-3 rounded-xl hover:bg-indigo-700 transition-all text-sm shadow-lg shadow-indigo-300/30">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                            </svg>
+                            Request Graduation Certificate
+                        </button>
+                    </form>
+                </div>
+            @endif
+        </div>
+
+        {{-- Secondary actions --}}
+        <div class="pop-in flex flex-wrap justify-center gap-3" style="animation-delay:.4s">
+            <a href="{{ route('learner.my-learning') }}"
+               class="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors px-5 py-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50">
+                ← Back to My Learning
+            </a>
+            <a href="{{ route('explore') }}"
+               class="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-700 transition-colors px-5 py-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100">
+                Explore More Programs
+            </a>
+        </div>
+
+    </div>
+</div>
+@endsection
+
+@push('scripts')
+<script>
+// ── Confetti burst ──────────────────────────────────────────────────────────
+(function spawnConfetti() {
+    var colors = ['#4f46e5','#7c3aed','#059669','#d97706','#db2777','#0891b2'];
+    var container = document.getElementById('confetti-container');
+    var count = 80;
+
+    for (var i = 0; i < count; i++) {
+        (function(i) {
+            setTimeout(function() {
+                var el = document.createElement('div');
+                el.className = 'confetti';
+                el.style.left            = Math.random() * 100 + 'vw';
+                el.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                el.style.width           = (Math.random() * 8 + 6) + 'px';
+                el.style.height          = (Math.random() * 8 + 6) + 'px';
+                el.style.borderRadius    = Math.random() > 0.5 ? '50%' : '2px';
+                el.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                el.style.animationDelay  = (Math.random() * 0.5) + 's';
+                container.appendChild(el);
+                setTimeout(function() { el.remove(); }, 4000);
+            }, i * 30);
+        })(i);
     }
+})();
+</script>
+@endpush
 
-    /**
-     * The week content being progressed through
-     * Note: This is the correct relationship name based on the foreign key
-     */
-    public function weekContent()
-    {
-        return $this->belongsTo(WeekContent::class, 'week_content_id');
-    }
 
-    /**
-     * Alias for weekContent to support both naming conventions
-     */
-    public function content()
-    {
-        return $this->weekContent();
-    }
 
-    /**
-     * The enrollment this progress is associated with
-     */
-    public function enrollment()
-    {
-        return $this->belongsTo(Enrollment::class);
-    }
+=== migration ===
+ Schema::create('programs', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('slug')->unique();
+            $table->text('description');
+            $table->text('overview')->nullable();
+            $table->string('duration'); // e.g., "12 Weeks", "3 Months"
+            $table->decimal('price', 10, 2);
+            $table->decimal('discount_percentage', 5, 2)->default(0); // For one-time payment discount
+            $table->string('image')->nullable();
+            $table->enum('status', ['active', 'inactive', 'draft'])->default('draft');
+            $table->json('features')->nullable(); // Array of program features
+            $table->json('requirements')->nullable(); // Prerequisites
+            $table->integer('max_students')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
 
-    // Scopes
-
-    /**
-     * Scope to get completed progress
-     */
-    public function scopeCompleted($query)
-    {
-        return $query->where('is_completed', true);
-    }
-
-    /**
-     * Scope to get in-progress items
-     */
-    public function scopeInProgress($query)
-    {
-        return $query->where('is_completed', false)
-                     ->where('progress_percentage', '>', 0);
-    }
-
-    /**
-     * Scope to get not started items
-     */
-    public function scopeNotStarted($query)
-    {
-        return $query->where('progress_percentage', 0);
-    }
-
-    // Helper Methods
-
-    /**
-     * Mark content as completed
-     */
-    public function markAsCompleted()
-    {
-        $this->update([
-            'is_completed' => true,
-            'progress_percentage' => 100,
-            'completed_at' => now(),
-        ]);
-    }
-
-    /**
-     * Update progress percentage
-     */
-    public function updateProgress(int $percentage)
-    {
-        $this->update([
-            'progress_percentage' => min(100, max(0, $percentage)),
-            'last_accessed_at' => now(),
-        ]);
-
-        if ($percentage >= 100) {
-            $this->markAsCompleted();
-        }
-    }
-
-    /**
-     * Add time spent
-     */
-    public function addTimeSpent(int $seconds)
-    {
-        $this->increment('time_spent_seconds', $seconds);
-        $this->update(['last_accessed_at' => now()]);
-    }
-
-    /**
-     * Get formatted time spent
-     */
-    public function getFormattedTimeSpentAttribute()
-    {
-        $hours = floor($this->time_spent_seconds / 3600);
-        $minutes = floor(($this->time_spent_seconds % 3600) / 60);
-        
-        if ($hours > 0) {
-            return sprintf('%d hr %d min', $hours, $minutes);
-        }
-        
-        return sprintf('%d min', $minutes);
-    }
-
-    /**
-     * Check if content is in progress
-     */
-    public function isInProgress()
-    {
-        return !$this->is_completed && $this->progress_percentage > 0;
-    }
-
-    /**
-     * Check if content is not started
-     */
-    public function isNotStarted()
-    {
-        return $this->progress_percentage === 0;
-    }
-}
-
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-
-class WeekProgress extends Model
-{
-    use HasFactory;
-
-    protected $fillable = [
-        'user_id',
-        'module_week_id',
-        'enrollment_id',
-        'is_unlocked',
-        'is_completed',
-        'progress_percentage',
-        'total_contents',
-        'contents_completed',
-        'assessment_score',
-        'assessment_passed',
-        'assessment_attempts',
-        'last_assessment_at',
-        'unlocked_at',
-        'completed_at',
-    ];
-
-    protected $casts = [
-        'is_unlocked' => 'boolean',
-        'is_completed' => 'boolean',
-        'progress_percentage' => 'decimal:2',
-        'assessment_score' => 'decimal:2',
-        'assessment_passed' => 'boolean',
-        'assessment_attempts' => 'integer',
-        'unlocked_at' => 'datetime',
-        'completed_at' => 'datetime',
-        'last_assessment_at' => 'datetime',
-    ];
-
-    // Relationships
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    public function moduleWeek()
-    {
-        return $this->belongsTo(ModuleWeek::class);
-    }
-
-    public function enrollment()
-    {
-        return $this->belongsTo(Enrollment::class);
-    }
-
-    // Helper Methods
-
-    /**
-     * Check if week is fully complete (content + assessment if required)
-     */
-    public function isWeekFullyComplete(): bool
-    {
-        $week = $this->moduleWeek;
-        
-        // Check content completion
-        if ($this->progress_percentage < 100) {
-            return false;
-        }
-        
-        // If week has assessment, check if taken (not necessarily passed)
-        if ($week->has_assessment && $week->assessment) {
-            return $this->assessment_attempts > 0; // Assessment taken (score recorded)
-        }
-        
-        return true;
-    }
-
-    /**
-     * Calculate and update week completion percentage
-     */
-    public function recalculateCompletion(): void
-    {
-        $week = $this->moduleWeek;
-        $requiredContents = $week->contents()->where('is_required', true)->count();
-        
-        if ($requiredContents === 0) {
-            $this->update(['progress_percentage' => 100]);
-            return;
-        }
-
-        // Get completed required contents
-        $completedContents = ContentProgress::where('user_id', $this->user_id)
-            ->where('enrollment_id', $this->enrollment_id)
-            ->where('is_completed', true)
-            ->whereHas('weekContent', function($q) use ($week) {
-                $q->where('module_week_id', $week->id)
-                  ->where('is_required', true);
-            })
-            ->count();
-
-        $percentage = ($completedContents / $requiredContents) * 100;
-        
-        $this->update([
-            'contents_completed' => $completedContents,
-            'total_contents' => $requiredContents,
-            'progress_percentage' => round($percentage, 2),
-        ]);
-    }
-
-    /**
-     * Mark week as complete and unlock next week
-     */
-    public function markAsComplete(): void
-    {
-        if ($this->is_completed) {
-            return; // Already completed
-        }
-
-        $this->update([
-            'is_completed' => true,
-            'completed_at' => now(),
-        ]);
-
-        // Unlock next week
-        $this->unlockNextWeek();
-        
-        // Update enrollment grade averages
-        $this->enrollment->recalculateGradeAverages();
-    }
-
-    /**
-     * Unlock the next week in sequence
-     */
-    protected function unlockNextWeek(): void
-    {
-        $currentWeek = $this->moduleWeek;
-        $program = $currentWeek->programModule->program;
-        
-        // Get all weeks in program ordered by module and week number
-        $allWeeks = ModuleWeek::whereHas('programModule', function($q) use ($program) {
-            $q->where('program_id', $program->id);
-        })
-        ->where('status', 'published')
-        ->with('programModule')
-        ->get()
-        ->sortBy(function($week) {
-            return [$week->programModule->order, $week->week_number];
+            $table->index('slug');
+            $table->index('status');
         });
+    }
 
-        // Find current week index
-        $currentIndex = $allWeeks->search(function($week) use ($currentWeek) {
-            return $week->id === $currentWeek->id;
+     Schema::create('program_modules', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('program_id')->constrained()->cascadeOnDelete();
+            $table->string('title'); // e.g., "Module 1: Foundations of Data Analytics"
+            $table->text('description')->nullable();
+            $table->integer('order')->default(0); // Order of modules in program
+            $table->integer('duration_weeks'); // How many weeks this module takes
+            $table->enum('status', ['draft', 'published', 'archived'])->default('draft');
+            $table->json('learning_objectives')->nullable(); // Array of learning objectives
+            $table->timestamps();
+            $table->softDeletes();
+
+            // Indexes
+            $table->index(['program_id', 'order']);
+            $table->index('status');
         });
-
-        // Get next week
-        if ($currentIndex !== false && isset($allWeeks[$currentIndex + 1])) {
-            $nextWeek = $allWeeks[$currentIndex + 1];
-            
-            // Create or update progress for next week
-            WeekProgress::updateOrCreate(
-                [
-                    'user_id' => $this->user_id,
-                    'module_week_id' => $nextWeek->id,
-                    'enrollment_id' => $this->enrollment_id,
-                ],
-                [
-                    'is_unlocked' => true,
-                    'unlocked_at' => now(),
-                    'total_contents' => $nextWeek->required_contents_count,
-                ]
-            );
-        }
-    }
-
-    /**
-     * Check if content is complete but assessment pending
-     */
-    public function isContentCompleteAssessmentPending(): bool
-    {
-        $week = $this->moduleWeek;
-        
-        return $this->progress_percentage >= 100 
-            && $week->has_assessment 
-            && $week->assessment
-            && $this->assessment_attempts === 0;
-    }
-
-    /**
-     * Check if assessment can be taken
-     */
-    public function canTakeAssessment(): bool
-    {
-        // Content must be 100% complete
-        if ($this->progress_percentage < 100) {
-            return false;
-        }
-
-        $week = $this->moduleWeek;
-        
-        // Week must have assessment
-        if (!$week->has_assessment || !$week->assessment) {
-            return false;
-        }
-
-        // Check if max attempts reached (though we still allow - just for UI)
-        return $this->assessment_attempts < $week->assessment->max_attempts;
-    }
-
-    // Scopes
-    public function scopeUnlocked($query)
-    {
-        return $query->where('is_unlocked', true);
-    }
-
-    public function scopeCompleted($query)
-    {
-        return $query->where('is_completed', true);
-    }
-
-    public function scopeInProgress($query)
-    {
-        return $query->where('is_unlocked', true)
-                     ->where('is_completed', false);
-    }
-}
-
-<?php
-
-use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
-use App\Http\Controllers\Admin\UserController;
-use App\Http\Controllers\Admin\LearnerController;
-use App\Http\Controllers\Admin\MentorManagementController;
-use App\Http\Controllers\Admin\ProgramController as AdminProgramController;
-use App\Http\Controllers\Admin\CohortController;
-use App\Http\Controllers\Admin\ActivityLogController;
-use App\Http\Controllers\Admin\SessionController as AdminSessionController;
-use App\Http\Controllers\Admin\ModuleController;
-use App\Http\Controllers\Admin\WeekController;
-use App\Http\Controllers\Admin\ContentController as AdminContentController;
-use App\Http\Controllers\Admin\GraduationController;
-use App\Http\Controllers\ExploreController;
-use App\Http\Controllers\Learner\CertificationsController;
-use App\Http\Controllers\Learner\MyLearningController;
-use App\Http\Controllers\Learner\ProgramController as LearnerProgramController;
-use App\Http\Controllers\Learner\ProfileController;
-use App\Http\Controllers\Learner\LearningController;
-use App\Http\Controllers\Learner\CurriculumController;
-use App\Http\Controllers\Mentor\DashboardController as MentorDashboardController;
-use App\Http\Controllers\Mentor\SessionController as MentorSessionController;
-use App\Http\Controllers\Mentor\StudentController;
-use App\Http\Controllers\Mentor\ContentController as MentorContentController;
-use App\Http\Controllers\PaymentController;
-use App\Http\Controllers\Auth\ForgotPasswordController;
-use App\Http\Controllers\Auth\LoginController;
-use App\Http\Controllers\Auth\RegisterController;
-use App\Http\Controllers\Auth\ResetPasswordController;
-use Illuminate\Auth\Events\Verified;
-use Illuminate\Foundation\Auth\EmailVerificationRequest;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-
-// ══════════════════════════════════════════════════════════════════════════════
-// PUBLIC ROUTES
-// ══════════════════════════════════════════════════════════════════════════════
-
-// Home — passes active programs to the landing page for the courses section
-Route::get('/', function () {
-    $programs = \App\Models\Program::where('status', 'active')
-        ->latest()
-        ->take(6)
-        ->get();
-
-    return view('welcome', compact('programs'));
-})->name('home');
-Route::get('/explore', [ExploreController::class, 'index'])->name('explore');
-
-// Certificate Verification (Public — no auth required)
-Route::get('/certificate/verify/{key}', function ($key) {
-    $enrollment = \App\Models\Enrollment::where('certificate_key', $key)->first();
-
-    if (! $enrollment || $enrollment->graduation_status !== 'graduated') {
-        abort(404, 'Certificate not found');
-    }
-
-    return view('public.certificate-verify', compact('enrollment'));
-})->name('certificate.verify');
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-// GUEST ROUTES (only accessible when NOT logged in)
-// ══════════════════════════════════════════════════════════════════════════════
-
-Route::middleware('guest')->group(function () {
-    // These views are now fallback pages — the primary flow uses modals on the
-    // landing page. They remain useful for direct URL access and email redirects.
-    Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
-    Route::post('/login', [LoginController::class, 'login']);
-
-    Route::get('/register', [RegisterController::class, 'showRegistrationForm'])->name('register');
-    Route::post('/register', [RegisterController::class, 'register']);
-
-    // Password Reset
-    Route::get('/forgot-password', [ForgotPasswordController::class, 'showLinkRequestForm'])->name('password.request');
-    Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail'])->name('password.email');
-    Route::get('/reset-password/{token}', [ResetPasswordController::class, 'showResetForm'])->name('password.reset');
-    Route::post('/reset-password', [ResetPasswordController::class, 'reset'])->name('password.update');
-});
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-// AUTHENTICATED ROUTES
-// ══════════════════════════════════════════════════════════════════════════════
-
-Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () {
-
-    // ── Logout ─────────────────────────────────────────────────────────────
-    Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
-
-    // ── Email Verification ─────────────────────────────────────────────────
-    // (Accessible to authenticated users regardless of verification status
-    //  so unverified users can reach the notice and resend pages.)
-
-    // 1. Notice — shown after registration: "Check your inbox"
-    Route::get('/email/verify', function () {
-        // If already verified, send them to their dashboard immediately
-        if (auth()->user()->hasVerifiedEmail()) {
-            return redirect()->route(
-                match(auth()->user()->role) {
-                    'superadmin', 'admin' => 'admin.dashboard',
-                    'mentor'              => 'mentor.dashboard',
-                    default               => 'learner.dashboard',
-                }
-            );
-        }
-
-        return view('auth.verify-email');
-    })->name('verification.notice');
-
-    // 2. Verification link handler — signed URL from the email
-    Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
-        $request->fulfill(); // Sets email_verified_at + fires Verified event
-
-        $user = $request->user();
-
-        $redirectRoute = match($user->role) {
-            'superadmin', 'admin' => 'admin.dashboard',
-            'mentor'              => 'mentor.dashboard',
-            default               => 'learner.dashboard',
-        };
-
-        return redirect()->route($redirectRoute)->with([
-            'message'    => 'Email verified! Welcome to G-Luper, ' . $user->first_name . '.',
-            'alert-type' => 'success',
-        ]);
-    })->middleware('signed')->name('verification.verify');
-
-    // 3. Resend verification email (rate-limited: 6 attempts per minute)
-    Route::post('/email/verification-notification', function (Request $request) {
-        if ($request->user()->hasVerifiedEmail()) {
-            return redirect()->route(
-                match($request->user()->role) {
-                    'superadmin', 'admin' => 'admin.dashboard',
-                    'mentor'              => 'mentor.dashboard',
-                    default               => 'learner.dashboard',
-                }
-            );
-        }
-
-        $request->user()->sendEmailVerificationNotification();
-
-        return back()->with([
-            'status'     => 'verification-link-sent',
-            'message'    => 'Verification link sent! Check your inbox.',
-            'alert-type' => 'success',
-        ]);
-    })->middleware('throttle:6,1')->name('verification.send');
-
-
-    // ── Payments ───────────────────────────────────────────────────────────
-    // Payment routes do NOT require verified email — a user should be able
-    // to complete payment even before verifying (edge case guard).
-    Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment'])->name('payment.initiate');
-    Route::get('/payment/callback', [PaymentController::class, 'callback'])->name('payment.callback');
-    Route::post('/payment/installment', [PaymentController::class, 'payInstallment'])->name('payment.installment');
-
-
-    // ══════════════════════════════════════════════════════════════════════
-    // ADMIN ROUTES
-    // Note: Admin/SuperAdmin accounts are created by the system (not
-    // self-registered), so the `verified` middleware is intentionally
-    // omitted here. Add it if admins ever self-register.
-    // ══════════════════════════════════════════════════════════════════════
-    Route::middleware(['check.role:admin,superadmin'])->prefix('admin')->name('admin.')->group(function () {
-
-        Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
-        Route::get('/activity-log', [ActivityLogController::class, 'index'])->name('activity-log');
-        Route::get('/activity-log/{id}', [ActivityLogController::class, 'show'])->name('activity-log.show');
-
-        // Learner Management
-        Route::get('/learners', [LearnerController::class, 'index'])->name('learners.index');
-        Route::get('/learners/data', [LearnerController::class, 'getData'])->name('learners.data');
-        Route::get('/learners/{id}', [LearnerController::class, 'show'])->name('learners.show');
-        Route::post('/learners/{id}/status', [LearnerController::class, 'updateStatus'])->name('learners.update-status');
-        Route::get('/learners/{learner}/assessments/{attempt}/attempt', [LearnerController::class, 'showAssessmentAttempt'])->name('learners.assessment-attempt');
-
-        // Mentor Management
-        Route::get('/mentors', [MentorManagementController::class, 'index'])->name('mentors.index');
-        Route::get('/mentors/data', [MentorManagementController::class, 'getData'])->name('mentors.data');
-        Route::get('/mentors/create', [MentorManagementController::class, 'create'])->name('mentors.create');
-        Route::post('/mentors', [MentorManagementController::class, 'store'])->name('mentors.store');
-        Route::get('/mentors/{id}/edit', [MentorManagementController::class, 'edit'])->name('mentors.edit');
-        Route::put('/mentors/{id}', [MentorManagementController::class, 'update'])->name('mentors.update');
-        Route::delete('/mentors/{id}', [MentorManagementController::class, 'destroy'])->name('mentors.destroy');
-        Route::post('/mentors/{id}/status', [MentorManagementController::class, 'updateStatus'])->name('mentors.update-status');
-
-        // User Management (SuperAdmin only)
-        Route::middleware(['check.role:superadmin'])->group(function () {
-            Route::get('/users/data', [UserController::class, 'getUsersData'])->name('users.data');
-            Route::post('/users/{id}/status', [UserController::class, 'updateStatus'])->name('users.update-status');
-            Route::resource('users', UserController::class);
-        });
-
-        // Program Management
-        Route::resource('programs', AdminProgramController::class);
-        Route::resource('cohorts', CohortController::class);
-        Route::resource('modules', ModuleController::class);
-        Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
-        Route::resource('weeks', WeekController::class);
-        Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])->name('weeks.modules-by-program');
-
-        // Content Management
-        Route::resource('contents', AdminContentController::class);
-        Route::post('contents/upload-image', [AdminContentController::class, 'uploadImage'])->name('contents.upload-image');
-        Route::get('contents/modules-by-program', [AdminContentController::class, 'getModulesByProgram'])->name('contents.modules-by-program');
-        Route::get('contents/weeks-by-module', [AdminContentController::class, 'getWeeksByModule'])->name('contents.weeks-by-module');
-        Route::post('contents/reorder', [AdminContentController::class, 'reorder'])->name('contents.reorder');
-
-        // Sessions / Calendar
-        Route::get('/sessions/calendar', [AdminSessionController::class, 'calendar'])->name('sessions.calendar');
-        Route::get('/sessions/events', [AdminSessionController::class, 'getEvents'])->name('sessions.events');
-        Route::resource('sessions', AdminSessionController::class);
-
-        // Payment Management
-        Route::get('/payments', [App\Http\Controllers\Admin\PaymentController::class, 'index'])->name('payments.index');
-        Route::get('/payments/export/csv', [App\Http\Controllers\Admin\PaymentController::class, 'export'])->name('payments.export');
-        Route::get('/payments/{id}', [App\Http\Controllers\Admin\PaymentController::class, 'show'])->name('payments.show');
-
-        // Assessment Management
-        Route::get('/assessments/create', [App\Http\Controllers\Admin\AssessmentController::class, 'create'])->name('assessments.create');
-        Route::post('/assessments', [App\Http\Controllers\Admin\AssessmentController::class, 'store'])->name('assessments.store');
-        Route::get('/assessments/{assessment}', [App\Http\Controllers\Admin\AssessmentController::class, 'show'])->name('assessments.show');
-        Route::get('/assessments/{assessment}/edit', [App\Http\Controllers\Admin\AssessmentController::class, 'edit'])->name('assessments.edit');
-        Route::put('/assessments/{assessment}', [App\Http\Controllers\Admin\AssessmentController::class, 'update'])->name('assessments.update');
-        Route::delete('/assessments/{assessment}', [App\Http\Controllers\Admin\AssessmentController::class, 'destroy'])->name('assessments.destroy');
-        Route::post('/assessments/{assessment}/toggle-active', [App\Http\Controllers\Admin\AssessmentController::class, 'toggleActive'])->name('assessments.toggle-active');
-
-        // Assessment Question Management
-        Route::get('/assessments/{assessment}/questions', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'index'])->name('assessments.questions.index');
-        Route::post('/assessments/{assessment}/questions', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'store'])->name('assessments.questions.store');
-        Route::put('/assessments/{assessment}/questions/{question}', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'update'])->name('assessments.questions.update');
-        Route::delete('/assessments/{assessment}/questions/{question}', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'destroy'])->name('assessments.questions.destroy');
-        Route::post('/assessments/{assessment}/questions/reorder', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'reorder'])->name('assessments.questions.reorder');
-        Route::get('/assessments/{assessment}/questions/import', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'showImport'])->name('assessments.questions.import-form');
-        Route::post('/assessments/{assessment}/questions/import', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'import'])->name('assessments.questions.import');
-        Route::get('/assessments/questions/template', [App\Http\Controllers\Admin\AssessmentQuestionController::class, 'downloadTemplate'])->name('assessments.questions.template');
-
-        // Graduation Management
-        Route::get('/graduations', [GraduationController::class, 'index'])->name('graduations.index');
-        Route::get('/graduations/{enrollment}/review', [GraduationController::class, 'review'])->name('graduations.review');
-        Route::post('/graduations/{enrollment}/approve', [GraduationController::class, 'approve'])->name('graduations.approve');
-        Route::post('/graduations/{enrollment}/reject', [GraduationController::class, 'reject'])->name('graduations.reject');
-        Route::post('/graduations/bulk-approve', [GraduationController::class, 'bulkApprove'])->name('graduations.bulk-approve');
-        Route::get('/graduations/graduated', [GraduationController::class, 'graduated'])->name('graduations.graduated');
-    });
-
-
-    // ══════════════════════════════════════════════════════════════════════
-    // MENTOR ROUTES
-    // Same note as admin — mentor accounts are system-created, no `verified`.
-    // ══════════════════════════════════════════════════════════════════════
-    Route::middleware(['check.role:mentor'])->prefix('mentor')->name('mentor.')->group(function () {
-        Route::get('/dashboard', [MentorDashboardController::class, 'index'])->name('dashboard');
-        Route::get('/sessions/calendar', [MentorSessionController::class, 'calendar'])->name('sessions.calendar');
-        Route::get('/sessions/events', [MentorSessionController::class, 'getEvents'])->name('sessions.events');
-        Route::post('/sessions/{session}/attendance', [MentorSessionController::class, 'markAttendance'])->name('sessions.attendance');
-        Route::resource('sessions', MentorSessionController::class);
-        Route::get('/students', [StudentController::class, 'index'])->name('students.index');
-        Route::get('/students/{id}', [StudentController::class, 'show'])->name('students.show');
-        Route::resource('contents', MentorContentController::class);
-    });
-
-
- 
-
-
-    // ── LEARNER AUTH GROUP ────────────────────────────────────────────────────────
-        // Replace your existing learner group with this block,
-        // or just add the new routes into your existing group.
-        Route::middleware(['verified'])->prefix('learner')->name('learner.')->group(function () {
-
-            // ── My Learning (replaces DashboardController + CalendarController) ──
-            // Both URLs point to the same controller — /dashboard kept for backward
-            // compatibility with any existing hard-coded links or email links.
-            Route::get('/dashboard',   [MyLearningController::class, 'index'])->name('dashboard');
-            Route::get('/my-learning', [MyLearningController::class, 'index'])->name('my-learning');
-
-            // AJAX — calendar events for the schedule panel
-            Route::get('/my-learning/events', [MyLearningController::class, 'events'])->name('my-learning.events');
-
-            // ── Certifications ────────────────────────────────────────────────────
-            Route::get('/certifications', [CertificationsController::class, 'index'])->name('certifications');
-
-            // ── Programs — ENROLL ENDPOINT ONLY (index moved to public /explore) ──
-            // Keep this for the AJAX enroll call from the Explore page.
-            Route::post('/programs/{program}/enroll', [\App\Http\Controllers\Learner\ProgramController::class, 'enroll'])
-                ->name('programs.enroll');
-
-            // ── Learning — NOW REQUIRES enrollmentId (Batch 2 will also add showWeek/content) ──
-            // The old route was: Route::get('/learning', [...]) with no param.
-            // Changed to accept an enrollment ID so My Learning can link to the
-            // correct course when a learner has multiple enrollments.
-            Route::get('/learning/{enrollmentId}',         [\App\Http\Controllers\Learner\LearningController::class, 'index'])
-                ->name('learning.index');
-            Route::get('/learning/{enrollmentId}/week/{weekId}', [\App\Http\Controllers\Learner\LearningController::class, 'showWeek'])
-                ->name('learning.week');
-            Route::get('/learning/content/{contentId}',    [\App\Http\Controllers\Learner\LearningController::class, 'showContent'])
-                ->name('learning.content');
-
-            Route::get('/learning/{enrollmentId}/week/{weekId}/contents', [LearningController::class, 'getWeekContents'])->name('learning.week-contents');
-            Route::get('/learning/{enrollmentId}/assessment/{assessmentId}', [LearningController::class, 'getAssessmentData'])->name('learning.assessment-data');
-
-            // Progress update AJAX endpoints (unchanged)
-            Route::post('/learning/content/{contentId}/complete',  [\App\Http\Controllers\Learner\LearningController::class, 'markContentComplete'])
-                ->name('learning.complete');
-            Route::post('/learning/content/{contentId}/progress',  [\App\Http\Controllers\Learner\LearningController::class, 'updateContentProgress'])
-                ->name('learning.progress');
-
-            // Profile
-            Route::get('/profile/edit', [\App\Http\Controllers\Learner\ProfileController::class, 'edit'])
-                ->name('profile.edit');
-
-            // Certificate download (stub — implement in Batch 2)
-            Route::get('/certificate/{key}', [\App\Http\Controllers\Learner\CertificateController::class, 'download'])
-                ->name('certificate.download');
-
-        });
-
-}); 

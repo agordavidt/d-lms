@@ -20,6 +20,7 @@ use App\Http\Controllers\Learner\ProfileController;
 use App\Http\Controllers\Learner\LearningController;
 use App\Http\Controllers\Learner\CurriculumController;
 use App\Http\Controllers\Learner\AssessmentAttemptController;
+use App\Http\Controllers\Learner\GraduationController as LearnerGraduationController;
 use App\Http\Controllers\Mentor\DashboardController as MentorDashboardController;
 use App\Http\Controllers\Mentor\SessionController as MentorSessionController;
 use App\Http\Controllers\Mentor\StudentController;
@@ -68,7 +69,9 @@ Route::get('/certificate/verify/{key}', function ($key) {
 Route::middleware('guest')->group(function () {
     // These views are now fallback pages — the primary flow uses modals on the
     // landing page. They remain useful for direct URL access and email redirects.
-    Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
+    Route::get('/login', function () {
+            return redirect()->route('home');
+        })->name('login');
     Route::post('/login', [LoginController::class, 'login']);
 
     Route::get('/register', [RegisterController::class, 'showRegistrationForm'])->name('register');
@@ -322,6 +325,15 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
                 ->name('attempts.show');
             Route::get('/attempts/{attempt}/results', [AssessmentAttemptController::class, 'results'])
                 ->name('attempts.results');
+            // Explicit graduation request (safety net — auto-trigger usually fires first)
+            Route::post('/graduation/{enrollment}/request',
+                [LearnerGraduationController::class, 'request'])
+                ->name('graduation.request');           
+            
+            // Graduation status page (optional — shows eligibility checklist)
+            Route::get('/graduation/{enrollment}',
+                [LearnerGraduationController::class, 'status'])
+                ->name('graduation.status');            
 
             // Profile
             Route::get('/profile/edit', [\App\Http\Controllers\Learner\ProfileController::class, 'edit'])

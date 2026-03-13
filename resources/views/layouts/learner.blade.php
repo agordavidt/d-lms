@@ -55,7 +55,7 @@
             <div class="w-7 h-7 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[7px] flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
                 <span class="text-white font-bold text-xs leading-none">G</span>
             </div>
-            <span class="text-[16px] font-bold tracking-tight text-slate-900 hidden sm:block">G-Luper</span>
+            <span class="text-[16px] font-bold tracking-tight text-slate-900 hidden sm:block">Luper</span>
         </a>
 
         {{-- Nav links --}}
@@ -159,16 +159,16 @@ toastr.options = {
     timeOut:        5000
 };
 
-@if(Session::has('message'))
-(function() {
-    var type = "{{ Session::get('alert-type', 'info') }}";
-    var msg  = @json(Session::get('message'));
-    if      (type === 'success') toastr.success(msg);
-    else if (type === 'error')   toastr.error(msg);
-    else if (type === 'warning') toastr.warning(msg);
-    else                         toastr.info(msg);
-})();
-@endif
+// @if(Session::has('message'))
+// (function() {
+//     var type = "{{ Session::get('alert-type', 'info') }}";
+//     var msg  = @json(Session::get('message'));
+//     if      (type === 'success') toastr.success(msg);
+//     else if (type === 'error')   toastr.error(msg);
+//     else if (type === 'warning') toastr.warning(msg);
+//     else                         toastr.info(msg);
+// })();
+// @endif
 
 // ── Profile dropdown ────────────────────────────────────────────────────────
 (function() {

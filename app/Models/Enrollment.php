@@ -240,22 +240,17 @@ class Enrollment extends Model
         if (!$this->hasCompletedAllContent()) {
             return false;
         }
-
-        // 2. All weekly assessments must be attempted
-        if (!$this->hasAttemptedAllAssessments()) {
+ 
+        // 2. All weekly assessments must be PASSED (not merely attempted)
+        if (!$this->hasPassedAllAssessments()) {
             return false;
         }
-
+ 
         // 3. Assessment average must meet minimum threshold
         if (!$this->meetsMinimumGradeRequirement()) {
             return false;
         }
-
-        // 4. Periodic assessments (future) - placeholder
-        // if (!$this->hasCompletedPeriodicAssessments()) {
-        //     return false;
-        // }
-
+ 
         return true;
     }
 
@@ -281,42 +276,47 @@ class Enrollment extends Model
     /**
      * Check if all weekly assessments attempted
      */
-    public function hasAttemptedAllAssessments(): bool
+    public function hasPassedAllAssessments(): bool
     {
         $program = $this->program;
-        
-        // Get weeks that have assessments
-        $weeksWithAssessments = ModuleWeek::whereHas('programModule', function($q) use ($program) {
+ 
+        $weeksWithAssessments = \App\Models\ModuleWeek::whereHas('programModule', function ($q) use ($program) {
             $q->where('program_id', $program->id);
         })
-        ->where('status', 'published')
-        ->where('has_assessment', true)
-        ->whereHas('assessment')
-        ->pluck('id');
-
+            ->where('status', 'published')
+            ->where('has_assessment', true)
+            ->whereHas('assessment')
+            ->pluck('id');
+ 
         if ($weeksWithAssessments->isEmpty()) {
             return true; // No assessments required
         }
-
-        // Check if all have been attempted
-        $attemptedCount = WeekProgress::where('enrollment_id', $this->id)
+ 
+        $passedCount = \App\Models\WeekProgress::where('enrollment_id', $this->id)
             ->whereIn('module_week_id', $weeksWithAssessments)
-            ->where('assessment_attempts', '>', 0)
+            ->where('assessment_passed', true)   // ← must be PASSED, not just attempted
             ->count();
-
-        return $attemptedCount >= $weeksWithAssessments->count();
+ 
+        return $passedCount >= $weeksWithAssessments->count();
     }
 
     /**
      * Check if meets minimum grade requirement
      */
-    public function meetsMinimumGradeRequirement(): bool
+   public function meetsMinimumGradeRequirement(): bool
     {
+        // No grade data yet — not eligible
         if ($this->final_grade_avg === null) {
             return false;
         }
-
-        return $this->final_grade_avg >= $this->program->min_passing_average;
+ 
+        // If the program hasn't defined a minimum, any grade is acceptable
+        $minimum = $this->program->min_passing_average ?? null;
+        if ($minimum === null) {
+            return true;
+        }
+ 
+        return (float) $this->final_grade_avg >= (float) $minimum;
     }
 
     /**
