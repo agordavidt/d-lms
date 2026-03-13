@@ -74,7 +74,7 @@
         </a>
 
         {{-- Explore --}}
-        <a href="#programs" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition hidden md:block whitespace-nowrap">
+        <a href="{{ route('explore') }}" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition hidden md:block whitespace-nowrap">
             Explore
         </a>
 
@@ -89,14 +89,24 @@
 
         {{-- Auth --}}
         <div class="flex items-center gap-4 ml-auto flex-shrink-0">
-            <button onclick="openModal('login-modal')"
-                class="text-sm font-semibold text-blue-600 hover:text-blue-700 transition hidden sm:block">
-                Log In
-            </button>
-            <button onclick="openModal('register-modal')"
+
+            @auth
+                <a href="{{ route('learner.my-learning') }}"
                 class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
-                Join for Free
-            </button>
+                    My Learning
+                </a>
+            @else
+                <button onclick="openModal('login-modal')"
+                    class="text-sm font-semibold text-blue-600 hover:text-blue-700 transition hidden sm:block">
+                    Log In
+                </button>
+
+                <button onclick="openModal('register-modal')"
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
+                    Join for Free
+                </button>
+            @endauth
+
         </div>
     </div>
 </nav>
@@ -392,13 +402,7 @@
         <div class="bg-white rounded-3xl shadow-2xl p-8">
 
             {{-- Header --}}
-            <div class="flex items-center justify-between mb-7">
-                <div class="flex items-center gap-2">
-                    <div class="w-7 h-7 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center">
-                        <span class="text-white font-bold text-xs">G</span>
-                    </div>
-                    <span class="text-sm font-bold text-slate-700">G-Luper</span>
-                </div>
+            <div class="flex items-center justify-end mb-7">
                 <button onclick="closeModal('login-modal')"
                     class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400 transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -476,13 +480,7 @@
         <div class="bg-white rounded-3xl shadow-2xl p-8 max-h-[96vh] overflow-y-auto">
 
             {{-- Header --}}
-            <div class="flex items-center justify-between mb-7">
-                <div class="flex items-center gap-2">
-                    <div class="w-7 h-7 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center">
-                        <span class="text-white font-bold text-xs">G</span>
-                    </div>
-                    <span class="text-sm font-bold text-slate-700">G-Luper</span>
-                </div>
+            <div class="flex items-center justify-end mb-7">
                 <button onclick="closeModal('register-modal')"
                     class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-400 transition">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -551,12 +549,12 @@
                     </div>
                 </div>
 
-                <div class="bg-blue-50 border border-blue-100 rounded-xl p-3.5">
+                {{-- <div class="bg-blue-50 border border-blue-100 rounded-xl p-3.5">
                     <p class="text-xs text-slate-600 leading-relaxed">
                         <strong class="text-slate-700">Legal name required.</strong>
                         Use your official name as it appears on your ID — it will appear on your certificate.
                     </p>
-                </div>
+                </div> --}}
 
                 <button type="submit" id="register-btn"
                     class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2 mt-1">

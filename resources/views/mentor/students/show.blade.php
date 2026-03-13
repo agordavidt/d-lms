@@ -1,4 +1,4 @@
-@extends('mentor.layouts.app')
+@extends('layouts.app')
 @section('title', $enrollment->user->first_name . ' ' . $enrollment->user->last_name)
 
 @section('content')

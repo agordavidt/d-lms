@@ -20,6 +20,8 @@ return new class extends Migration
             $table->string('avatar')->nullable();
             $table->timestamp('email_verified_at')->nullable();
             $table->rememberToken();
+             $table->string('last_login_ip')->nullable();
+            $table->timestamp('last_login_at')->nullable();
             $table->timestamps();
             $table->softDeletes();
 
@@ -39,3 +41,6 @@ return new class extends Migration
         Schema::dropIfExists('users');
     }
 };
+
+
+           

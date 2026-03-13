@@ -276,6 +276,32 @@
     </div>
 </div>
 
+<footer class="border-t border-slate-200 py-8 bg-white mt-10">
+    <div class="max-w-7xl mx-auto px-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+
+        <div class="flex items-center gap-2 text-slate-500 text-sm">
+            <div class="w-6 h-6 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[6px] flex items-center justify-center">
+                <span class="text-white font-bold text-[10px]">G</span>
+            </div>
+            <span class="font-semibold text-slate-700">Luper</span>
+            <span>&copy; {{ date('Y') }}</span>
+        </div>
+
+        <div class="flex items-center gap-6">
+            <a href="#" class="text-xs font-semibold text-slate-400 hover:text-blue-600 uppercase tracking-wider transition">
+                Privacy
+            </a>
+            <a href="#" class="text-xs font-semibold text-slate-400 hover:text-blue-600 uppercase tracking-wider transition">
+                Terms
+            </a>
+            <a href="#" class="text-xs font-semibold text-slate-400 hover:text-blue-600 uppercase tracking-wider transition">
+                Support
+            </a>
+        </div>
+
+    </div>
+</footer>
+
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 

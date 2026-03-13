@@ -1,4 +1,4 @@
-@extends('mentor.layouts.app')
+@extends('layouts.app')
 @section('title', 'New Program')
 
 @section('content')

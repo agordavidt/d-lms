@@ -1,4 +1,4 @@
-@extends('mentor.layouts.app')
+@extends('layouts.app')
 @section('title', $program->name)
 
 @section('content')
