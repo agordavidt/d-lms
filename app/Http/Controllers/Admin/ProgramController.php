@@ -3,153 +3,123 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\AuditLog;
 use App\Models\Program;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class ProgramController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $programs = Program::withCount('cohorts', 'enrollments')
-            ->latest()
-            ->paginate(10);
+        $query = Program::with(['mentor'])
+            ->withCount(['enrollments', 'modules']);
 
-        return view('admin.programs.index', compact('programs'));
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('search')) {
+            $query->where('name', 'like', '%' . $request->search . '%');
+        }
+
+        $programs = $query->latest()->paginate(20);
+
+        $counts = [
+            'under_review' => Program::where('status', 'under_review')->count(),
+            'active'       => Program::where('status', 'active')->count(),
+            'draft'        => Program::where('status', 'draft')->count(),
+            'inactive'     => Program::where('status', 'inactive')->count(),
+        ];
+
+        return view('admin.programs.index', compact('programs', 'counts'));
     }
 
-    public function create()
+    /** Full program preview for admin review */
+    public function show(Program $program)
     {
-        return view('admin.programs.create');
-    }
-
-    public function store(Request $request)
-    {
-        $request->validate([
-            'name' => 'required|string|max:255|unique:programs',
-            'description' => 'required|string',
-            'overview' => 'nullable|string',
-            'duration' => 'required|string|max:100',
-            'price' => 'required|numeric|min:0',
-            'discount_percentage' => 'nullable|numeric|min:0|max:100',
-            'status' => 'required|in:active,inactive,draft',
-            'max_students' => 'nullable|integer|min:1',
+        $program->load([
+            'mentor',
+            'modules.weeks.contents',
+            'modules.weeks.assessment.questions',
         ]);
 
-        try {
-            $program = Program::create([
-                'name' => $request->name,
-                'slug' => Str::slug($request->name),
-                'description' => $request->description,
-                'overview' => $request->overview,
-                'duration' => $request->duration,
-                'price' => $request->price,
-                'discount_percentage' => $request->discount_percentage ?? 10,
-                'status' => $request->status,
-                'max_students' => $request->max_students,
-                'features' => $request->features ? array_filter($request->features) : null,
-                'requirements' => $request->requirements ? array_filter($request->requirements) : null,
-            ]);
+        $stats = [
+            'weeks'       => $program->modules->sum(fn ($m) => $m->weeks->count()),
+            'contents'    => $program->modules->sum(fn ($m) => $m->weeks->sum(fn ($w) => $w->contents->count())),
+            'assessments' => $program->modules->sum(fn ($m) => $m->weeks->filter(fn ($w) => $w->assessment)->count()),
+            'questions'   => $program->modules->sum(fn ($m) => $m->weeks->sum(fn ($w) =>
+                                $w->assessment ? $w->assessment->questions->count() : 0)),
+        ];
 
-            AuditLog::log('program_created', auth()->user(), [
-                'description' => 'Admin created new program',
-                'model_type' => Program::class,
-                'model_id' => $program->id,
-                'new_values' => $program->only(['name', 'price', 'status'])
-            ]);
-
-            return redirect()->route('admin.programs.index')
-                ->with(['message' => 'Program created successfully!', 'alert-type' => 'success']);
-
-        } catch (\Exception $e) {
-            return back()->withInput()
-                ->with(['message' => 'Failed to create program: ' . $e->getMessage(), 'alert-type' => 'error']);
-        }
+        return view('admin.programs.show', compact('program', 'stats'));
     }
 
-    public function edit(Program $program)
+    /** Publish (approve) a program — makes it visible to learners */
+    public function publish(Request $request, Program $program)
     {
-        return view('admin.programs.edit', compact('program'));
-    }
+        $request->validate(['review_notes' => 'nullable|string|max:500']);
 
-    public function update(Request $request, Program $program)
-    {
-        $request->validate([
-            'name' => 'required|string|max:255|unique:programs,name,' . $program->id,
-            'description' => 'required|string',
-            'overview' => 'nullable|string',
-            'duration' => 'required|string|max:100',
-            'price' => 'required|numeric|min:0',
-            'discount_percentage' => 'nullable|numeric|min:0|max:100',
-            'status' => 'required|in:active,inactive,draft',
-            'max_students' => 'nullable|integer|min:1',
+        $program->update([
+            'status'       => 'active',
+            'reviewed_at'  => now(),
+            'reviewed_by'  => auth()->id(),
+            'review_notes' => $request->review_notes,
         ]);
 
-        try {
-            $oldValues = $program->only(['name', 'price', 'status']);
+        // TODO: notify mentor
+        return back()->with(['message' => "'{$program->name}' is now live for learners.", 'alert-type' => 'success']);
+    }
 
-            $program->update([
-                'name' => $request->name,
-                'slug' => Str::slug($request->name),
-                'description' => $request->description,
-                'overview' => $request->overview,
-                'duration' => $request->duration,
-                'price' => $request->price,
-                'discount_percentage' => $request->discount_percentage ?? 10,
-                'status' => $request->status,
-                'max_students' => $request->max_students,
-                'features' => $request->features ? array_filter($request->features) : null,
-                'requirements' => $request->requirements ? array_filter($request->requirements) : null,
-            ]);
+    /** Reject — send back to draft with notes */
+    public function reject(Request $request, Program $program)
+    {
+        $request->validate(['review_notes' => 'required|string|max:500']);
 
-            AuditLog::log('program_updated', auth()->user(), [
-                'description' => 'Admin updated program',
-                'model_type' => Program::class,
-                'model_id' => $program->id,
-                'old_values' => $oldValues,
-                'new_values' => $program->only(['name', 'price', 'status'])
-            ]);
+        $program->update([
+            'status'       => 'draft',
+            'reviewed_at'  => now(),
+            'reviewed_by'  => auth()->id(),
+            'review_notes' => $request->review_notes,
+        ]);
 
-            return redirect()->route('admin.programs.index')
-                ->with(['message' => 'Program updated successfully!', 'alert-type' => 'success']);
+        // TODO: notify mentor with review_notes
+        return back()->with(['message' => 'Program returned to mentor with feedback.', 'alert-type' => 'success']);
+    }
 
-        } catch (\Exception $e) {
-            return back()->withInput()
-                ->with(['message' => 'Failed to update program: ' . $e->getMessage(), 'alert-type' => 'error']);
-        }
+    /** Take a live program offline — existing learners keep access, no new enrollments */
+    public function takeOffline(Request $request, Program $program)
+    {
+        $request->validate(['review_notes' => 'nullable|string|max:500']);
+
+        $program->update([
+            'status'       => 'inactive',
+            'reviewed_at'  => now(),
+            'reviewed_by'  => auth()->id(),
+            'review_notes' => $request->review_notes,
+        ]);
+
+        return back()->with(['message' => "'{$program->name}' taken offline. Existing learners unaffected.", 'alert-type' => 'success']);
+    }
+
+    /** Restore an inactive program back to active */
+    public function restore(Program $program)
+    {
+        $program->update([
+            'status'      => 'active',
+            'reviewed_at' => now(),
+            'reviewed_by' => auth()->id(),
+        ]);
+
+        return back()->with(['message' => "'{$program->name}' restored and live again.", 'alert-type' => 'success']);
     }
 
     public function destroy(Program $program)
     {
-        try {
-            // Check if program has active enrollments
-            if ($program->enrollments()->whereIn('status', ['active', 'pending'])->exists()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot delete program with active enrollments.'
-                ], 400);
-            }
+        abort_if($program->enrollments()->exists(), 403,
+            'Cannot delete a program with enrolled learners.');
 
-            AuditLog::log('program_deleted', auth()->user(), [
-                'description' => 'Admin deleted program',
-                'model_type' => Program::class,
-                'model_id' => $program->id,
-                'old_values' => $program->only(['name', 'price', 'status'])
-            ]);
+        $program->delete();
 
-            $program->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Program deleted successfully!'
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete program.'
-            ], 500);
-        }
+        return redirect()->route('admin.programs.index')
+            ->with(['message' => 'Program deleted.', 'alert-type' => 'success']);
     }
 }

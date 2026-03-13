@@ -13,34 +13,29 @@ return new class extends Migration
             $table->string('first_name');
             $table->string('last_name');
             $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
             $table->string('phone')->nullable();
-            $table->text('avatar')->nullable();
-            
-            // Role and Status
+            $table->string('password');
             $table->enum('role', ['superadmin', 'admin', 'mentor', 'learner'])->default('learner');
-            $table->enum('status', ['active', 'suspended', 'inactive'])->default('active');
-            
-            // Account metadata
-            $table->timestamp('last_login_at')->nullable();
-            $table->string('last_login_ip')->nullable();
-            $table->integer('login_attempts')->default(0);
-            $table->timestamp('locked_until')->nullable();
-            
+            $table->enum('status', ['active', 'inactive', 'suspended'])->default('active');
+            $table->string('avatar')->nullable();
+            $table->timestamp('email_verified_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
             $table->softDeletes();
-            
-            // Indexes
-            $table->index('email');
-            $table->index('role');
-            $table->index('status');
+
+            $table->index(['role', 'status']);
+        });
+
+        Schema::create('password_reset_tokens', function (Blueprint $table) {
+            $table->string('email')->primary();
+            $table->string('token');
+            $table->timestamp('created_at')->nullable();
         });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('users');
     }
 };

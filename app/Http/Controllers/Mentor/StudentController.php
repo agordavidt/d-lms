@@ -4,109 +4,48 @@ namespace App\Http\Controllers\Mentor;
 
 use App\Http\Controllers\Controller;
 use App\Models\Enrollment;
-use App\Models\LiveSession;
-use App\Models\User;
+use App\Models\Program;
 use Illuminate\Http\Request;
 
 class StudentController extends Controller
 {
-    /**
-     * Display students in mentor's cohorts
-     */
     public function index(Request $request)
     {
-        $mentor = auth()->user();
+        $programIds = Program::where('mentor_id', auth()->id())->pluck('id');
 
-        // Get cohorts where mentor is teaching
-        $cohortIds = LiveSession::where('mentor_id', $mentor->id)
-            ->distinct()
-            ->pluck('cohort_id');
-
-        $query = Enrollment::whereIn('cohort_id', $cohortIds)
+        $enrollments = Enrollment::whereIn('program_id', $programIds)
             ->where('status', 'active')
-            ->with(['user', 'program', 'cohort']);
+            ->with(['user', 'program'])
+            ->when($request->program_id, fn ($q) => $q->where('program_id', $request->program_id))
+            ->when($request->search, fn ($q) => $q->whereHas('user', fn ($u) =>
+                $u->where('first_name', 'like', '%' . $request->search . '%')
+                  ->orWhere('last_name',  'like', '%' . $request->search . '%')
+                  ->orWhere('email',      'like', '%' . $request->search . '%')
+            ))
+            ->orderByDesc('created_at')
+            ->paginate(20);
 
-        // Filter by program if provided
-        if ($request->program_id) {
-            $query->where('program_id', $request->program_id);
-        }
+        $programs = Program::where('mentor_id', auth()->id())
+            ->whereIn('status', ['active', 'inactive'])
+            ->orderBy('name')
+            ->get();
 
-        // Filter by cohort if provided
-        if ($request->cohort_id) {
-            $query->where('cohort_id', $request->cohort_id);
-        }
-
-        // Search
-        if ($request->search) {
-            $search = $request->search;
-            $query->whereHas('user', function($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
-                  ->orWhere('last_name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
-            });
-        }
-
-        $students = $query->paginate(20);
-
-        // Get unique programs and cohorts for filters
-        $programs = Enrollment::whereIn('cohort_id', $cohortIds)
-            ->with('program')
-            ->get()
-            ->pluck('program')
-            ->unique('id');
-
-        $cohorts = Enrollment::whereIn('cohort_id', $cohortIds)
-            ->with('cohort')
-            ->get()
-            ->pluck('cohort')
-            ->unique('id');
-
-        return view('mentor.students.index', compact('students', 'programs', 'cohorts'));
+        return view('mentor.students.index', compact('enrollments', 'programs'));
     }
 
-    /**
-     * Show student details and progress
-     */
-    public function show($id)
+    public function show(Enrollment $enrollment)
     {
-        $mentor = auth()->user();
-        
-        // Get cohorts where mentor is teaching
-        $cohortIds = LiveSession::where('mentor_id', $mentor->id)
-            ->distinct()
-            ->pluck('cohort_id');
+        $programIds = Program::where('mentor_id', auth()->id())->pluck('id');
+        abort_if(!$programIds->contains($enrollment->program_id), 403);
 
-        $student = User::findOrFail($id);
+        $enrollment->load([
+            'user', 'program.modules.weeks',
+            'weekProgress.moduleWeek',
+            'assessmentAttempts.assessment',
+        ]);
 
-        // Get student's enrollments in mentor's cohorts
-        $enrollments = Enrollment::where('user_id', $student->id)
-            ->whereIn('cohort_id', $cohortIds)
-            ->with(['program', 'cohort'])
-            ->get();
+        $weekProgress = $enrollment->weekProgress->keyBy('module_week_id');
 
-        if ($enrollments->isEmpty()) {
-            abort(403, 'You do not teach this student.');
-        }
-
-        // Get student's attendance in mentor's sessions
-        $sessions = LiveSession::where('mentor_id', $mentor->id)
-            ->whereIn('cohort_id', $enrollments->pluck('cohort_id'))
-            ->with(['program', 'cohort'])
-            ->orderBy('start_time', 'desc')
-            ->get();
-
-        $attendedSessions = $sessions->filter(function($session) use ($student) {
-            return in_array($student->id, $session->attendees ?? []);
-        });
-
-        $stats = [
-            'total_sessions' => $sessions->where('status', 'completed')->count(),
-            'attended_sessions' => $attendedSessions->count(),
-            'attendance_percentage' => $sessions->where('status', 'completed')->count() > 0
-                ? round(($attendedSessions->count() / $sessions->where('status', 'completed')->count()) * 100, 1)
-                : 0,
-        ];
-
-        return view('mentor.students.show', compact('student', 'enrollments', 'sessions', 'attendedSessions', 'stats'));
+        return view('mentor.students.show', compact('enrollment', 'weekProgress'));
     }
 }

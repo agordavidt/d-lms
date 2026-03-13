@@ -10,23 +10,35 @@ return new class extends Migration
     {
         Schema::create('programs', function (Blueprint $table) {
             $table->id();
+
+            // Ownership
+            $table->foreignId('mentor_id')->nullable()->constrained('users')->nullOnDelete();
+
+            // Core info
             $table->string('name');
             $table->string('slug')->unique();
-            $table->text('description');
-            $table->text('overview')->nullable();
-            $table->string('duration'); // e.g., "12 Weeks", "3 Months"
+            $table->text('description');         
+            $table->string('cover_image')->nullable();
+            $table->string('duration');            
+
+            // Pricing
             $table->decimal('price', 10, 2);
-            $table->decimal('discount_percentage', 5, 2)->default(0); // For one-time payment discount
-            $table->string('image')->nullable();
-            $table->enum('status', ['active', 'inactive', 'draft'])->default('draft');
-            $table->json('features')->nullable(); // Array of program features
-            $table->json('requirements')->nullable(); // Prerequisites
-            $table->integer('max_students')->nullable();
+            $table->decimal('discount_percentage', 5, 2)->default(0);
+            // Graduation requirement
+            $table->decimal('min_passing_average', 5, 2)->default(70.00);
+            // Status flow: draft → under_review → active → inactive
+            $table->enum('status', ['draft', 'under_review', 'active', 'inactive'])->default('draft');
+            $table->timestamp('submitted_at')->nullable();   
+            $table->timestamp('reviewed_at')->nullable();    
+            $table->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->text('review_notes')->nullable();        // Admin feedback to mentor
+
             $table->timestamps();
             $table->softDeletes();
 
             $table->index('slug');
             $table->index('status');
+            $table->index('mentor_id');
         });
     }
 

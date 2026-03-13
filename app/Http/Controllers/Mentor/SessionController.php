@@ -3,271 +3,119 @@
 namespace App\Http\Controllers\Mentor;
 
 use App\Http\Controllers\Controller;
-use App\Models\AuditLog;
-use App\Models\Cohort;
 use App\Models\LiveSession;
 use App\Models\Program;
 use Illuminate\Http\Request;
 
 class SessionController extends Controller
 {
+    private function mentorPrograms()
+    {
+        return Program::where('mentor_id', auth()->id())->pluck('id');
+    }
+
     public function index()
     {
-        $mentor = auth()->user();
-        
-        $sessions = LiveSession::where('mentor_id', $mentor->id)
-            ->with(['program', 'cohort'])
-            ->latest('start_time')
-            ->paginate(15);
+        $programs = Program::where('mentor_id', auth()->id())
+            ->whereIn('status', ['active', 'inactive'])
+            ->orderBy('name')
+            ->get();
 
-        return view('mentor.sessions.index', compact('sessions'));
+        $upcoming = LiveSession::whereIn('program_id', $programs->pluck('id'))
+            ->upcoming()
+            ->with('program')
+            ->orderBy('start_time')
+            ->get();
+
+        return view('mentor.sessions.index', compact('programs', 'upcoming'));
     }
 
-    public function calendar()
+    /** JSON events for FullCalendar */
+    public function events(Request $request)
     {
-        $mentor = auth()->user();
-        
-        // Get programs where mentor is teaching
-        $programIds = LiveSession::where('mentor_id', $mentor->id)
-            ->distinct()
-            ->pluck('program_id');
-            
-        $programs = Program::whereIn('id', $programIds)->get();
-        
-        // Get cohorts where mentor is teaching
-        $cohortIds = LiveSession::where('mentor_id', $mentor->id)
-            ->distinct()
-            ->pluck('cohort_id');
-            
-        $cohorts = Cohort::whereIn('id', $cohortIds)->get();
+        $sessions = LiveSession::whereIn('program_id', $this->mentorPrograms())
+            ->with('program')
+            ->when($request->start, fn ($q) => $q->where('start_time', '>=', $request->start))
+            ->when($request->end,   fn ($q) => $q->where('start_time', '<=', $request->end))
+            ->get()
+            ->map(fn ($s) => [
+                'id'              => $s->id,
+                'title'           => $s->title,
+                'start'           => $s->start_time->toIso8601String(),
+                'end'             => $s->end_time->toIso8601String(),
+                'backgroundColor' => match($s->session_type) {
+                    'workshop'   => '#10b981',
+                    'q_and_a'    => '#8b5cf6',
+                    default      => '#0056d2',
+                },
+                'extendedProps'   => [
+                    'program'   => $s->program->name,
+                    'meet_link' => $s->meet_link,
+                    'status'    => $s->status,
+                ],
+            ]);
 
-        return view('mentor.sessions.calendar', compact('programs', 'cohorts'));
-    }
-
-    public function getEvents(Request $request)
-    {
-        $mentor = auth()->user();
-        
-        $query = LiveSession::where('mentor_id', $mentor->id);
-
-        // Filter by cohort if provided
-        if ($request->cohort_id) {
-            $query->where('cohort_id', $request->cohort_id);
-        }
-
-        // Filter by program if provided
-        if ($request->program_id) {
-            $query->where('program_id', $request->program_id);
-        }
-
-        // Get events for calendar date range
-        if ($request->start && $request->end) {
-            $query->whereBetween('start_time', [$request->start, $request->end]);
-        }
-
-        $sessions = $query->with(['mentor', 'cohort'])->get();
-
-        $events = $sessions->map(function($session) {
-            return $session->calendar_event;
-        });
-
-        return response()->json($events);
-    }
-
-    public function create()
-    {
-        $mentor = auth()->user();
-        
-        // Get all programs (mentors can teach any program)
-        $programs = Program::active()->get();
-        
-        // Get all active cohorts
-        $cohorts = Cohort::active()->get();
-
-        return view('mentor.sessions.create', compact('programs', 'cohorts'));
+        return response()->json($sessions);
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'program_id' => 'required|exists:programs,id',
-            'cohort_id' => 'required|exists:cohorts,id',
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'session_type' => 'required|in:live_class,workshop,q&a,assessment',
-            'start_time' => 'required|date|after:now',
-            'end_time' => 'required|date|after:start_time',
-            'meet_link' => 'nullable|url',
+        $data = $request->validate([
+            'program_id'   => 'required|integer',
+            'title'        => 'required|string|max:200',
+            'session_type' => 'required|in:live_class,workshop,q_and_a',
+            'start_time'   => 'required|date|after:now',
+            'end_time'     => 'required|date|after:start_time',
+            'meet_link'    => 'nullable|url',
+            'notes'        => 'nullable|string|max:500',
         ]);
 
-        try {
-            $session = LiveSession::create([
-                'program_id' => $request->program_id,
-                'cohort_id' => $request->cohort_id,
-                'mentor_id' => auth()->id(),
-                'title' => $request->title,
-                'description' => $request->description,
-                'session_type' => $request->session_type,
-                'start_time' => $request->start_time,
-                'end_time' => $request->end_time,
-                'meet_link' => $request->meet_link,
-                'status' => 'scheduled',
-            ]);
+        // Ensure mentor owns this program
+        $program = Program::where('id', $data['program_id'])
+            ->where('mentor_id', auth()->id())
+            ->firstOrFail();
 
-            AuditLog::log('session_created', auth()->user(), [
-                'description' => 'Mentor scheduled session: ' . $session->title,
-                'model_type' => LiveSession::class,
-                'model_id' => $session->id,
-            ]);
+        $data['mentor_id']         = auth()->id();
+        $data['duration_minutes']  = (int) round(
+            (strtotime($data['end_time']) - strtotime($data['start_time'])) / 60
+        );
 
-            return redirect()->route('mentor.sessions.calendar')
-                ->with(['message' => 'Session scheduled successfully!', 'alert-type' => 'success']);
+        $session = LiveSession::create($data);
 
-        } catch (\Exception $e) {
-            return back()->withInput()
-                ->with(['message' => 'Failed to schedule session: ' . $e->getMessage(), 'alert-type' => 'error']);
-        }
-    }
-
-    public function show(LiveSession $session)
-    {
-        // Ensure mentor can only view their own sessions
-        if ($session->mentor_id !== auth()->id()) {
-            abort(403);
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'session' => $session->load('program')]);
         }
 
-        $session->load(['program', 'cohort', 'mentor']);
-        
-        // Get attendees details
-        $attendeeIds = $session->attendees ?? [];
-        $attendees = \App\Models\User::whereIn('id', $attendeeIds)->get();
-
-        return view('mentor.sessions.show', compact('session', 'attendees'));
-    }
-
-    public function edit(LiveSession $session)
-    {
-        // Ensure mentor can only edit their own sessions
-        if ($session->mentor_id !== auth()->id()) {
-            abort(403);
-        }
-
-        $programs = Program::active()->get();
-        $cohorts = Cohort::active()->get();
-
-        return view('mentor.sessions.edit', compact('session', 'programs', 'cohorts'));
+        return back()->with(['message' => 'Session scheduled.', 'alert-type' => 'success']);
     }
 
     public function update(Request $request, LiveSession $session)
     {
-        // Ensure mentor can only update their own sessions
-        if ($session->mentor_id !== auth()->id()) {
-            abort(403);
-        }
+        abort_if(!in_array($session->program_id, $this->mentorPrograms()->toArray()), 403);
 
-        $request->validate([
-            'program_id' => 'required|exists:programs,id',
-            'cohort_id' => 'required|exists:cohorts,id',
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'session_type' => 'required|in:live_class,workshop,q&a,assessment',
-            'start_time' => 'required|date',
-            'end_time' => 'required|date|after:start_time',
-            'meet_link' => 'nullable|url',
-            'status' => 'required|in:scheduled,ongoing,completed,cancelled',
-            'recording_link' => 'nullable|url',
-            'notes' => 'nullable|string',
+        $data = $request->validate([
+            'title'       => 'required|string|max:200',
+            'start_time'  => 'required|date',
+            'end_time'    => 'required|date|after:start_time',
+            'meet_link'   => 'nullable|url',
+            'notes'       => 'nullable|string|max:500',
+            'status'      => 'in:scheduled,cancelled',
         ]);
 
-        try {
-            $session->update($request->all());
+        $data['duration_minutes'] = (int) round(
+            (strtotime($data['end_time']) - strtotime($data['start_time'])) / 60
+        );
 
-            AuditLog::log('session_updated', auth()->user(), [
-                'description' => 'Mentor updated session: ' . $session->title,
-                'model_type' => LiveSession::class,
-                'model_id' => $session->id,
-            ]);
+        $session->update($data);
 
-            return redirect()->route('mentor.sessions.calendar')
-                ->with(['message' => 'Session updated successfully!', 'alert-type' => 'success']);
-
-        } catch (\Exception $e) {
-            return back()->withInput()
-                ->with(['message' => 'Failed to update session: ' . $e->getMessage(), 'alert-type' => 'error']);
-        }
+        return response()->json(['success' => true]);
     }
 
     public function destroy(LiveSession $session)
     {
-        // Ensure mentor can only delete their own sessions
-        if ($session->mentor_id !== auth()->id()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized action.'
-            ], 403);
-        }
+        abort_if(!in_array($session->program_id, $this->mentorPrograms()->toArray()), 403);
+        $session->delete();
 
-        try {
-            AuditLog::log('session_deleted', auth()->user(), [
-                'description' => 'Mentor deleted session: ' . $session->title,
-                'model_type' => LiveSession::class,
-                'model_id' => $session->id,
-            ]);
-
-            $session->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Session deleted successfully!'
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete session.'
-            ], 500);
-        }
-    }
-
-    /**
-     * Mark attendance for a session
-     */
-    public function markAttendance(Request $request, LiveSession $session)
-    {
-        // Ensure mentor can only mark attendance for their own sessions
-        if ($session->mentor_id !== auth()->id()) {
-            abort(403);
-        }
-
-        $request->validate([
-            'user_ids' => 'required|array',
-            'user_ids.*' => 'exists:users,id',
-        ]);
-
-        try {
-            $session->update([
-                'attendees' => $request->user_ids,
-                'total_attendees' => count($request->user_ids),
-                'status' => 'completed'
-            ]);
-
-            AuditLog::log('attendance_marked', auth()->user(), [
-                'description' => 'Mentor marked attendance for session: ' . $session->title,
-                'model_type' => LiveSession::class,
-                'model_id' => $session->id,
-                'attendees_count' => count($request->user_ids)
-            ]);
-
-            return back()->with([
-                'message' => 'Attendance recorded successfully!',
-                'alert-type' => 'success'
-            ]);
-
-        } catch (\Exception $e) {
-            return back()->with([
-                'message' => 'Failed to record attendance: ' . $e->getMessage(),
-                'alert-type' => 'error'
-            ]);
-        }
+        return response()->json(['success' => true]);
     }
 }

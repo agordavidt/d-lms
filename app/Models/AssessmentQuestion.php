@@ -11,138 +11,57 @@ class AssessmentQuestion extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'assessment_id',
-        'question_type',
-        'question_text',
-        'question_image',
-        'points',
-        'order',
-        'explanation',
-        'options',
-        'correct_answer',
+        'assessment_id', 'question_type', 'question_text',
+        'options', 'correct_answer', 'explanation', 'points', 'order',
     ];
 
     protected $casts = [
-        'options' => 'array',
+        'options'        => 'array',
         'correct_answer' => 'array',
     ];
 
-    // Relationships
-    public function assessment()
+    public function assessment() { return $this->belongsTo(Assessment::class); }
+
+    /**
+     * Score a given answer against this question.
+     * Returns points earned (0 or full points — no partial credit).
+     */
+    public function calculatePoints($userAnswer): int|float
     {
-        return $this->belongsTo(Assessment::class);
+        if ($userAnswer === null) return 0;
+
+        $correct = $this->correct_answer; // always an array e.g. ["Option A"]
+
+        return match ($this->question_type) {
+            'multiple_choice', 'true_false' => $this->scoreExact($userAnswer, $correct),
+            'multiple_select'               => $this->scoreMultiSelect($userAnswer, $correct),
+            default                         => 0,
+        };
     }
 
-    // Question type checks
-    public function isMultipleChoice(): bool
-    {
-        return $this->question_type === 'multiple_choice';
-    }
-
-    public function isTrueFalse(): bool
-    {
-        return $this->question_type === 'true_false';
-    }
-
-    public function isMultipleSelect(): bool
-    {
-        return $this->question_type === 'multiple_select';
-    }
-
-    // Get options (randomized if assessment setting is on)
-    public function getOptionsForDisplay()
-    {
-        $options = $this->options;
-
-        if ($this->assessment->randomize_options && $this->isMultipleChoice()) {
-            // Randomize while maintaining key-value pairs
-            $keys = array_keys($options);
-            shuffle($keys);
-            $randomized = [];
-            foreach ($keys as $key) {
-                $randomized[$key] = $options[$key];
-            }
-            return $randomized;
-        }
-
-        return $options;
-    }
-
-    // Check if answer is correct
-    public function checkAnswer($userAnswer): bool
-    {
-        switch ($this->question_type) {
-            case 'multiple_choice':
-            case 'true_false':
-                return $userAnswer === $this->correct_answer['answer'];
-
-            case 'multiple_select':
-                $correctAnswers = $this->correct_answer['answers'] ?? [];
-                sort($correctAnswers);
-                sort($userAnswer);
-                return $userAnswer === $correctAnswers;
-
-            default:
-                return false;
-        }
-    }
-
-    // Calculate points earned (for partial credit in multiple_select)
-    public function calculatePoints($userAnswer): float
-    {
-        if ($this->checkAnswer($userAnswer)) {
-            return $this->points;
-        }
-
-        // Partial credit for multiple_select
-        if ($this->question_type === 'multiple_select') {
-            $correctAnswers = $this->correct_answer['answers'] ?? [];
-            $correctCount = count(array_intersect($userAnswer, $correctAnswers));
-            $incorrectCount = count(array_diff($userAnswer, $correctAnswers));
-            
-            // If they selected wrong answers, no partial credit
-            if ($incorrectCount > 0) {
-                return 0;
-            }
-
-            // Award partial credit based on correct selections
-            return ($correctCount / count($correctAnswers)) * $this->points;
-        }
-
-        return 0;
-    }
-
-    // Get correct answer display
+    /** Readable display of the correct answer(s) for results screen */
     public function getCorrectAnswerDisplay(): string
     {
-        switch ($this->question_type) {
-            case 'multiple_choice':
-                $key = $this->correct_answer['answer'];
-                return "{$key}: {$this->options[$key]}";
-
-            case 'true_false':
-                return ucfirst($this->correct_answer['answer']);
-
-            case 'multiple_select':
-                $answers = [];
-                foreach ($this->correct_answer['answers'] as $key) {
-                    $answers[] = "{$key}: {$this->options[$key]}";
-                }
-                return implode(', ', $answers);
-
-            default:
-                return '';
-        }
+        return implode(', ', $this->correct_answer ?? []);
     }
 
-    // Scopes
-    public function scopeOrdered($query)
+    /** Check if a given answer is fully correct (used in results builder) */
+    public function checkAnswer($userAnswer): bool
     {
-        return $query->orderBy('order');
+        return $this->calculatePoints($userAnswer) > 0;
     }
 
-    public function scopeByType($query, $type)
+    private function scoreExact($userAnswer, array $correct): int|float
     {
-        return $query->where('question_type', $type);
+        $given = is_array($userAnswer) ? ($userAnswer[0] ?? null) : $userAnswer;
+        return in_array($given, $correct, true) ? $this->points : 0;
+    }
+
+    private function scoreMultiSelect($userAnswer, array $correct): int|float
+    {
+        $given = is_array($userAnswer) ? $userAnswer : [$userAnswer];
+        sort($given);
+        sort($correct);
+        return $given === $correct ? $this->points : 0;
     }
 }

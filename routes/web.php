@@ -25,6 +25,10 @@ use App\Http\Controllers\Mentor\DashboardController as MentorDashboardController
 use App\Http\Controllers\Mentor\SessionController as MentorSessionController;
 use App\Http\Controllers\Mentor\StudentController;
 use App\Http\Controllers\Mentor\ContentController as MentorContentController;
+use App\Http\Controllers\Mentor\ProgramController as MentorProgramController;
+use App\Http\Controllers\Mentor\CurriculumController as MentorCurriculumController;
+use App\Http\Controllers\Mentor\AssessmentController as MentorAssessmentController;
+use App\Http\Controllers\Mentor\StudentController as MentorStudentController; 
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
@@ -199,12 +203,21 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         });
 
         // Program Management
-        Route::resource('programs', AdminProgramController::class);
-        Route::resource('cohorts', CohortController::class);
-        Route::resource('modules', ModuleController::class);
-        Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
-        Route::resource('weeks', WeekController::class);
-        Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])->name('weeks.modules-by-program');
+        // Route::resource('programs', AdminProgramController::class);
+        // Route::resource('cohorts', CohortController::class);
+        // Route::resource('modules', ModuleController::class);
+        // Route::post('/modules/reorder', [ModuleController::class, 'reorder'])->name('modules.reorder');
+        // Route::resource('weeks', WeekController::class);
+        // Route::get('/weeks/modules-by-program', [WeekController::class, 'getModulesByProgram'])->name('weeks.modules-by-program');
+
+        // Programs — review queue + lifecycle management
+        Route::get('/programs',                        [AdminProgramController::class, 'index'])->name('programs.index');
+        Route::get('/programs/{program}',              [AdminProgramController::class, 'show'])->name('programs.show');
+        Route::post('/programs/{program}/publish',     [AdminProgramController::class, 'publish'])->name('programs.publish');
+        Route::post('/programs/{program}/reject',      [AdminProgramController::class, 'reject'])->name('programs.reject');
+        Route::post('/programs/{program}/take-offline',[AdminProgramController::class, 'takeOffline'])->name('programs.take-offline');
+        Route::post('/programs/{program}/restore',     [AdminProgramController::class, 'restore'])->name('programs.restore');
+        Route::delete('/programs/{program}',           [AdminProgramController::class, 'destroy'])->name('programs.destroy');
 
         // Content Management
         Route::resource('contents', AdminContentController::class);
@@ -252,20 +265,73 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
     });
 
 
-    // ══════════════════════════════════════════════════════════════════════
-    // MENTOR ROUTES
-    // Same note as admin — mentor accounts are system-created, no `verified`.
-    // ══════════════════════════════════════════════════════════════════════
-    Route::middleware(['check.role:mentor'])->prefix('mentor')->name('mentor.')->group(function () {
-        Route::get('/dashboard', [MentorDashboardController::class, 'index'])->name('dashboard');
-        Route::get('/sessions/calendar', [MentorSessionController::class, 'calendar'])->name('sessions.calendar');
-        Route::get('/sessions/events', [MentorSessionController::class, 'getEvents'])->name('sessions.events');
-        Route::post('/sessions/{session}/attendance', [MentorSessionController::class, 'markAttendance'])->name('sessions.attendance');
-        Route::resource('sessions', MentorSessionController::class);
-        Route::get('/students', [StudentController::class, 'index'])->name('students.index');
-        Route::get('/students/{id}', [StudentController::class, 'show'])->name('students.show');
-        Route::resource('contents', MentorContentController::class);
-    });
+    
+
+    // ══════════════════════════════════════════════════════════════════════════════
+        // MENTOR ROUTES  (replace existing mentor group entirely)
+        // ══════════════════════════════════════════════════════════════════════════════
+        Route::middleware(['check.role:mentor'])
+            ->prefix('mentor')
+            ->name('mentor.')
+            ->group(function () {
+        
+            // Dashboard
+            Route::get('/dashboard', [MentorDashboardController::class, 'index'])->name('dashboard');
+        
+            // ── Programs ─────────────────────────────────────────────────────────────
+            Route::get('/programs',                    [MentorProgramController::class, 'index'])->name('programs.index');
+            Route::get('/programs/create',             [MentorProgramController::class, 'create'])->name('programs.create');
+            Route::post('/programs',                   [MentorProgramController::class, 'store'])->name('programs.store');
+            Route::get('/programs/{program}',          [MentorProgramController::class, 'show'])->name('programs.show');
+            Route::get('/programs/{program}/edit',     [MentorProgramController::class, 'edit'])->name('programs.edit');
+            Route::put('/programs/{program}',          [MentorProgramController::class, 'update'])->name('programs.update');
+            Route::delete('/programs/{program}',       [MentorProgramController::class, 'destroy'])->name('programs.destroy');
+            Route::post('/programs/{program}/submit',  [MentorProgramController::class, 'submitForReview'])->name('programs.submit');
+        
+            // ── Curriculum — Modules ──────────────────────────────────────────────────
+            Route::post('/programs/{program}/modules',                         [MentorCurriculumController::class, 'storeModule'])->name('curriculum.modules.store');
+            Route::put('/programs/{program}/modules/{module}',                 [MentorCurriculumController::class, 'updateModule'])->name('curriculum.modules.update');
+            Route::delete('/programs/{program}/modules/{module}',              [MentorCurriculumController::class, 'destroyModule'])->name('curriculum.modules.destroy');
+            Route::post('/programs/{program}/modules/reorder',                 [MentorCurriculumController::class, 'reorderModules'])->name('curriculum.modules.reorder');
+        
+            // ── Curriculum — Weeks ────────────────────────────────────────────────────
+            Route::post('/programs/{program}/modules/{module}/weeks',          [MentorCurriculumController::class, 'storeWeek'])->name('curriculum.weeks.store');
+            Route::put('/programs/{program}/weeks/{week}',                     [MentorCurriculumController::class, 'updateWeek'])->name('curriculum.weeks.update');
+            Route::delete('/programs/{program}/weeks/{week}',                  [MentorCurriculumController::class, 'destroyWeek'])->name('curriculum.weeks.destroy');
+        
+            // ── Curriculum — Contents ─────────────────────────────────────────────────
+            Route::post('/programs/{program}/weeks/{week}/contents',           [MentorCurriculumController::class, 'storeContent'])->name('curriculum.contents.store');
+            Route::put('/programs/{program}/contents/{content}',               [MentorCurriculumController::class, 'updateContent'])->name('curriculum.contents.update');
+            Route::delete('/programs/{program}/contents/{content}',            [MentorCurriculumController::class, 'destroyContent'])->name('curriculum.contents.destroy');
+            Route::post('/programs/{program}/weeks/{week}/contents/reorder',   [MentorCurriculumController::class, 'reorderContents'])->name('curriculum.contents.reorder');
+        
+            // ── Assessments ───────────────────────────────────────────────────────────
+            Route::post('/programs/{program}/weeks/{week}/assessment',         [MentorAssessmentController::class, 'store'])->name('assessments.store');
+            Route::put('/programs/{program}/assessments/{assessment}',         [MentorAssessmentController::class, 'update'])->name('assessments.update');
+            Route::delete('/programs/{program}/assessments/{assessment}',      [MentorAssessmentController::class, 'destroy'])->name('assessments.destroy');
+        
+            // Questions
+            Route::get('/programs/{program}/assessments/{assessment}/questions',           [MentorAssessmentController::class, 'questions'])->name('assessments.questions');
+            Route::post('/programs/{program}/assessments/{assessment}/questions',          [MentorAssessmentController::class, 'storeQuestion'])->name('assessments.questions.store');
+            Route::put('/programs/{program}/assessments/{assessment}/questions/{question}',[MentorAssessmentController::class, 'updateQuestion'])->name('assessments.questions.update');
+            Route::delete('/programs/{program}/questions/{question}',                      [MentorAssessmentController::class, 'destroyQuestion'])->name('assessments.questions.destroy');
+        
+            // CSV Import
+            Route::get('/assessments/questions/template',                                  [MentorAssessmentController::class, 'downloadTemplate'])->name('assessments.questions.template');
+            Route::post('/programs/{program}/assessments/{assessment}/import',             [MentorAssessmentController::class, 'importQuestions'])->name('assessments.questions.import');
+        
+            // ── Sessions ──────────────────────────────────────────────────────────────
+            Route::get('/sessions',                    [MentorSessionController::class, 'index'])->name('sessions.index');
+            Route::get('/sessions/events',             [MentorSessionController::class, 'events'])->name('sessions.events');
+            Route::post('/sessions',                   [MentorSessionController::class, 'store'])->name('sessions.store');
+            Route::put('/sessions/{session}',          [MentorSessionController::class, 'update'])->name('sessions.update');
+            Route::delete('/sessions/{session}',       [MentorSessionController::class, 'destroy'])->name('sessions.destroy');
+        
+            // ── Students ──────────────────────────────────────────────────────────────
+            Route::get('/students',                    [MentorStudentController::class, 'index'])->name('students.index');
+            Route::get('/students/{enrollment}',       [MentorStudentController::class, 'show'])->name('students.show');
+        });
+        
 
 
  

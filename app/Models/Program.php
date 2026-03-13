@@ -12,28 +12,32 @@ class Program extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'mentor_id',
         'name',
         'slug',
         'description',
-        'overview',
+        'cover_image',
         'duration',
         'price',
         'discount_percentage',
-        'image',
+        'min_passing_average',
         'status',
-        'features',
-        'requirements',
-        'max_students',
+        'submitted_at',
+        'reviewed_at',
+        'reviewed_by',
+        'review_notes',
     ];
 
     protected $casts = [
-        'price' => 'decimal:2',
+        'price'               => 'decimal:2',
         'discount_percentage' => 'decimal:2',
-        'features' => 'array',
-        'requirements' => 'array',
+        'min_passing_average' => 'decimal:2',
+        'submitted_at'        => 'datetime',
+        'reviewed_at'         => 'datetime',
     ];
 
-    // Automatically generate slug
+    // ── Boot ──────────────────────────────────────────────────────────────────
+
     protected static function boot()
     {
         parent::boot();
@@ -45,7 +49,18 @@ class Program extends Model
         });
     }
 
-    // Relationships
+    // ── Relationships ─────────────────────────────────────────────────────────
+
+    public function mentor()
+    {
+        return $this->belongsTo(User::class, 'mentor_id');
+    }
+
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
     public function cohorts()
     {
         return $this->hasMany(Cohort::class);
@@ -61,14 +76,32 @@ class Program extends Model
         return $this->hasMany(Payment::class);
     }
 
-    // Accessors
+    public function modules()
+    {
+        return $this->hasMany(ProgramModule::class)->orderBy('order');
+    }
+
+    public function liveSessions()
+    {
+        return $this->hasMany(LiveSession::class)->orderBy('start_time');
+    }
+
+    // ── Accessors ─────────────────────────────────────────────────────────────
+
+    public function getCoverImageUrlAttribute(): string
+    {
+        if ($this->cover_image) {
+            return asset('storage/' . $this->cover_image);
+        }
+        return asset('images/default-program.png');
+    }
+
     public function getDiscountedPriceAttribute(): float
     {
         if ($this->discount_percentage > 0) {
-            $discount = ($this->price * $this->discount_percentage) / 100;
-            return $this->price - $discount;
+            return $this->price - ($this->price * $this->discount_percentage / 100);
         }
-        return $this->price;
+        return (float) $this->price;
     }
 
     public function getInstallmentAmountAttribute(): float
@@ -76,75 +109,72 @@ class Program extends Model
         return $this->price / 2;
     }
 
-    public function getImageUrlAttribute(): string
+    // ── Status helpers ────────────────────────────────────────────────────────
+
+    public function isDraft(): bool        { return $this->status === 'draft'; }
+    public function isUnderReview(): bool  { return $this->status === 'under_review'; }
+    public function isActive(): bool       { return $this->status === 'active'; }
+    public function isInactive(): bool     { return $this->status === 'inactive'; }
+
+    /** Learners can discover and enroll */
+    public function isEnrollable(): bool   { return $this->status === 'active'; }
+
+    // ── Content helpers ───────────────────────────────────────────────────────
+
+    /**
+     * All published weeks, ordered by module order then week number.
+     * Used by LearningController and Enrollment::initializeWeekProgress().
+     */
+    public function getPublishedWeeks()
     {
-        if ($this->image) {
-            return asset('storage/' . $this->image);
-        }
-        return asset('images/default-program.png');
+        return ModuleWeek::whereHas('programModule', function ($q) {
+            $q->where('program_id', $this->id);
+        })
+        ->with('programModule')
+        ->get()
+        ->sortBy(fn ($w) => [$w->programModule->order, $w->week_number])
+        ->values();
     }
 
-    // Status checks
-    public function isActive(): bool
+    /**
+     * Alias used by LearningController — returns the same collection.
+     */
+    public function getAllWeeks()
     {
-        return $this->status === 'active';
+        return $this->getPublishedWeeks();
     }
 
-    public function hasAvailableCohorts(): bool
+    // ── Default cohort ────────────────────────────────────────────────────────
+
+    /**
+     * Find or create the single default cohort used for auto-enrollment.
+     * Mentors never see or interact with cohorts — this is internal plumbing.
+     */
+    public function getOrCreateDefaultCohort(): Cohort
     {
-        return $this->cohorts()
-            ->whereIn('status', ['upcoming', 'ongoing'])
-            ->exists();
+        return $this->cohorts()->firstOrCreate(
+            ['code' => 'DEFAULT-' . $this->id],
+            [
+                'name'   => $this->name . ' — Default',
+                'status' => 'ongoing',
+            ]
+        );
     }
 
-    // Scopes
+    // ── Scopes ────────────────────────────────────────────────────────────────
+
     public function scopeActive($query)
     {
         return $query->where('status', 'active');
     }
 
-    public function scopePublished($query)
+    public function scopeByMentor($query, $mentorId)
     {
-        return $query->whereIn('status', ['active']);
+        return $query->where('mentor_id', $mentorId);
     }
 
-    public function modules()
+    public function scopePendingReview($query)
     {
-        return $this->hasMany(ProgramModule::class)->orderBy('order');
+        return $query->where('status', 'under_review');
     }
-
-    public function publishedModules()
-    {
-        return $this->hasMany(ProgramModule::class)
-            ->where('status', 'published')
-            ->orderBy('order');
-    }
-
-    // Get total weeks across all modules
-    public function getTotalWeeksAttribute(): int
-    {
-        return $this->modules()->sum('duration_weeks');
-    }
-
-    // Get all weeks for the program
-    public function getAllWeeks()
-    {
-        return ModuleWeek::whereHas('programModule', function($query) {
-            $query->where('program_id', $this->id);
-        })->orderBy('week_number')->get();
-    }
-
-    // Get published weeks only
-    public function getPublishedWeeks()
-    {
-        return ModuleWeek::whereHas('programModule', function($query) {
-            $query->where('program_id', $this->id)
-                  ->where('status', 'published');
-        })
-        ->where('status', 'published')
-        ->orderBy('week_number')
-        ->get();
-    }
-
-
 }
