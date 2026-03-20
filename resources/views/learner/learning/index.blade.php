@@ -311,7 +311,7 @@
                 $isLocked   = !$wp->is_unlocked;
                 $isDone     = $wp->is_completed;
                 $isCurrent  = $week->id === $currentWeek->id;
-                $weekContents = $week->publishedContents()
+                $weekContents = $week->contents()
                     ->with(['contentProgress' => fn($q) => $q->where('user_id', auth()->id())->where('enrollment_id', $enrollment->id)])
                     ->orderBy('order')
                     ->get();

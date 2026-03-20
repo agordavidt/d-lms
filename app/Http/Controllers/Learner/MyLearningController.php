@@ -4,16 +4,13 @@ namespace App\Http\Controllers\Learner;
 
 use App\Http\Controllers\Controller;
 use App\Models\ContentProgress;
+use App\Models\Enrollment;
 use App\Models\LiveSession;
 use App\Models\WeekProgress;
 use Illuminate\Http\Request;
 
 class MyLearningController extends Controller
 {
-    /**
-     * My Learning — the learner home page.
-     * Shows all enrollments (in-progress + completed) and upcoming schedule.
-     */
     public function index()
     {
         try {
@@ -21,7 +18,7 @@ class MyLearningController extends Controller
 
             // ── Enrollments ──────────────────────────────────────────────
             $enrollments = $user->enrollments()
-                ->with(['program', 'cohort'])
+                ->with(['program'])
                 ->whereIn('status', ['active', 'completed'])
                 ->latest('enrolled_at')
                 ->get()
@@ -30,24 +27,24 @@ class MyLearningController extends Controller
                     return $enrollment;
                 });
 
-            // ── Pending enrollment (payment incomplete) ───────────────────
+            // ── Pending enrollment ────────────────────────────────────────
             $pendingEnrollment = $user->enrollments()
                 ->with(['program', 'payments'])
                 ->where('status', 'pending')
                 ->first();
 
-            // ── Upcoming live sessions for all active cohorts ─────────────
-            $cohortIds = $user->enrollments()
+            // CHANGED: sessions belong to programs not cohorts
+            $programIds = $user->enrollments()
                 ->where('status', 'active')
-                ->pluck('cohort_id')
+                ->pluck('program_id')
                 ->filter();
 
             $upcomingSessions = collect();
 
-            if ($cohortIds->isNotEmpty()) {
-                $upcomingSessions = LiveSession::whereIn('cohort_id', $cohortIds)
+            if ($programIds->isNotEmpty()) {
+                $upcomingSessions = LiveSession::whereIn('program_id', $programIds)
                     ->upcoming()
-                    ->with(['mentor', 'cohort.program'])
+                    ->with(['mentor', 'program'])
                     ->orderBy('start_time')
                     ->limit(25)
                     ->get();
@@ -68,33 +65,43 @@ class MyLearningController extends Controller
     }
 
     /**
-     * AJAX — calendar events for the schedule widget on My Learning.
-     * Returns events for a given date range (FullCalendar-compatible).
+     * AJAX — calendar events.
+     * CHANGED: program_id replaces cohort_id; manual mapping replaces calendar_event accessor.
      */
     public function events(Request $request)
     {
         try {
-            $user     = auth()->user();
-            $cohortIds = $user->enrollments()
+            $user = auth()->user();
+
+            $programIds = $user->enrollments()
                 ->where('status', 'active')
-                ->pluck('cohort_id')
+                ->pluck('program_id')
                 ->filter();
 
-            if ($cohortIds->isEmpty()) {
+            if ($programIds->isEmpty()) {
                 return response()->json([]);
             }
 
-            $query = LiveSession::whereIn('cohort_id', $cohortIds)
-                ->with(['mentor', 'cohort.program']);
+            $query = LiveSession::whereIn('program_id', $programIds)
+                ->with(['mentor', 'program']);
 
             if ($request->filled('start') && $request->filled('end')) {
-                $query->whereBetween('start_time', [
-                    $request->start,
-                    $request->end,
-                ]);
+                $query->whereBetween('start_time', [$request->start, $request->end]);
             }
 
-            $events = $query->get()->map(fn ($s) => $s->calendar_event);
+            $events = $query->get()->map(fn ($s) => [
+                'id'    => $s->id,
+                'title' => $s->title,
+                'start' => $s->start_time->toIso8601String(),
+                'end'   => $s->end_time->toIso8601String(),
+                'extendedProps' => [
+                    'program'   => $s->program?->name ?? '',
+                    'meet_link' => $s->meet_link,
+                    'mentor'    => $s->mentor
+                                    ? $s->mentor->first_name . ' ' . $s->mentor->last_name
+                                    : 'Admin',
+                ],
+            ]);
 
             return response()->json($events);
 
@@ -103,12 +110,8 @@ class MyLearningController extends Controller
         }
     }
 
-    // ── Private helpers ─────────────────────────────────────────────────────
+    // ── Private helpers ──────────────────────────────────────────────────────
 
-    /**
-     * Build a lightweight progress summary for a single enrollment.
-     * Avoids N+1 by using aggregate queries.
-     */
     private function resolveProgress($user, $enrollment): array
     {
         try {
@@ -127,27 +130,28 @@ class MyLearningController extends Controller
                 ? round(($completedWeeks / $totalWeeks) * 100)
                 : 0;
 
-            // Has the learner started at all?
             $hasStarted = ContentProgress::where('user_id', $user->id)
                 ->where('enrollment_id', $enrollment->id)
                 ->exists();
 
             return [
-                'percentage'     => $overallPct,
+                'percentage'      => $overallPct,
                 'completed_weeks' => $completedWeeks,
-                'total_weeks'    => $totalWeeks,
-                'has_started'    => $hasStarted,
-                'last_accessed'  => $lastAccessed,
+                'total_weeks'     => $totalWeeks,
+                'has_started'     => $hasStarted,
+                'last_accessed'   => $lastAccessed,
             ];
 
         } catch (\Exception $e) {
             return [
-                'percentage'     => 0,
+                'percentage'      => 0,
                 'completed_weeks' => 0,
-                'total_weeks'    => 0,
-                'has_started'    => false,
-                'last_accessed'  => null,
+                'total_weeks'     => 0,
+                'has_started'     => false,
+                'last_accessed'   => null,
             ];
         }
     }
 }
+
+

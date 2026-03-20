@@ -8,21 +8,7 @@ use Illuminate\Http\Request;
 
 class GraduationController extends Controller
 {
-    /**
-     * Learner requests graduation review.
-     *
-     * Route: POST /learner/graduation/{enrollment}/request
-     * Name:  learner.graduation.request
-     *
-     * Called from the completed.blade.php when the learner has finished
-     * all content but graduation_status is still 'active' (i.e. the
-     * automatic trigger via checkGraduationEligibility() fired but the
-     * program has no min_passing_average set, or the learner wants to
-     * manually trigger a review). In most cases the auto-trigger in
-     * Enrollment::checkGraduationEligibility() will have already set
-     * graduation_status = 'pending_review' — this route acts as a
-     * safety net / explicit request button.
-     */
+    
     public function request(Request $request, Enrollment $enrollment)
     {
         $user = auth()->user();

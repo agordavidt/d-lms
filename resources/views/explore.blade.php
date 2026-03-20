@@ -31,7 +31,9 @@
         <div class="h-[60px] flex items-center">
             <span class="px-3 h-full flex items-center text-sm font-bold text-blue-600 border-b-2 border-blue-600">Explore</span>
             @auth
-            <a href="{{ route('learner.my-learning') }}" class="px-3 h-full flex items-center text-sm font-medium text-slate-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500 transition-all">My Learning</a>
+                @if(auth()->user()->hasVerifiedEmail())
+                    <a href="{{ route('learner.my-learning') }}" class="px-3 h-full flex items-center text-sm font-medium text-slate-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500 transition-all">My Learning</a>
+                @endif
             @endauth
         </div>
 
@@ -43,11 +45,16 @@
         </div>
 
         <div class="ml-auto flex items-center gap-3">
-            @auth
-            <a href="{{ route('learner.my-learning') }}" class="text-sm font-semibold text-slate-700 hover:text-blue-600 transition hidden sm:block">My Learning</a>
+           @auth
+                @if(auth()->user()->hasVerifiedEmail())
+                    <a href="{{ route('learner.my-learning') }}" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">My Learning</a>
+                @else
+                    <a href="{{ route('verification.notice') }}" class="text-sm font-semibold text-amber-600 hover:text-amber-700 transition hidden sm:block">Verify Email</a>
+                    <button onclick="openModal('login-modal')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">Continue</button>
+                @endif
             @else
-            <a href="{{ route('login') }}" class="text-sm font-semibold text-slate-600 hover:text-blue-600 transition">Sign in</a>
-            <a href="{{ route('register') }}" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors">Join Free</a>
+                <button onclick="openModal('login-modal')" class="text-sm font-semibold text-blue-600 hover:text-blue-700 transition hidden sm:block">Log In</button>
+                <button onclick="openModal('register-modal')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">Join for Free</button>
             @endauth
         </div>
     </div>

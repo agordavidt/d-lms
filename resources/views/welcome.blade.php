@@ -44,8 +44,13 @@
             <input id="nav-search" type="text" placeholder="What do you want to learn?" class="bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none w-full">
         </div>
         <div class="flex items-center gap-4 ml-auto flex-shrink-0">
-            @auth
-                <a href="{{ route('learner.my-learning') }}" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">My Learning</a>
+           @auth
+                @if(auth()->user()->hasVerifiedEmail())
+                    <a href="{{ route('learner.my-learning') }}" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">My Learning</a>
+                @else
+                    <a href="{{ route('verification.notice') }}" class="text-sm font-semibold text-amber-600 hover:text-amber-700 transition hidden sm:block">Verify Email</a>
+                    <button onclick="openModal('login-modal')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">Continue</button>
+                @endif
             @else
                 <button onclick="openModal('login-modal')" class="text-sm font-semibold text-blue-600 hover:text-blue-700 transition hidden sm:block">Log In</button>
                 <button onclick="openModal('register-modal')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">Join for Free</button>
