@@ -96,17 +96,25 @@ class Program extends Model
         return asset('images/default-program.png');
     }
 
+    /**
+     * Kept for backward compatibility with old templates that used image_url.
+     */
+    public function getImageUrlAttribute(): string
+    {
+        return $this->cover_image_url;
+    }
+
     public function getDiscountedPriceAttribute(): float
     {
         if ($this->discount_percentage > 0) {
-            return $this->price - ($this->price * $this->discount_percentage / 100);
+            return (float) ($this->price - ($this->price * $this->discount_percentage / 100));
         }
         return (float) $this->price;
     }
 
     public function getInstallmentAmountAttribute(): float
     {
-        return $this->price / 2;
+        return (float) ($this->price / 2);
     }
 
     // ── Status helpers ────────────────────────────────────────────────────────
@@ -116,14 +124,17 @@ class Program extends Model
     public function isActive(): bool       { return $this->status === 'active'; }
     public function isInactive(): bool     { return $this->status === 'inactive'; }
 
-    /** Learners can discover and enroll */
+    /**
+     * Whether learners can discover and enroll.
+     * Only active programs are enrollable.
+     */
     public function isEnrollable(): bool   { return $this->status === 'active'; }
 
     // ── Content helpers ───────────────────────────────────────────────────────
 
     /**
-     * All published weeks, ordered by module order then week number.
-     * Used by LearningController and Enrollment::initializeWeekProgress().
+     * All weeks across all modules, ordered by module order then week number.
+     * Used by LearningController, Enrollment::initializeWeekProgress(), etc.
      */
     public function getPublishedWeeks()
     {
@@ -137,18 +148,28 @@ class Program extends Model
     }
 
     /**
-     * Alias used by LearningController — returns the same collection.
+     * Alias — several controllers call getAllWeeks() interchangeably.
      */
     public function getAllWeeks()
     {
         return $this->getPublishedWeeks();
     }
 
+    // ── Published modules helper (backward compat) ────────────────────────────
+
+    public function publishedModules()
+    {
+        // No status column in new schema — all modules are visible when program is active.
+        // Returns the same as modules() for backward compatibility.
+        return $this->hasMany(ProgramModule::class)->orderBy('order');
+    }
+
     // ── Default cohort ────────────────────────────────────────────────────────
 
     /**
-     * Find or create the single default cohort used for auto-enrollment.
-     * Mentors never see or interact with cohorts — this is internal plumbing.
+     * Find or create the single rolling cohort used for auto-enrollment.
+     * Mentors never see or interact with cohorts — this is internal plumbing
+     * that keeps the existing cohort_id foreign key constraints alive.
      */
     public function getOrCreateDefaultCohort(): Cohort
     {

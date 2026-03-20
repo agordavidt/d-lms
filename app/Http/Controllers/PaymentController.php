@@ -67,10 +67,13 @@ class PaymentController extends Controller
             ]);
 
             // Create payment record
+            // transaction_id generated here to satisfy the NOT NULL unique constraint.
+            // For real Flutterwave payments it is overwritten with the gateway ID on callback.
             $payment = Payment::create([
                 'user_id'            => $user->id,
                 'enrollment_id'      => $enrollment->id,
                 'program_id'         => $program->id,
+                'transaction_id'     => 'TXN-' . strtoupper(Str::random(12)),
                 'reference'          => 'REF-' . strtoupper(Str::random(10)),
                 'amount'             => $amount,
                 'discount_amount'    => $discount,
@@ -347,6 +350,7 @@ class PaymentController extends Controller
                 'user_id'            => auth()->id(),
                 'enrollment_id'      => $enrollment->id,
                 'program_id'         => $enrollment->program_id,
+                'transaction_id'     => 'TXN-' . strtoupper(Str::random(12)),
                 'reference'          => 'REF-' . strtoupper(Str::random(10)),
                 'amount'             => $remainingAmount,
                 'discount_amount'    => 0,

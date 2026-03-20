@@ -42,41 +42,34 @@ class ProgramController extends Controller
      */
     public function enroll(Request $request, Program $program)
     {
-        try {
-            // Validate the request
-            $validated = $request->validate([
-                'payment_plan' => 'required|in:one-time,installment'
-            ]);
-
-            // Get the earliest available cohort
-            $cohort = $program->cohorts()
-                ->active()
-                ->where('enrolled_count', '<', DB::raw('max_students'))
-                ->orderBy('start_date')
-                ->first();
-
-            if (!$cohort) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No available cohorts for this program.'
-                ], 400);
-            }
-
-            // Return data for payment form submission
-            // Enrollment will be created by PaymentController
-            return response()->json([
-                'success' => true,
-                'message' => 'Proceeding to payment...',
-                'program_id' => $program->id,
-                'cohort_id' => $cohort->id,
-                'payment_plan' => $validated['payment_plan']
-            ]);
-
-        } catch (\Exception $e) {
+        // No payment_plan validation — plan is chosen after this check
+        
+        if (!$program->isEnrollable()) {
             return response()->json([
                 'success' => false,
-                'message' => 'An error occurred. Please try again.'
-            ], 500);
+                'message' => 'This program is not currently accepting enrollments.',
+            ], 422);
         }
+
+        $existing = Enrollment::where('user_id', auth()->id())
+            ->where('program_id', $program->id)
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You are already enrolled in this program.',
+            ], 422);
+        }
+
+        // No cohort lookup — cohort is auto-assigned on payment confirmation
+        return response()->json([
+            'success'             => true,
+            'program_id'          => $program->id,
+            'price'               => $program->price,
+            'discounted_price'    => $program->discounted_price,
+            'installment_amount'  => $program->installment_amount,
+            'discount_percentage' => $program->discount_percentage,
+        ]);
     }
 }
