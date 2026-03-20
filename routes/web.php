@@ -74,7 +74,9 @@ Route::middleware('guest')->group(function () {
         })->name('login');
     Route::post('/login', [LoginController::class, 'login']);
 
-    Route::get('/register', [RegisterController::class, 'showRegistrationForm'])->name('register');
+    Route::get('/register', function () {
+            return redirect()->route('home');
+        })->name('register');
     Route::post('/register', [RegisterController::class, 'register']);
 
     // Password Reset

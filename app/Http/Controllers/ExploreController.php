@@ -18,18 +18,11 @@ class ExploreController extends Controller
     {
         try {
             // Active programs that have at least one available cohort
-            $programs = Program::active()
-                ->whereHas('cohorts', function ($query) {
-                    $query->active()
-                          ->where('enrolled_count', '<', DB::raw('max_students'));
-                })
-                ->with(['cohorts' => function ($query) {
-                    $query->active()
-                          ->where('enrolled_count', '<', DB::raw('max_students'))
-                          ->orderBy('start_date')
-                          ->limit(1);
-                }])
-                ->get();
+            $programs = Program::where('status', 'active')
+            ->with('mentor')
+            ->withCount('enrollments')
+            ->orderBy('name')
+            ->get();
 
             // If user is logged in, find which programs they're already enrolled in
             $enrolledProgramIds = collect();

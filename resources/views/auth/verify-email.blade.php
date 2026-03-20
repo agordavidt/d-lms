@@ -55,10 +55,10 @@
         </form>
 
         <div class="space-y-3 pt-1">
-            <a href="{{ route('home') }}"
+            {{-- <a href="{{ route('home') }}"
                 class="block text-sm text-slate-500 hover:text-blue-600 transition font-medium">
                 ← Back to home
-            </a>
+            </a> --}}
 
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
