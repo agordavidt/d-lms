@@ -28,37 +28,41 @@ class User extends Authenticatable implements MustVerifyEmail
         'password'          => 'hashed',
     ];
 
-    // Override Laravel's default notification with our App\Mail Mailable
+    // ── Email verification ────────────────────────────────────────────────────
+
     public function sendEmailVerificationNotification(): void
     {
         Mail::to($this->email)->queue(new \App\Mail\VerifyEmail($this));
     }
 
-    // Accessors
-    public function getNameAttribute(): string        { return $this->first_name . ' ' . $this->last_name; }
-    public function getFullNameAttribute(): string    { return $this->first_name . ' ' . $this->last_name; }
-    public function getInitialsAttribute(): string    { return strtoupper(substr($this->first_name,0,1).substr($this->last_name,0,1)); }
+    // ── Accessors ─────────────────────────────────────────────────────────────
+
+    public function getNameAttribute(): string     { return $this->first_name . ' ' . $this->last_name; }
+    public function getFullNameAttribute(): string { return $this->first_name . ' ' . $this->last_name; }
+    public function getInitialsAttribute(): string { return strtoupper(substr($this->first_name, 0, 1) . substr($this->last_name, 0, 1)); }
+
     public function getAvatarUrlAttribute(): string
     {
         return $this->avatar
             ? asset('storage/' . $this->avatar)
-            : 'https://ui-avatars.com/api/?name='.urlencode($this->full_name).'&color=4f46e5&background=EBF4FF';
+            : 'https://ui-avatars.com/api/?name=' . urlencode($this->full_name) . '&color=4f46e5&background=EBF4FF';
     }
-    // public function getFirstNameAttribute() { return explode(' ', $this->name)[0]; }
 
+    // ── Role helpers ──────────────────────────────────────────────────────────
 
-    // Role helpers
     public function isSuperAdmin(): bool { return $this->role === 'superadmin'; }
     public function isAdmin(): bool      { return in_array($this->role, ['admin', 'superadmin']); }
     public function isMentor(): bool     { return $this->role === 'mentor'; }
     public function isLearner(): bool    { return $this->role === 'learner'; }
 
-    // Status helpers
+    // ── Account status helpers ────────────────────────────────────────────────
+
     public function isActive(): bool    { return $this->status === 'active'; }
     public function isSuspended(): bool { return $this->status === 'suspended'; }
     public function isLocked(): bool    { return $this->locked_until && $this->locked_until->isFuture(); }
 
-    // Security
+    // ── Security / login tracking ─────────────────────────────────────────────
+
     public function recordLoginAttempt(): void
     {
         $this->increment('login_attempts');
@@ -66,38 +70,98 @@ class User extends Authenticatable implements MustVerifyEmail
             $this->lockAccount();
         }
     }
-    public function lockAccount(): void   { $this->update(['locked_until' => now()->addMinutes(config('auth.lockout_time', 15))]); }
-    public function resetLoginAttempts(): void { $this->update(['login_attempts' => 0, 'locked_until' => null]); }
-    public function recordLogin(string $ip): void
+
+    public function lockAccount(): void
     {
-        $this->update(['last_login_at' => now(), 'last_login_ip' => $ip, 'login_attempts' => 0, 'locked_until' => null]);
+        $this->update(['locked_until' => now()->addMinutes(config('auth.lockout_time', 15))]);
     }
 
-    // Relationships
-    public function auditLogs()       { return $this->hasMany(AuditLog::class); }
-    public function enrollments()     { return $this->hasMany(Enrollment::class); }
-    public function payments()        { return $this->hasMany(Payment::class); }
-    public function createdContents() { return $this->hasMany(WeekContent::class, 'created_by'); }
-    public function contentProgress() { return $this->hasMany(ContentProgress::class); }
-    public function weekProgress()    { return $this->hasMany(WeekProgress::class); }
-    public function mentorSessions()  { return $this->hasMany(LiveSession::class, 'mentor_id'); }
-    public function cohorts()         { return $this->hasMany(Cohort::class, 'mentor_id'); }
+    public function resetLoginAttempts(): void
+    {
+        $this->update(['login_attempts' => 0, 'locked_until' => null]);
+    }
 
-    // Learning helpers
+    public function recordLogin(string $ip): void
+    {
+        $this->update([
+            'last_login_at'   => now(),
+            'last_login_ip'   => $ip,
+            'login_attempts'  => 0,
+            'locked_until'    => null,
+        ]);
+    }
+
+    // ── Relationships ─────────────────────────────────────────────────────────
+
+    /** Programs this mentor owns (mentor_id = this user) */
+    public function programs()
+    {
+        return $this->hasMany(Program::class, 'mentor_id');
+    }
+
+    public function enrollments()
+    {
+        return $this->hasMany(Enrollment::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    public function auditLogs()
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
+    public function contentProgress()
+    {
+        return $this->hasMany(ContentProgress::class);
+    }
+
+    public function weekProgress()
+    {
+        return $this->hasMany(WeekProgress::class);
+    }
+
+    public function assessmentAttempts()
+    {
+        return $this->hasMany(AssessmentAttempt::class);
+    }
+
+    public function createdContents()
+    {
+        return $this->hasMany(WeekContent::class, 'created_by');
+    }
+
+    public function mentorSessions()
+    {
+        return $this->hasMany(LiveSession::class, 'mentor_id');
+    }
+
+    // ── Learning helpers ──────────────────────────────────────────────────────
+
     public function getCurrentWeek(Enrollment $enrollment)
     {
         return WeekProgress::where('user_id', $this->id)
             ->where('enrollment_id', $enrollment->id)
-            ->where('is_unlocked', true)->where('is_completed', false)
-            ->with('moduleWeek')->orderBy('created_at')->first();
+            ->where('is_unlocked', true)
+            ->where('is_completed', false)
+            ->with('moduleWeek')
+            ->orderBy('created_at')
+            ->first();
     }
 
-    public function getLearningProgress(Enrollment $enrollment)
+    public function getLearningProgress(Enrollment $enrollment): float
     {
         $totalWeeks = $enrollment->program->getPublishedWeeks()->count();
         if ($totalWeeks === 0) return 0;
+
         $completedWeeks = WeekProgress::where('user_id', $this->id)
-            ->where('enrollment_id', $enrollment->id)->where('is_completed', true)->count();
+            ->where('enrollment_id', $enrollment->id)
+            ->where('is_completed', true)
+            ->count();
+
         return round(($completedWeeks / $totalWeeks) * 100, 1);
     }
 }

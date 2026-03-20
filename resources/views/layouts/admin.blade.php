@@ -1,356 +1,221 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    
-    <title>@yield('title', 'Dashboard') | G-Luper LMS</title>
-    
-    <link rel="icon" type="image/png" sizes="16x16" href="{{ asset('assets/images/favicon.png') }}">
-    <link href="{{ asset('assets/plugins/pg-calendar/css/pignose.calendar.min.css') }}" rel="stylesheet">
-    <link href="{{ asset('assets/css/style.css') }}" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    
+    <title>@yield('title', 'Admin') — G-Luper</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --blue:       #0056d2;
+            --blue-light: #e8f0fe;
+            --text:       #1f1f1f;
+            --muted:      #6b7280;
+            --border:     #e5e7eb;
+            --bg:         #f9fafb;
+            --white:      #ffffff;
+            --nav-h:      60px;
+            --success:    #16a34a;
+            --warning:    #b45309;
+            --error:      #dc2626;
+        }
+
+        body { font-family: 'DM Sans', system-ui, sans-serif; font-size: 15px; color: var(--text); background: var(--bg); line-height: 1.6; }
+
+        /* ── Top Nav ── */
+        .top-nav { position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h); background: var(--white); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 2rem; gap: 2rem; z-index: 100; }
+        .nav-brand { font-family: 'Source Serif 4', serif; font-size: 1.2rem; font-weight: 600; color: var(--blue); text-decoration: none; white-space: nowrap; margin-right: 1rem; }
+        .nav-brand span { font-size: 0.7rem; font-family: 'DM Sans', sans-serif; font-weight: 500; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.4rem; margin-left: 0.4rem; vertical-align: middle; }
+        .nav-links { display: flex; gap: 0; flex: 1; }
+        .nav-link { display: inline-block; padding: 0 1.1rem; height: var(--nav-h); line-height: var(--nav-h); font-size: 0.875rem; font-weight: 500; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; white-space: nowrap; }
+        .nav-link:hover    { color: var(--text); }
+        .nav-link.active   { color: var(--blue); border-bottom-color: var(--blue); }
+        .nav-badge { display: inline-block; background: var(--error); color: #fff; font-size: 0.65rem; font-weight: 700; border-radius: 10px; padding: 0.05rem 0.4rem; margin-left: 0.3rem; vertical-align: middle; line-height: 1.6; }
+        .nav-right { display: flex; align-items: center; gap: 1rem; margin-left: auto; }
+        .nav-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--text); color: var(--white); font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
+        .avatar-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0; min-width: 180px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); z-index: 200; }
+        .nav-avatar:hover .avatar-dropdown { display: block; }
+        .avatar-dropdown a, .avatar-dropdown button { display: block; width: 100%; padding: 0.5rem 1rem; font-size: 0.875rem; color: var(--text); text-decoration: none; text-align: left; background: none; border: none; cursor: pointer; font-family: inherit; }
+        .avatar-dropdown a:hover, .avatar-dropdown button:hover { background: var(--bg); }
+        .avatar-dropdown hr { border: none; border-top: 1px solid var(--border); margin: 0.25rem 0; }
+
+        /* ── Page body ── */
+        .page-body { margin-top: var(--nav-h); min-height: calc(100vh - var(--nav-h)); }
+        .page-header { background: var(--white); border-bottom: 1px solid var(--border); padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+        .page-header h1 { font-family: 'Source Serif 4', serif; font-size: 1.4rem; font-weight: 600; }
+        .breadcrumb { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.2rem; }
+        .breadcrumb a { color: var(--blue); text-decoration: none; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
+        .section { padding: 2rem 0; }
+
+        /* ── Buttons ── */
+        .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1.1rem; border-radius: 4px; font-size: 0.875rem; font-weight: 500; font-family: inherit; cursor: pointer; border: 1px solid transparent; text-decoration: none; transition: background 0.15s, border-color 0.15s, color 0.15s; line-height: 1.4; }
+        .btn-primary  { background: var(--blue);  color: var(--white); border-color: var(--blue); }
+        .btn-primary:hover  { background: #0047b0; }
+        .btn-outline  { background: var(--white); color: var(--blue);  border-color: var(--blue); }
+        .btn-outline:hover  { background: var(--blue-light); }
+        .btn-ghost    { background: transparent;  color: var(--muted); border-color: var(--border); }
+        .btn-ghost:hover    { background: var(--bg); color: var(--text); }
+        .btn-danger   { background: var(--white);  color: var(--error); border-color: #fca5a5; }
+        .btn-danger:hover   { background: #fef2f2; }
+        .btn-sm       { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+
+        /* ── Flash ── */
+        .flash { padding: 0.8rem 1.25rem; border-radius: 6px; font-size: 0.875rem; margin-bottom: 1.5rem; }
+        .flash-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        .flash-warning { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+        .flash-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+        /* ── Cards ── */
+        .card { background: var(--white); border: 1px solid var(--border); border-radius: 8px; }
+        .card-body { padding: 1.5rem; }
+
+        /* ── Form ── */
+        .form-group { margin-bottom: 1.25rem; }
+        .form-label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.35rem; }
+        .form-control { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid var(--border); border-radius: 4px; font-size: 0.875rem; font-family: inherit; color: var(--text); background: var(--white); transition: border-color 0.15s; line-height: 1.5; }
+        .form-control:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,86,210,0.08); }
+        select.form-control { cursor: pointer; }
+        textarea.form-control { resize: vertical; min-height: 90px; }
+        .form-hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem; }
+        .invalid-feedback { font-size: 0.78rem; color: var(--error); margin-top: 0.25rem; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+
+        /* ── Table ── */
+        .table { width: 100%; border-collapse: collapse; }
+        .table th { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 0.75rem 1rem; border-bottom: 2px solid var(--border); text-align: left; }
+        .table td { padding: 0.9rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.875rem; vertical-align: middle; }
+        .table tr:last-child td { border-bottom: none; }
+        .table tr:hover td { background: var(--bg); }
+
+        /* ── Badge ── */
+        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.73rem; font-weight: 500; }
+        .badge-blue   { background: var(--blue-light); color: var(--blue); }
+        .badge-green  { background: #f0fdf4; color: #166534; }
+        .badge-yellow { background: #fffbeb; color: #92400e; }
+        .badge-red    { background: #fef2f2; color: #991b1b; }
+        .badge-gray   { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+
+        /* ── Stats ── */
+        .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .stat-box { background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem 1.5rem; }
+        .stat-box .stat-value { font-family: 'Source Serif 4', serif; font-size: 1.8rem; font-weight: 600; line-height: 1; margin-bottom: 0.3rem; }
+        .stat-box .stat-label { font-size: 0.8rem; color: var(--muted); }
+        .stat-box.highlight { border-color: var(--blue); }
+        .stat-box.highlight .stat-value { color: var(--blue); }
+        .stat-box.alert { border-color: #fde68a; }
+        .stat-box.alert .stat-value { color: var(--warning); }
+
+        /* ── Tabs ── */
+        .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+        .tab-link { padding: 0.65rem 1.25rem; font-size: 0.875rem; font-weight: 500; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; transition: color 0.15s; }
+        .tab-link:hover  { color: var(--text); }
+        .tab-link.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+        /* ── Modal ── */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 500; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal { background: var(--white); border-radius: 10px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative; }
+        .modal h2 { font-family: 'Source Serif 4', serif; font-size: 1.15rem; margin-bottom: 1.25rem; }
+        .modal-close { position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--muted); }
+
+        /* ── Progress ── */
+        .progress-bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+        .progress-bar-fill  { height: 100%; background: var(--blue); border-radius: 2px; transition: width 0.3s; }
+
+        /* ── Misc ── */
+        .text-muted  { color: var(--muted); }
+        .text-small  { font-size: 0.8rem; }
+        .text-right  { text-align: right; }
+        .mt-1 { margin-top: 0.5rem; }
+        .mt-2 { margin-top: 1rem; }
+        .mt-3 { margin-top: 1.5rem; }
+        .flex { display: flex; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .gap-1 { gap: 0.5rem; }
+        .gap-2 { gap: 1rem; }
+    </style>
     @stack('styles')
 </head>
-
 <body>
-    <div id="preloader">
-        <div class="loader">
-            <svg class="circular" viewBox="25 25 50 50">
-                <circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="3" stroke-miterlimit="10" />
-            </svg>
-        </div>
+
+<nav class="top-nav">
+    <a href="{{ route('admin.dashboard') }}" class="nav-brand">
+        G-Luper <span>Admin</span>
+    </a>
+
+    <div class="nav-links">
+        <a href="{{ route('admin.programs.index') }}"
+           class="nav-link {{ request()->routeIs('admin.programs.*') ? 'active' : '' }}">
+            Programs
+            @php $pending = \App\Models\Program::where('status','under_review')->count(); @endphp
+            @if($pending) <span class="nav-badge">{{ $pending }}</span> @endif
+        </a>
+        <a href="{{ route('admin.mentors.index') }}"
+           class="nav-link {{ request()->routeIs('admin.mentors.*') ? 'active' : '' }}">
+            Mentors
+        </a>
+        <a href="{{ route('admin.learners.index') }}"
+           class="nav-link {{ request()->routeIs('admin.learners.*') ? 'active' : '' }}">
+            Learners
+        </a>
+        <a href="{{ route('admin.sessions.index') }}"
+           class="nav-link {{ request()->routeIs('admin.sessions.*') ? 'active' : '' }}">
+            Sessions
+        </a>
+        <a href="{{ route('admin.graduations.index') }}"
+           class="nav-link {{ request()->routeIs('admin.graduations.*') ? 'active' : '' }}">
+            Graduations
+            @php $grad = \App\Models\Enrollment::where('graduation_status','pending_review')->count(); @endphp
+            @if($grad) <span class="nav-badge">{{ $grad }}</span> @endif
+        </a>
+        <a href="{{ route('admin.payments.index') }}"
+           class="nav-link {{ request()->routeIs('admin.payments.*') ? 'active' : '' }}">
+            Payments
+        </a>
+        <a href="{{ route('admin.activity-log') }}"
+           class="nav-link {{ request()->routeIs('admin.activity-log*') ? 'active' : '' }}">
+            Activity
+        </a>
     </div>
 
-    <div id="main-wrapper">
-        <!-- Nav Header -->
-        <div class="nav-header">
-            <div class="brand-logo">
-                <a href="{{ auth()->user()->isAdmin() ? route('admin.dashboard') : (auth()->user()->isMentor() ? route('mentor.dashboard') : route('learner.dashboard')) }}">
-                    <b class="logo-abbr">
-                        <span style="font-size: 24px; font-weight: 900; color: #7571f9;">G</span>
-                    </b>
-                    <span class="brand-title">
-                        <span style="font-size: 20px; font-weight: 700; color: #333;">Luper LMS</span>
-                    </span>
-                </a>
-            </div>
-        </div>
-
-        <!-- Header -->
-        <div class="header">    
-            <div class="header-content clearfix">
-                <div class="nav-control">
-                    <div class="hamburger">
-                        <span class="toggle-icon"><i class="icon-menu"></i></span>
-                    </div>
+    <div class="nav-right">
+        <div class="nav-avatar">
+            {{ strtoupper(substr(auth()->user()->first_name, 0, 1)) }}
+            <div class="avatar-dropdown">
+                <div style="padding: 0.5rem 1rem 0.4rem; font-size: 0.8rem; color: var(--muted);">
+                    {{ auth()->user()->first_name }} · {{ ucfirst(auth()->user()->role) }}
                 </div>
-                
-                <div class="header-left">
-                    <div class="input-group icons">
-                        <div class="input-group-prepend">
-                            <span class="input-group-text bg-transparent border-0 pr-2 pr-sm-3"><i class="mdi mdi-magnify"></i></span>
-                        </div>
-                        <input type="search" class="form-control" placeholder="Search Dashboard">
-                    </div>
-                </div>
-                
-                <div class="header-right">
-                    <ul class="clearfix">
-                        <!-- Notifications -->
-                        <li class="icons dropdown">
-                            <a href="javascript:void(0)" data-toggle="dropdown">
-                                <i class="mdi mdi-bell"></i>
-                                <span class="badge badge-pill gradient-2">3</span>
-                            </a>
-                            <div class="drop-down animated fadeIn dropdown-menu dropdown-notfication">
-                                <div class="dropdown-content-heading d-flex justify-content-between">
-                                    <span>3 New Notifications</span>  
-                                </div>
-                                <div class="dropdown-content-body">
-                                    <ul>
-                                        <li>
-                                            <a href="javascript:void()">
-                                                <span class="mr-3 avatar-icon bg-success-lighten-2"><i class="icon-calendar"></i></span>
-                                                <div class="notification-content">
-                                                    <h6 class="notification-heading">Upcoming Session</h6>
-                                                    <span class="notification-text">You have a session in 2 hours</span> 
-                                                </div>
-                                            </a>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </li>
-
-                        <!-- User Profile -->
-                        <li class="icons dropdown">
-                            <div class="user-img c-pointer position-relative" data-toggle="dropdown">
-                                <span class="activity active"></span>
-                                <img src="{{ auth()->user()->avatar_url }}" height="40" width="40" alt="" style="border-radius: 50%;">
-                            </div>
-                            <div class="drop-down dropdown-profile dropdown-menu">
-                                <div class="dropdown-content-body">
-                                    <ul>
-                                        <li>
-                                            <a href="javascript:void()">
-                                                <i class="icon-user"></i> 
-                                                <span>{{ auth()->user()->name }}</span>
-                                            </a>
-                                        </li>
-                                       
-                                        <hr class="my-2">
-                                        
-                                        <li>
-                                            <form action="{{ route('logout') }}" method="POST">
-                                                @csrf
-                                                <button type="submit" class="dropdown-item">
-                                                    <i class="icon-key"></i> 
-                                                    <span>Logout</span>
-                                                </button>
-                                            </form>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-
-        <!-- Sidebar -->
-        <div class="nk-sidebar">           
-            <div class="nk-nav-scroll">
-                <ul class="metismenu" id="menu">
-                    <!-- Admin Sidebar -->
-                    @if(auth()->user()->isAdmin())
-                    <li class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
-                        <a href="{{ route('admin.dashboard') }}">
-                            <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
-                        </a>
-                    </li>
-
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.learners.*') ? 'active' : '' }}" 
-                        href="{{ route('admin.learners.index') }}">
-                            <i class="bi bi-people-fill"></i>
-                            <span>Learners</span>
-                        </a>
-                    </li>
-
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->routeIs('admin.mentors.*') ? 'active' : '' }}" 
-                        href="{{ route('admin.mentors.index') }}">
-                            <i class="bi bi-person-badge-fill"></i>
-                            <span>Mentors</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('admin.programs.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.programs.index') }}">
-                            <i class="icon-book-open menu-icon"></i><span class="nav-text">Programs</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('admin.modules.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.modules.index') }}">
-                            <i class="icon-layers menu-icon"></i><span class="nav-text">Modules</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('admin.weeks.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.weeks.index') }}">
-                            <i class="icon-grid menu-icon"></i><span class="nav-text">Weeks</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('admin.contents.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.contents.index') }}">
-                            <i class="icon-docs menu-icon"></i><span class="nav-text">Contents</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('admin.cohorts.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.cohorts.index') }}">
-                            <i class="icon-people menu-icon"></i><span class="nav-text">Cohorts</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('admin.sessions.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.sessions.calendar') }}">
-                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Sessions</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('admin.graduations.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.graduations.index') }}">
-                            <i class="icon-graduation menu-icon"></i>
-                            <span class="nav-text">Graduations</span>
-                            @php
-                                $pendingCount = \App\Models\Enrollment::where('graduation_status', 'pending_review')->count();
-                            @endphp
-                            @if($pendingCount > 0)
-                                <span class="badge badge-warning ml-auto">{{ $pendingCount }}</span>
-                            @endif
-                        </a>
-                    </li>
-
-                <li class="{{ request()->routeIs('admin.payments.*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.payments.index') }}">
-                            <i class="icon-credit-card menu-icon"></i><span class="nav-text">Payments</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('admin.activity-log*') ? 'active' : '' }}">
-                        <a href="{{ route('admin.activity-log') }}">
-                            <i class="icon-note menu-icon"></i><span class="nav-text">Activity Log</span>
-                        </a>
-                    </li>
-
-                    <li>
-                        <a href="#">
-                            <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
-                        </a>
-                    </li>
-                    @endif
-
-                    <!-- Mentor Sidebar -->
-                    @if(auth()->user()->isMentor())
-                    <li class="{{ request()->routeIs('mentor.dashboard') ? 'active' : '' }}">
-                        <a href="{{ route('mentor.dashboard') }}">
-                            <i class="icon-speedometer menu-icon"></i><span class="nav-text">Dashboard</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('mentor.sessions.*') ? 'active' : '' }}">
-                        <a href="{{ route('mentor.sessions.calendar') }}">
-                            <i class="icon-calendar menu-icon"></i><span class="nav-text">Classes</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('mentor.students.*') ? 'active' : '' }}">
-                        <a href="{{ route('mentor.students.index') }}">
-                            <i class="icon-people menu-icon"></i><span class="nav-text">Students</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ request()->routeIs('mentor.contents.*') ? 'active' : '' }}">
-                        <a href="{{ route('mentor.contents.index') }}">
-                            <i class="icon-docs menu-icon"></i><span class="nav-text">Content</span>
-                        </a>
-                    </li>
-
-                    <li>
-                        <a href="#">
-                            <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
-                        </a>
-                    </li>
-                    @endif
-
-                    <!-- Learner Sidebar -->
-                    @if(auth()->user()->isLearner())
-                        @php
-                            $hasActiveEnrollment = auth()->user()->enrollments()->where('status', 'active')->exists();
-                        @endphp
-
-                        @if(!$hasActiveEnrollment)
-                            <!-- Pre-Enrollment Navigation -->
-                            <li class="{{ request()->routeIs('learner.programs.*') ? 'active' : '' }}">
-                                <a href="{{ route('learner.programs.index') }}">
-                                    <i class="icon-book-open menu-icon"></i><span class="nav-text">Programs</span>
-                                </a>
-                            </li>
-                        @else
-                            <!-- Post-Enrollment Navigation -->
-                            <li class="{{ request()->routeIs('learner.learning.*') ? 'active' : '' }}">
-                                <a href="{{ route('learner.learning.index') }}">
-                                    <i class="icon-graduation menu-icon"></i><span class="nav-text">Learning</span>
-                                </a>
-                            </li>
-
-                            <li class="{{ request()->routeIs('learner.curriculum') ? 'active' : '' }}">
-                                <a href="{{ route('learner.curriculum') }}">
-                                    <i class="icon-layers menu-icon"></i><span class="nav-text">Curriculum</span>
-                                </a>
-                            </li>
-
-                            <li class="{{ request()->routeIs('learner.calendar') ? 'active' : '' }}">
-                                <a href="{{ route('learner.calendar') }}">
-                                    <i class="icon-calendar menu-icon"></i><span class="nav-text">Calendar</span>
-                                </a>
-                            </li>
-                        @endif
-
-                        <li class="{{ request()->routeIs('learner.profile.*') ? 'active' : '' }}">
-                            <a href="{{ route('learner.profile.edit') }}">
-                                <i class="icon-user menu-icon"></i><span class="nav-text">Profile</span>
-                            </a>
-                        </li>
-
-                        <li>
-                            <a href="#">
-                                <i class="icon-question menu-icon"></i><span class="nav-text">Help Center</span>
-                            </a>
-                        </li>
-                    @endif
-                </ul>
-            </div>
-        </div>
-
-        <!-- Content Body -->
-        <div class="content-body">
-            <div class="row page-titles mx-0">
-                <div class="col p-md-0">
-                    <ol class="breadcrumb">
-                        <li class="breadcrumb-item"><a href="javascript:void(0)">@yield('breadcrumb-parent', 'Dashboard')</a></li>
-                        <li class="breadcrumb-item active"><a href="javascript:void(0)">@yield('breadcrumb-current', 'Home')</a></li>
-                    </ol>
-                </div>
-            </div>
-
-            <div class="container-fluid">
-                @yield('content')
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="footer">
-            <div class="copyright">
-                <p>Copyright &copy; {{ date('Y') }} G-Luper Learning Management System. All rights reserved.</p>
+                <hr>
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+                    <button type="submit">Sign out</button>
+                </form>
             </div>
         </div>
     </div>
+</nav>
 
-    <script src="{{ asset('assets/plugins/common/common.min.js') }}"></script>
-    <script src="{{ asset('assets/js/custom.min.js') }}"></script>
-    <script src="{{ asset('assets/js/settings.js') }}"></script>
-    <script src="{{ asset('assets/js/gleek.js') }}"></script>
-    <script src="{{ asset('assets/js/styleSwitcher.js') }}"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+<div class="page-body">
+    @if(session('message'))
+    <div style="padding: 0 2rem; padding-top: 1rem;">
+        <div class="flash flash-{{ session('alert-type') === 'success' ? 'success' : (session('alert-type') === 'warning' ? 'warning' : 'error') }}">
+            {{ session('message') }}
+        </div>
+    </div>
+    @endif
 
-    <script>
-        toastr.options = {
-            "progressBar": true,
-            "positionClass": "toast-top-right",
-            "closeButton": true,
-            "timeOut": "5000"
-        };
+    @yield('content')
+</div>
 
-        @if(Session::has('message'))
-            var type = "{{ Session::get('alert-type','info') }}";
-            switch (type) {
-                case 'info': toastr.info("{{ Session::get('message') }}"); break;
-                case 'success': toastr.success("{{ Session::get('message') }}"); break;
-                case 'warning': toastr.warning("{{ Session::get('message') }}"); break;
-                case 'error': toastr.error("{{ Session::get('message') }}"); break;
-            }
-        @endif
-    </script>
-
-    @stack('scripts')
+@stack('scripts')
 </body>
 </html>

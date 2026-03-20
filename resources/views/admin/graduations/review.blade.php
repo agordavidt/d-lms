@@ -1,295 +1,145 @@
 @extends('layouts.admin')
-
-@section('title', 'Review Graduation Request')
-@section('breadcrumb-parent', 'Graduations')
-@section('breadcrumb-current', 'Review')
+@section('title', 'Review Graduation')
 
 @section('content')
-<div class="row">
-    <div class="col-lg-8">
-        <!-- Learner Information -->
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h4 class="card-title mb-0">Graduation Review</h4>
-                <a href="{{ route('admin.graduations.index') }}" class="btn btn-secondary btn-sm">
-                    Back to Queue
-                </a>
-            </div>
-            <div class="card-body">
-                <div class="row mb-4">
-                    <div class="col-md-6">
-                        <h6 class="text-muted mb-3">Learner Information</h6>
-                        <table class="table table-borderless table-sm">
-                            <tr>
-                                <td width="40%"><strong>Name:</strong></td>
-                                <td>{{ $enrollment->user->name }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Email:</strong></td>
-                                <td>{{ $enrollment->user->email }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Program:</strong></td>
-                                <td>{{ $enrollment->program->name }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Cohort:</strong></td>
-                                <td>{{ $enrollment->cohort->name }}</td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <div class="col-md-6">
-                        <h6 class="text-muted mb-3">Timeline</h6>
-                        <table class="table table-borderless table-sm">
-                            <tr>
-                                <td width="40%"><strong>Enrolled:</strong></td>
-                                <td>{{ $enrollment->enrolled_at->format('M d, Y') }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Duration:</strong></td>
-                                <td>{{ $enrollment->enrolled_at->diffInDays(now()) }} days</td>
-                            </tr>
-                            @if($enrollment->graduation_requested_at)
-                            <tr>
-                                <td><strong>Requested:</strong></td>
-                                <td>{{ $enrollment->graduation_requested_at->format('M d, Y') }}</td>
-                            </tr>
-                            @endif
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Graduation Checklist -->
-                <h6 class="text-muted mb-3">Graduation Requirements</h6>
-                <div class="list-group mb-4">
-                    <div class="list-group-item {{ $eligibility['all_content_complete'] ? 'border-success' : 'border-warning' }}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <strong>Complete All Course Content</strong>
-                                <br><small class="text-muted">{{ $completedWeeks }} of {{ $totalWeeks }} weeks completed</small>
-                            </div>
-                            @if($eligibility['all_content_complete'])
-                                <span class="badge badge-success">Complete</span>
-                            @else
-                                <span class="badge badge-warning">Incomplete</span>
-                            @endif
-                        </div>
-                    </div>
-
-                    <div class="list-group-item {{ $eligibility['all_assessments_taken'] ? 'border-success' : 'border-warning' }}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <strong>Complete All Assessments</strong>
-                                <br><small class="text-muted">{{ $assessmentBreakdown->count() }} assessments taken</small>
-                            </div>
-                            @if($eligibility['all_assessments_taken'])
-                                <span class="badge badge-success">Complete</span>
-                            @else
-                                <span class="badge badge-warning">Incomplete</span>
-                            @endif
-                        </div>
-                    </div>
-
-                    <div class="list-group-item {{ $eligibility['meets_grade_requirement'] ? 'border-success' : 'border-warning' }}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <strong>Achieve Minimum Grade Average</strong>
-                                <br><small class="text-muted">
-                                    Required: {{ $enrollment->program->min_passing_average ?? 70 }}% • 
-                                    Current: {{ $enrollment->final_grade_avg ? number_format($enrollment->final_grade_avg, 1) . '%' : 'N/A' }}
-                                </small>
-                            </div>
-                            @if($eligibility['meets_grade_requirement'])
-                                <span class="badge badge-success">Meets Requirement</span>
-                            @else
-                                <span class="badge badge-warning">Below Requirement</span>
-                            @endif
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Assessment Breakdown -->
-                @if($assessmentBreakdown->count() > 0)
-                <h6 class="text-muted mb-3">Assessment Scores</h6>
-                <div class="table-responsive mb-4">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Week</th>
-                                <th>Score</th>
-                                <th>Attempts</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($assessmentBreakdown as $weekProgress)
-                            <tr>
-                                <td>{{ $weekProgress->moduleWeek->title }}</td>
-                                <td>
-                                    <strong>{{ number_format($weekProgress->assessment_score, 1) }}%</strong>
-                                </td>
-                                <td>{{ $weekProgress->assessment_attempts }}</td>
-                                <td>
-                                    @if($weekProgress->assessment_passed)
-                                        <span class="badge badge-success">Passed</span>
-                                    @else
-                                        <span class="badge badge-secondary">Recorded</span>
-                                    @endif
-                                </td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-                @endif
-
-                <!-- Action Buttons -->
-                <div class="border-top pt-4">
-                    <form action="{{ route('admin.graduations.approve', $enrollment->id) }}" method="POST" 
-                          id="approveForm" class="d-inline">
-                        @csrf
-                        <button type="submit" class="btn btn-success btn-lg" 
-                                @if(!$enrollment->isEligibleForGraduation()) disabled @endif>
-                            Approve Graduation
-                        </button>
-                    </form>
-
-                    <button type="button" class="btn btn-danger btn-lg ml-2" 
-                            data-toggle="modal" data-target="#rejectModal">
-                        Reject Request
-                    </button>
-
-                    @if(!$enrollment->isEligibleForGraduation())
-                    <div class="alert alert-warning mt-3 mb-0">
-                        <strong>Note:</strong> This learner does not meet all graduation requirements. 
-                        Please review the checklist above before approving.
-                    </div>
-                    @endif
-                </div>
-            </div>
-        </div>
+<div class="page-header">
+    <div>
+        <div class="breadcrumb"><a href="{{ route('admin.graduations.index') }}">Graduations</a></div>
+        <h1>{{ $enrollment->user->first_name }} {{ $enrollment->user->last_name }}</h1>
     </div>
+    <div style="display: flex; gap: 0.5rem;">
+        <button onclick="openModal('approve-modal')" class="btn btn-primary">Approve</button>
+        <button onclick="openModal('reject-modal')" class="btn btn-danger">Reject</button>
+    </div>
+</div>
 
-    <!-- Sidebar -->
-    <div class="col-lg-4">
-        <!-- Final Grade Display -->
-        <div class="card">
-            <div class="card-header">
-                <h4 class="card-title mb-0">Final Grade</h4>
-            </div>
-            <div class="card-body text-center">
-                @if($enrollment->final_grade_avg)
-                <div style="margin: 20px 0;">
-                    <div style="width: 120px; height: 120px; margin: 0 auto; 
-                                border-radius: 50%; display: flex; align-items: center; 
-                                justify-content: center; flex-direction: column; 
-                                border: 6px solid {{ $eligibility['meets_grade_requirement'] ? '#28a745' : '#ffc107' }}; 
-                                background: {{ $eligibility['meets_grade_requirement'] ? '#f1f8f4' : '#fff9e6' }};">
-                        <div style="font-size: 36px; font-weight: 700; 
-                                    color: {{ $eligibility['meets_grade_requirement'] ? '#2e7d32' : '#f57c00' }};">
-                            {{ number_format($enrollment->final_grade_avg, 1) }}%
-                        </div>
-                        <small style="color: #666;">Final Grade</small>
-                    </div>
-                </div>
-                <p class="text-muted mb-0">
-                    @if($eligibility['meets_grade_requirement'])
-                        <span class="text-success">Meets Requirement</span>
-                    @else
-                        Minimum: {{ $enrollment->program->min_passing_average ?? 70 }}%
-                    @endif
-                </p>
-                @else
-                <p class="text-muted">No grade available</p>
-                @endif
-            </div>
-        </div>
+<div class="container section">
+<div style="display: grid; grid-template-columns: 1fr 280px; gap: 2rem; align-items: start;">
 
-        <!-- Quick Stats -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h4 class="card-title mb-0">Completion Stats</h4>
-            </div>
-            <div class="card-body">
-                <div class="mb-3 pb-3 border-bottom">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="text-muted">Weeks Completed</span>
-                        <h4 class="mb-0">{{ $completedWeeks }}/{{ $totalWeeks }}</h4>
-                    </div>
-                </div>
-                <div class="mb-3 pb-3 border-bottom">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="text-muted">Assessments Taken</span>
-                        <h4 class="mb-0">{{ $assessmentBreakdown->count() }}</h4>
-                    </div>
-                </div>
-                @if($enrollment->weekly_assessment_avg)
+    {{-- Progress breakdown --}}
+    <div>
+        <h2 style="font-family: 'Source Serif 4', serif; font-size: 1.05rem; margin-bottom: 1rem;">Assessment Breakdown</h2>
+
+        @forelse($assessmentBreakdown as $wp)
+        <div class="card" style="margin-bottom: 0.6rem;">
+            <div class="card-body" style="padding: 0.85rem 1.1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
                 <div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="text-muted">Assessment Average</span>
-                        <h4 class="mb-0">{{ number_format($enrollment->weekly_assessment_avg, 1) }}%</h4>
+                    <div style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">Week {{ $wp->moduleWeek->week_number }}</div>
+                    <div style="font-weight: 500; font-size: 0.875rem;">{{ $wp->moduleWeek->title }}</div>
+                </div>
+                <div style="display: flex; gap: 1.5rem; text-align: center; flex-shrink: 0;">
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.9rem;">{{ number_format($wp->assessment_score, 0) }}%</div>
+                        <div class="text-muted text-small">Best score</div>
+                    </div>
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.9rem;">{{ $wp->assessment_attempts }}</div>
+                        <div class="text-muted text-small">Attempts</div>
+                    </div>
+                    <div>
+                        <span class="badge {{ $wp->assessment_passed ? 'badge-green' : 'badge-red' }}">
+                            {{ $wp->assessment_passed ? 'Passed' : 'Failed' }}
+                        </span>
                     </div>
                 </div>
-                @endif
+            </div>
+        </div>
+        @empty
+        <div class="card card-body" style="color: var(--muted); text-align: center;">No assessment data.</div>
+        @endforelse
+    </div>
+
+    {{-- Summary card --}}
+    <div>
+        <div class="card card-body" style="margin-bottom: 1rem;">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-family: 'Source Serif 4', serif;">Eligibility</div>
+            <div style="display: grid; gap: 0.75rem; font-size: 0.875rem;">
+                @foreach([
+                    'all_content_complete'    => 'All content completed',
+                    'all_assessments_passed'  => 'All assessments passed',
+                    'meets_grade_requirement' => 'Meets grade requirement',
+                ] as $key => $label)
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>{{ $label }}</span>
+                    <span style="color: {{ $eligibility[$key] ? 'var(--success)' : 'var(--error)' }}; font-weight: 600;">
+                        {{ $eligibility[$key] ? '✓' : '✗' }}
+                    </span>
+                </div>
+                @endforeach
             </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h4 class="card-title mb-0">Quick Actions</h4>
-            </div>
-            <div class="card-body">
-                <a href="{{ route('admin.learners.show', $enrollment->user_id) }}" 
-                   class="btn btn-secondary btn-block mb-2" target="_blank">
-                    View Full Profile
-                </a>
-                <a href="{{ route('admin.graduations.index') }}" 
-                   class="btn btn-light btn-block">
-                    Back to Queue
-                </a>
+        <div class="card card-body">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-family: 'Source Serif 4', serif;">Summary</div>
+            <div style="display: grid; gap: 0.6rem; font-size: 0.875rem;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="text-muted">Weeks completed</span>
+                    <span>{{ $completedWeeks }} / {{ $totalWeeks }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="text-muted">Grade average</span>
+                    <span style="font-weight: 600;">{{ $enrollment->final_grade_avg ? number_format($enrollment->final_grade_avg, 1) . '%' : '—' }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="text-muted">Assessment avg</span>
+                    <span>{{ $enrollment->weekly_assessment_avg ? number_format($enrollment->weekly_assessment_avg, 1) . '%' : '—' }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="text-muted">Program</span>
+                    <span>{{ $enrollment->program->name }}</span>
+                </div>
             </div>
         </div>
+    </div>
+
+</div>
+</div>
+
+{{-- Approve modal --}}
+<div class="modal-overlay" id="approve-modal">
+    <div class="modal" style="max-width: 440px;">
+        <button class="modal-close" onclick="closeModal('approve-modal')">&#215;</button>
+        <h2>Approve Graduation</h2>
+        <p style="font-size: 0.875rem; color: var(--muted); margin-bottom: 1.25rem;">
+            A certificate key will be generated for {{ $enrollment->user->first_name }}.
+        </p>
+        <form method="POST" action="{{ route('admin.graduations.approve', $enrollment->id) }}">
+            @csrf
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" class="btn btn-primary">Confirm Approval</button>
+                <button type="button" onclick="closeModal('approve-modal')" class="btn btn-ghost">Cancel</button>
+            </div>
+        </form>
     </div>
 </div>
 
-<!-- Reject Modal -->
-<div class="modal fade" id="rejectModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
-        <div class="modal-content">
-            <form action="{{ route('admin.graduations.reject', $enrollment->id) }}" method="POST">
-                @csrf
-                <div class="modal-header">
-                    <h5 class="modal-title">Reject Graduation Request</h5>
-                    <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-                </div>
-                <div class="modal-body">
-                    <p>Please provide a reason for rejecting this graduation request. 
-                       The learner will be notified with this message.</p>
-                    
-                    <div class="form-group">
-                        <label>Reason for Rejection <span class="text-danger">*</span></label>
-                        <textarea class="form-control" name="reason" rows="4" 
-                                  placeholder="Explain why the graduation request is being rejected..." required></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger">Reject Request</button>
-                </div>
-            </form>
-        </div>
+{{-- Reject modal --}}
+<div class="modal-overlay" id="reject-modal">
+    <div class="modal" style="max-width: 440px;">
+        <button class="modal-close" onclick="closeModal('reject-modal')">&#215;</button>
+        <h2>Reject Graduation</h2>
+        <form method="POST" action="{{ route('admin.graduations.reject', $enrollment->id) }}">
+            @csrf
+            <div class="form-group">
+                <label class="form-label">Reason <span style="color:var(--error)">*</span></label>
+                <textarea name="reason" class="form-control" rows="4" required
+                          placeholder="Explain why this request is being rejected..."></textarea>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" class="btn btn-danger">Reject</button>
+                <button type="button" onclick="closeModal('reject-modal')" class="btn btn-ghost">Cancel</button>
+            </div>
+        </form>
     </div>
 </div>
+
 @endsection
 
 @push('scripts')
 <script>
-document.getElementById('approveForm').addEventListener('submit', function(e) {
-    if (!confirm('Are you sure you want to approve this graduation? The learner will be notified and a certificate will be generated.')) {
-        e.preventDefault();
-    }
-});
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(el =>
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); }));
 </script>
 @endpush

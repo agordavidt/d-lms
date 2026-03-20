@@ -9,13 +9,14 @@ use App\Models\LiveSession;
 use App\Models\WeekContent;
 use App\Models\WeekProgress;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 
 class LearningController extends Controller
 {
     /**
      * Main learning view for a specific enrollment.
-     * Called from My Learning page — enrollmentId is now explicit.
+     *
+     * CHANGED: publishedContents() → contents() (no status column on week_contents)
+     *          publishedModules()  → modules()   (no status column on program_modules)
      */
     public function index($enrollmentId)
     {
@@ -23,7 +24,7 @@ class LearningController extends Controller
             $user       = auth()->user();
             $enrollment = $this->resolveEnrollment($user, $enrollmentId);
 
-            // ── Current week ─────────────────────────────────────────────
+            // ── Current week (first unlocked, not yet completed) ───────────
             $currentWeekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
                 ->where('is_unlocked', true)
                 ->where('is_completed', false)
@@ -32,12 +33,12 @@ class LearningController extends Controller
                 ->first();
 
             if (!$currentWeekProgress) {
-                $publishedWeekCount = $enrollment->program->getPublishedWeeks()->count();
-                $completedCount     = WeekProgress::where('enrollment_id', $enrollment->id)
+                $totalWeeks     = $enrollment->program->getPublishedWeeks()->count();
+                $completedCount = WeekProgress::where('enrollment_id', $enrollment->id)
                     ->where('is_completed', true)
                     ->count();
 
-                if ($publishedWeekCount > 0 && $completedCount >= $publishedWeekCount) {
+                if ($totalWeeks > 0 && $completedCount >= $totalWeeks) {
                     return view('learner.learning.completed', compact('enrollment'));
                 }
 
@@ -55,8 +56,9 @@ class LearningController extends Controller
                 },
             ]);
 
-            // ── Contents for current week ─────────────────────────────────
-            $contents = $currentWeek->publishedContents()
+            // ── Contents for the current week ─────────────────────────────
+            // CHANGED: publishedContents() → contents()->orderBy('order')
+            $contents = $currentWeek->contents()
                 ->with(['contentProgress' => function ($q) use ($user, $enrollment) {
                     $q->where('user_id', $user->id)
                       ->where('enrollment_id', $enrollment->id);
@@ -70,7 +72,6 @@ class LearningController extends Controller
                     'id'             => $content->id,
                     'title'          => $content->title,
                     'type'           => $content->content_type,
-                    'description'    => $content->description,
                     'video_url'      => $content->video_url,
                     'video_duration' => $content->video_duration_minutes,
                     'file_url'       => $content->file_url,
@@ -80,7 +81,7 @@ class LearningController extends Controller
                 ];
             });
 
-            // ── All week progress for sidebar navigation ─────────────────
+            // ── All week progress for sidebar navigation ──────────────────
             $allWeekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
                 ->with('moduleWeek.programModule')
                 ->orderBy('created_at')
@@ -110,6 +111,10 @@ class LearningController extends Controller
 
     /**
      * Show a specific week's content (if unlocked).
+     *
+     * CHANGED: publishedContents() → contents()
+     *          Sessions query: was cohort_id + week_id → now program_id only
+     *          (week_id column removed from live_sessions; sessions are program-level)
      */
     public function showWeek($enrollmentId, $weekId)
     {
@@ -128,7 +133,8 @@ class LearningController extends Controller
 
             $week = $weekProgress->moduleWeek()->with('programModule')->firstOrFail();
 
-            $contents = $week->publishedContents()
+            // CHANGED: publishedContents() → contents()
+            $contents = $week->contents()
                 ->with(['contentProgress' => function ($q) use ($user, $enrollment) {
                     $q->where('user_id', $user->id)
                       ->where('enrollment_id', $enrollment->id);
@@ -136,8 +142,9 @@ class LearningController extends Controller
                 ->orderBy('order')
                 ->get();
 
-            $sessions = LiveSession::where('cohort_id', $enrollment->cohort_id)
-                ->where('week_id', $week->id)
+            // CHANGED: sessions now belong to the program, not a cohort + week
+            $sessions = LiveSession::where('program_id', $enrollment->program_id)
+                ->upcoming()
                 ->orderBy('start_time')
                 ->get();
 
@@ -157,14 +164,13 @@ class LearningController extends Controller
     public function showContent($contentId)
     {
         try {
-            $user       = auth()->user();
-            // Resolve from content — find the correct enrollment
-            $content    = WeekContent::with(['moduleWeek.programModule'])->findOrFail($contentId);
-            $programId  = $content->moduleWeek->programModule->program_id;
+            $user      = auth()->user();
+            $content   = WeekContent::with(['moduleWeek.programModule'])->findOrFail($contentId);
+            $programId = $content->moduleWeek->programModule->program_id;
 
             $enrollment = Enrollment::where('user_id', $user->id)
                 ->where('program_id', $programId)
-                ->where('status', 'active')
+                ->whereIn('status', ['active', 'completed'])
                 ->firstOrFail();
 
             $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
@@ -206,10 +212,10 @@ class LearningController extends Controller
             $weekProgress->recalculateCompletion();
 
             return response()->json([
-                'success'          => true,
-                'message'          => 'Marked as complete!',
-                'week_completion'  => $weekProgress->progress_percentage,
-                'week_completed'   => $weekProgress->is_completed,
+                'success'         => true,
+                'message'         => 'Marked as complete!',
+                'week_completion' => $weekProgress->progress_percentage,
+                'week_completed'  => $weekProgress->is_completed,
             ]);
 
         } catch (\Exception $e) {
@@ -252,11 +258,175 @@ class LearningController extends Controller
         }
     }
 
-    // ── Private helpers ─────────────────────────────────────────────────────
+    /**
+     * AJAX — week contents for the inline player sidebar.
+     *
+     * CHANGED: publishedContents() → contents()
+     *          description removed from map (no description column any more)
+     *          passing_score → pass_percentage (correct DB column name)
+     */
+    public function getWeekContents($enrollmentId, $weekId)
+    {
+        try {
+            $user       = auth()->user();
+            $enrollment = $this->resolveEnrollment($user, $enrollmentId);
+
+            $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+                ->where('module_week_id', $weekId)
+                ->firstOrFail();
+
+            if (!$weekProgress->is_unlocked) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This week is not yet unlocked.',
+                ], 403);
+            }
+
+            $week = $weekProgress->moduleWeek()
+                ->with(['programModule', 'assessment.questions'])
+                ->firstOrFail();
+
+            // CHANGED: publishedContents() → contents()
+            $contents = $week->contents()
+                ->with(['contentProgress' => function ($q) use ($user, $enrollment) {
+                    $q->where('user_id', $user->id)
+                      ->where('enrollment_id', $enrollment->id);
+                }])
+                ->orderBy('order')
+                ->get()
+                ->map(function ($content) {
+                    $progress = $content->contentProgress->first();
+                    return [
+                        'id'             => $content->id,
+                        'title'          => $content->title,
+                        'type'           => $content->content_type,
+                        'video_url'      => $content->video_url,
+                        'video_duration' => $content->video_duration_minutes,
+                        'file_url'       => $content->file_url,
+                        'external_url'   => $content->external_url,
+                        'text_content'   => $content->text_content,
+                        'is_completed'   => $progress ? $progress->is_completed : false,
+                    ];
+                });
+
+            // Assessment summary — CHANGED: passing_score → pass_percentage
+            $assessment = null;
+            if ($week->assessment) {
+                $submittedAttempt = $week->assessment->attempts()
+                    ->where('user_id', $user->id)
+                    ->where('enrollment_id', $enrollment->id)
+                    ->where('status', 'submitted')
+                    ->latest()
+                    ->first();
+
+                $assessment = [
+                    'id'             => $week->assessment->id,
+                    'title'          => $week->assessment->title,
+                    'question_count' => $week->assessment->questions->count(),
+                    'is_submitted'   => (bool) $submittedAttempt,
+                    'score'          => $submittedAttempt?->percentage,    // correct column
+                    'passing_score'  => $week->assessment->pass_percentage, // correct column
+                ];
+            }
+
+            return response()->json([
+                'success'    => true,
+                'contents'   => $contents,
+                'assessment' => $assessment,
+                'week'       => [
+                    'id'     => $week->id,
+                    'title'  => $week->title,
+                    'module' => $week->programModule->title ?? '',
+                    'number' => $week->week_number,
+                ],
+            ]);
+
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            return response()->json(['success' => false, 'message' => 'Access denied.'], 403);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Could not load week content.'], 500);
+        }
+    }
 
     /**
-     * Resolve and authorize an enrollment for the current user.
-     * Throws AuthorizationException if the enrollment doesn't belong to the user.
+     * AJAX — full assessment data for the inline player.
+     *
+     * CHANGED: description removed from response (no description column on assessments)
+     *          pass_percentage used throughout (correct DB column)
+     */
+    public function getAssessmentData($enrollmentId, $assessmentId)
+    {
+        try {
+            $user       = auth()->user();
+            $enrollment = $this->resolveEnrollment($user, $enrollmentId);
+
+            $assessment = \App\Models\Assessment::with('questions')->findOrFail($assessmentId);
+
+            $week         = $assessment->moduleWeek;
+            $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+                ->where('module_week_id', $week->id)
+                ->firstOrFail();
+
+            if (!$weekProgress->is_unlocked) {
+                return response()->json(['success' => false, 'message' => 'Assessment not yet available.'], 403);
+            }
+
+            // Latest submitted attempt
+            $latestAttempt = $assessment->attempts()
+                ->where('user_id', $user->id)
+                ->where('enrollment_id', $enrollment->id)
+                ->where('status', 'submitted')
+                ->latest()
+                ->first();
+
+            // In-progress attempt (not yet submitted)
+            $inProgressAttempt = $assessment->attempts()
+                ->where('user_id', $user->id)
+                ->where('enrollment_id', $enrollment->id)
+                ->where('status', 'in_progress')
+                ->latest()
+                ->first();
+
+            $questions = $assessment->questions->map(fn ($q) => [
+                'id'      => $q->id,
+                'text'    => $q->question_text,
+                'type'    => $q->question_type,
+                'options' => array_values($q->options ?? []),
+                'points'  => $q->points ?? 1,
+            ]);
+
+            $passMark = $assessment->pass_percentage ?? 70;
+
+            return response()->json([
+                'success'    => true,
+                'assessment' => [
+                    'id'            => $assessment->id,
+                    'title'         => $assessment->title,
+                    'passing_score' => $passMark,
+                    'time_limit'    => $assessment->time_limit_minutes,
+                ],
+                'questions'            => $questions,
+                'latest_attempt'       => $latestAttempt ? [
+                    'id'           => $latestAttempt->id,
+                    'score'        => (float) $latestAttempt->percentage,
+                    'passed'       => (float) $latestAttempt->percentage >= $passMark,
+                    'submitted_at' => $latestAttempt->submitted_at?->diffForHumans(),
+                ] : null,
+                'in_progress_attempt'  => $inProgressAttempt ? [
+                    'id' => $inProgressAttempt->id,
+                ] : null,
+                'enrollment_id'        => $enrollment->id,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Could not load assessment.'], 500);
+        }
+    }
+
+    // ── Private helpers ────────────────────────────────────────────────────────
+
+    /**
+     * Resolve and authorise an enrollment for the current user.
      */
     private function resolveEnrollment($user, $enrollmentId): Enrollment
     {
@@ -288,12 +458,17 @@ class LearningController extends Controller
     }
 
     /**
-     * Calculate summary learning statistics for a user's enrollment.
+     * Summary learning stats for the player header.
+     *
+     * CHANGED: removed status=published filters on modules/weeks/contents
+     *          (no status columns in new schema — program status is the single gate)
+     *          sessions now joined through program_id, not cohort_id
      */
     private function calculateLearningStats($user, Enrollment $enrollment): array
     {
-        $totalWeeks = $enrollment->program->publishedModules()
-            ->withCount(['weeks' => fn ($q) => $q->where('status', 'published')])
+        // CHANGED: modules() has no status filter; all modules visible when program is active
+        $totalWeeks = $enrollment->program->modules()
+            ->withCount('weeks')
             ->get()
             ->sum('weeks_count');
 
@@ -301,9 +476,10 @@ class LearningController extends Controller
             ->where('is_completed', true)
             ->count();
 
+        // CHANGED: removed ->where('status', 'published') on both queries
         $totalContents = WeekContent::whereHas('moduleWeek.programModule', fn ($q) =>
             $q->where('program_id', $enrollment->program_id)
-        )->where('status', 'published')->where('is_required', true)->count();
+        )->where('is_required', true)->count();
 
         $completedContents = ContentProgress::where('user_id', $user->id)
             ->where('enrollment_id', $enrollment->id)
@@ -311,188 +487,27 @@ class LearningController extends Controller
             ->whereHas('weekContent', fn ($q) => $q->where('is_required', true))
             ->count();
 
-        $totalSessions = LiveSession::where('cohort_id', $enrollment->cohort_id)
+        // CHANGED: where('program_id', ...) instead of where('cohort_id', ...)
+        $totalSessions = LiveSession::where('program_id', $enrollment->program_id)
             ->where('status', 'completed')
             ->count();
 
-        $attendedSessions = LiveSession::where('cohort_id', $enrollment->cohort_id)
+        $attendedSessions = LiveSession::where('program_id', $enrollment->program_id)
             ->where('status', 'completed')
             ->whereJsonContains('attendees', $user->id)
             ->count();
 
         return [
-            'overall_progress'  => $totalWeeks > 0 ? round(($completedWeeks / $totalWeeks) * 100, 1) : 0,
-            'completed_weeks'   => $completedWeeks,
-            'total_weeks'       => $totalWeeks,
+            'overall_progress'   => $totalWeeks > 0
+                                    ? round(($completedWeeks / $totalWeeks) * 100, 1) : 0,
+            'completed_weeks'    => $completedWeeks,
+            'total_weeks'        => $totalWeeks,
             'completed_contents' => $completedContents,
-            'total_contents'    => $totalContents,
-            'attended_sessions' => $attendedSessions,
-            'total_sessions'    => $totalSessions,
-            'attendance_rate'   => $totalSessions > 0 ? round(($attendedSessions / $totalSessions) * 100, 1) : 0,
+            'total_contents'     => $totalContents,
+            'attended_sessions'  => $attendedSessions,
+            'total_sessions'     => $totalSessions,
+            'attendance_rate'    => $totalSessions > 0
+                                    ? round(($attendedSessions / $totalSessions) * 100, 1) : 0,
         ];
     }
-
-    public function getWeekContents($enrollmentId, $weekId)
-    {
-        try {
-            $user       = auth()->user();
-            $enrollment = $this->resolveEnrollment($user, $enrollmentId);
-
-            $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
-                ->where('module_week_id', $weekId)
-                ->firstOrFail();
-
-            if (!$weekProgress->is_unlocked) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This week is not yet unlocked.',
-                ], 403);
-            }
-
-            $week = $weekProgress->moduleWeek()
-                ->with(['programModule', 'assessment.questions'])
-                ->firstOrFail();
-
-            $contents = $week->publishedContents()
-                ->with(['contentProgress' => function ($q) use ($user, $enrollment) {
-                    $q->where('user_id', $user->id)
-                      ->where('enrollment_id', $enrollment->id);
-                }])
-                ->orderBy('order')
-                ->get()
-                ->map(function ($content) {
-                    $progress = $content->contentProgress->first();
-                    return [
-                        'id'             => $content->id,
-                        'title'          => $content->title,
-                        'type'           => $content->content_type,
-                        'description'    => $content->description,
-                        'video_url'      => $content->video_url,
-                        'video_duration' => $content->video_duration_minutes,
-                        'file_url'       => $content->file_url,
-                        'external_url'   => $content->external_url,
-                        'text_content'   => $content->text_content,
-                        'is_completed'   => $progress ? $progress->is_completed : false,
-                    ];
-                });
-
-            // Assessment summary for the sidebar item
-            $assessment = null;
-            if ($week->assessment) {
-                $submittedAttempt = $week->assessment->attempts()
-                    ->where('user_id', $user->id)
-                    ->where('enrollment_id', $enrollment->id)
-                    ->where('status', 'submitted')
-                    ->latest()
-                    ->first();
-
-                $assessment = [
-                    'id'             => $week->assessment->id,
-                    'title'          => $week->assessment->title ?? 'Week Assessment',
-                    'question_count' => $week->assessment->questions->count(),
-                    'is_submitted'   => (bool) $submittedAttempt,
-                    'score'          => $submittedAttempt?->score,
-                    'passing_score'  => $week->assessment->passing_score ?? 70,
-                ];
-            }
-
-            return response()->json([
-                'success'    => true,
-                'contents'   => $contents,
-                'assessment' => $assessment,
-                'week'       => [
-                    'id'     => $week->id,
-                    'title'  => $week->title,
-                    'module' => $week->programModule->title ?? '',
-                    'number' => $week->week_number,
-                ],
-            ]);
-
-        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
-            return response()->json(['success' => false, 'message' => 'Access denied.'], 403);
-        } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => 'Could not load week content.'], 500);
-        }
-    }
-
-    /**
-     * AJAX — return full assessment data for rendering inline in the player.
-     * Called once when the learner clicks "Week Assessment" in the sidebar.
-     *
-     * Route: GET /learner/learning/{enrollmentId}/assessment/{assessmentId}
-     * Name:  learner.learning.assessment-data
-     */
-     public function getAssessmentData($enrollmentId, $assessmentId)
-        {
-            try {
-                $user       = auth()->user();
-                $enrollment = $this->resolveEnrollment($user, $enrollmentId);
-    
-                $assessment = \App\Models\Assessment::with('questions')->findOrFail($assessmentId);
-    
-                $week = $assessment->moduleWeek;
-                $weekProgress = \App\Models\WeekProgress::where('enrollment_id', $enrollment->id)
-                    ->where('module_week_id', $week->id)
-                    ->firstOrFail();
-    
-                if (!$weekProgress->is_unlocked) {
-                    return response()->json(['success' => false, 'message' => 'Assessment not yet available.'], 403);
-                }
-    
-                // Latest submitted attempt (if any)
-                $latestAttempt = $assessment->attempts()
-                    ->where('user_id', $user->id)
-                    ->where('enrollment_id', $enrollment->id)
-                    ->where('status', 'submitted')
-                    ->latest()
-                    ->first();
-    
-                // In-progress attempt (not yet submitted)
-                $inProgressAttempt = $assessment->attempts()
-                    ->where('user_id', $user->id)
-                    ->where('enrollment_id', $enrollment->id)
-                    ->where('status', 'in_progress')
-                    ->latest()
-                    ->first();
-    
-                $questions = $assessment->questions->map(function ($q) {
-                    return [
-                        'id'      => $q->id,
-                        'text'    => $q->question_text,
-                        'type'    => $q->question_type,  // multiple_choice | true_false | short_answer
-                        'options' => array_values($q->options ?? []),  // ensure indexed array for JS
-                        'points'  => $q->points ?? 1,
-                    ];
-                });
-    
-                // FIX #4: use pass_percentage (the actual DB column), not passing_score
-                $passMark = $assessment->pass_percentage ?? 70;
-    
-                return response()->json([
-                    'success'    => true,
-                    'assessment' => [
-                        'id'            => $assessment->id,
-                        'title'         => $assessment->title ?? 'Week Assessment',
-                        'description'   => $assessment->description ?? '',
-                        'passing_score' => $passMark,
-                        'time_limit'    => $assessment->time_limit_minutes ?? null,
-                    ],
-                    'questions'           => $questions,
-                    'latest_attempt'      => $latestAttempt ? [
-                        'id'           => $latestAttempt->id,
-                        // FIX: use ->percentage (the scored float column), not ->score
-                        'score'        => (float) $latestAttempt->percentage,
-                        'passed'       => (float) $latestAttempt->percentage >= $passMark,
-                        'submitted_at' => $latestAttempt->submitted_at?->diffForHumans(),
-                    ] : null,
-                    'in_progress_attempt' => $inProgressAttempt ? [
-                        'id' => $inProgressAttempt->id,
-                    ] : null,
-                    'enrollment_id'       => $enrollment->id,
-                ]);
-    
-            } catch (\Exception $e) {
-                return response()->json(['success' => false, 'message' => 'Could not load assessment.'], 500);
-            }
-        }
 }

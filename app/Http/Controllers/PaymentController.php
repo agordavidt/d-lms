@@ -14,77 +14,77 @@ class PaymentController extends Controller
 {
     // Set to true when ready to use real Flutterwave
     private $useRealPayment = false;
-    
+
     /**
-     * Initiate payment for a program enrollment
+     * Initiate payment for a program enrollment.
+     *
+     * CHANGED: cohort_id removed from validation and enrollment creation.
+     * The cohort is auto-assigned on payment confirmation via activateEnrollment().
      */
     public function initiatePayment(Request $request)
     {
         $request->validate([
-            'program_id' => 'required|exists:programs,id',
-            'cohort_id' => 'required|exists:cohorts,id',
+            'program_id'   => 'required|exists:programs,id',
             'payment_plan' => 'required|in:one-time,installment',
         ]);
 
         try {
-            $user = auth()->user();
+            $user    = auth()->user();
             $program = Program::findOrFail($request->program_id);
 
-            // Check if already enrolled
+            // Check if already enrolled in this program
             $existingEnrollment = Enrollment::where('user_id', $user->id)
                 ->where('program_id', $program->id)
-                ->where('cohort_id', $request->cohort_id)
                 ->first();
 
             if ($existingEnrollment) {
                 return back()->with([
-                    'message' => 'You are already enrolled in this program!',
-                    'alert-type' => 'warning'
+                    'message'    => 'You are already enrolled in this program!',
+                    'alert-type' => 'warning',
                 ]);
             }
 
             // Calculate payment amount
-            $amount = $program->price;
+            $amount   = $program->price;
             $discount = 0;
-            
+
             if ($request->payment_plan === 'one-time') {
-                // 10% discount for one-time payment
                 $discount = ($amount * $program->discount_percentage) / 100;
             } else {
-                // First installment (50%)
+                // First installment — 50%
                 $amount = $amount / 2;
             }
 
             $finalAmount = $amount - $discount;
 
-            // Create enrollment (pending until payment)
+            // Create enrollment as pending — cohort_id is null until payment confirmed
             $enrollment = Enrollment::create([
-                'user_id' => $user->id,
+                'user_id'    => $user->id,
                 'program_id' => $program->id,
-                'cohort_id' => $request->cohort_id,
-                'status' => 'pending',
+                'cohort_id'  => null,   // assigned automatically in activateEnrollment()
+                'status'     => 'pending',
                 'enrolled_at' => now(),
             ]);
 
             // Create payment record
             $payment = Payment::create([
-                'user_id' => $user->id,
-                'enrollment_id' => $enrollment->id,
-                'program_id' => $program->id,
-                'reference' => 'REF-' . strtoupper(Str::random(10)),
-                'amount' => $amount,
-                'discount_amount' => $discount,
-                'final_amount' => $finalAmount,
-                'payment_plan' => $request->payment_plan,
+                'user_id'            => $user->id,
+                'enrollment_id'      => $enrollment->id,
+                'program_id'         => $program->id,
+                'reference'          => 'REF-' . strtoupper(Str::random(10)),
+                'amount'             => $amount,
+                'discount_amount'    => $discount,
+                'final_amount'       => $finalAmount,
+                'payment_plan'       => $request->payment_plan,
                 'installment_number' => $request->payment_plan === 'installment' ? 1 : null,
-                'remaining_balance' => $request->payment_plan === 'installment' ? ($program->price / 2) : 0,
+                'remaining_balance'  => $request->payment_plan === 'installment' ? ($program->price / 2) : 0,
                 'installment_status' => $request->payment_plan === 'installment' ? 'partial' : null,
-                'status' => 'pending',
-                'metadata' => [
+                'status'             => 'pending',
+                'metadata'           => [
                     'program_name' => $program->name,
-                    'user_name' => $user->name,
-                    'user_email' => $user->email,
-                ]
+                    'user_name'    => $user->name,
+                    'user_email'   => $user->email,
+                ],
             ]);
 
             if ($this->useRealPayment) {
@@ -95,8 +95,8 @@ class PaymentController extends Controller
 
         } catch (\Exception $e) {
             return back()->with([
-                'message' => 'Payment initiation failed: ' . $e->getMessage(),
-                'alert-type' => 'error'
+                'message'    => 'Payment initiation failed: ' . $e->getMessage(),
+                'alert-type' => 'error',
             ]);
         }
     }
@@ -117,53 +117,53 @@ class PaymentController extends Controller
         $curl = curl_init();
 
         $data = [
-            "tx_ref" => $payment->reference,
-            "amount" => $payment->final_amount,
-            "currency" => "NGN",
-            "redirect_url" => route('payment.callback'),
-            "payment_options" => "card,banktransfer,ussd",
-            "customer" => [
-                "email" => $user->email,
-                "phonenumber" => $user->phone ?? '',
-                "name" => $user->name
+            'tx_ref'          => $payment->reference,
+            'amount'          => $payment->final_amount,
+            'currency'        => 'NGN',
+            'redirect_url'    => route('payment.callback'),
+            'payment_options' => 'card,banktransfer,ussd',
+            'customer'        => [
+                'email'       => $user->email,
+                'phonenumber' => $user->phone ?? '',
+                'name'        => $user->name,
             ],
-            "customizations" => [
-                "title" => "G-Luper Program Enrollment",
-                "description" => "Payment for " . $payment->metadata['program_name'],
-                "logo" => asset('images/logo.png')
-            ]
+            'customizations'  => [
+                'title'       => 'G-Luper Program Enrollment',
+                'description' => 'Payment for ' . $payment->metadata['program_name'],
+                'logo'        => asset('images/logo.png'),
+            ],
         ];
 
         curl_setopt_array($curl, [
-            CURLOPT_URL => "https://api.flutterwave.com/v3/payments",
+            CURLOPT_URL            => 'https://api.flutterwave.com/v3/payments',
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CUSTOMREQUEST => "POST",
-            CURLOPT_POSTFIELDS => json_encode($data),
-            CURLOPT_HTTPHEADER => [
-                "Authorization: Bearer " . config('services.flutterwave.secret_key'),
-                "Content-Type: application/json"
+            CURLOPT_CUSTOMREQUEST  => 'POST',
+            CURLOPT_POSTFIELDS     => json_encode($data),
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . config('services.flutterwave.secret_key'),
+                'Content-Type: application/json',
             ],
         ]);
 
         $response = curl_exec($curl);
-        $err = curl_error($curl);
+        $err      = curl_error($curl);
         curl_close($curl);
 
         if ($err) {
-            throw new \Exception("Payment gateway error: " . $err);
+            throw new \Exception('Payment gateway error: ' . $err);
         }
 
         $result = json_decode($response);
 
         if ($result->status === 'success') {
             return redirect($result->data->link);
-        } else {
-            throw new \Exception("Payment initialization failed");
         }
+
+        throw new \Exception('Payment initialization failed');
     }
 
     /**
-     * Handle payment callback
+     * Handle payment callback (routes to real or simulated handler)
      */
     public function callback(Request $request)
     {
@@ -175,7 +175,10 @@ class PaymentController extends Controller
     }
 
     /**
-     * Handle simulated payment callback
+     * Handle simulated payment callback.
+     *
+     * CHANGED: replaced direct enrollment.status update + cohort.incrementEnrollment()
+     * with activateEnrollment(), which auto-finds or creates the default cohort.
      */
     private function handleSimulatedCallback(Request $request)
     {
@@ -184,77 +187,66 @@ class PaymentController extends Controller
 
             DB::beginTransaction();
 
-            // Update payment status
             $payment->update([
-                'status' => 'successful',
-                'paid_at' => now(),
+                'status'         => 'successful',
+                'paid_at'        => now(),
                 'payment_method' => 'simulation',
-                'metadata' => array_merge($payment->metadata ?? [], [
-                    'simulated' => true,
-                    'completed_at' => now()->toDateTimeString()
-                ])
+                'metadata'       => array_merge($payment->metadata ?? [], [
+                    'simulated'    => true,
+                    'completed_at' => now()->toDateTimeString(),
+                ]),
             ]);
 
-            // Update enrollment
-            $enrollment = $payment->enrollment;
-            $enrollment->update(['status' => 'active']);
+            // Activate enrollment + assign auto-cohort + initialise week progress
+            $this->activateEnrollment($payment);
 
-            $enrollment->initializeWeekProgress();
-
-            // Increment cohort enrollment count
-            $enrollment->cohort->incrementEnrollment();
-
-            // Update installment status
             if ($payment->payment_plan === 'installment') {
-                $payment->update([
-                    'installment_status' => 'partial'
-                ]);
+                $payment->update(['installment_status' => 'partial']);
             } else {
-                $payment->update([
-                    'remaining_balance' => 0
-                ]);
+                $payment->update(['remaining_balance' => 0]);
             }
 
-            // Log activity
             AuditLog::log('payment_completed', auth()->user(), [
                 'description' => 'Payment completed for ' . $payment->program->name,
-                'model_type' => Payment::class,
-                'model_id' => $payment->id,
-                'amount' => $payment->final_amount
+                'model_type'  => Payment::class,
+                'model_id'    => $payment->id,
+                'amount'      => $payment->final_amount,
             ]);
 
             DB::commit();
 
             return redirect()->route('learner.dashboard')->with([
-                'message' => 'Payment successful! You are now enrolled in ' . $payment->program->name,
-                'alert-type' => 'success'
+                'message'    => 'Payment successful! You are now enrolled in ' . $payment->program->name,
+                'alert-type' => 'success',
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             return redirect()->route('learner.dashboard')->with([
-                'message' => 'Payment verification failed: ' . $e->getMessage(),
-                'alert-type' => 'error'
+                'message'    => 'Payment verification failed: ' . $e->getMessage(),
+                'alert-type' => 'error',
             ]);
         }
     }
 
     /**
-     * Handle real Flutterwave callback
+     * Handle real Flutterwave callback.
+     *
+     * CHANGED: same activateEnrollment() replacement as the simulated handler.
      */
     private function handleFlutterwaveCallback(Request $request)
     {
         if ($request->status === 'successful') {
             $transactionId = $request->transaction_id;
-            
+
             $curl = curl_init();
             curl_setopt_array($curl, [
-                CURLOPT_URL => "https://api.flutterwave.com/v3/transactions/{$transactionId}/verify",
+                CURLOPT_URL            => "https://api.flutterwave.com/v3/transactions/{$transactionId}/verify",
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_HTTPHEADER => [
-                    "Authorization: Bearer " . config('services.flutterwave.secret_key'),
-                    "Content-Type: application/json"
+                CURLOPT_HTTPHEADER     => [
+                    'Authorization: Bearer ' . config('services.flutterwave.secret_key'),
+                    'Content-Type: application/json',
                 ],
             ]);
 
@@ -270,21 +262,18 @@ class PaymentController extends Controller
 
                 try {
                     $payment->update([
-                        'status' => 'successful',
-                        'paid_at' => now(),
-                        'payment_method' => $result->data->payment_type,
+                        'status'               => 'successful',
+                        'paid_at'              => now(),
+                        'payment_method'       => $result->data->payment_type,
                         'flutterwave_response' => json_encode($result->data),
-                        'metadata' => array_merge($payment->metadata ?? [], [
+                        'metadata'             => array_merge($payment->metadata ?? [], [
                             'transaction_id' => $transactionId,
-                            'flutterwave_id' => $result->data->id
-                        ])
+                            'flutterwave_id' => $result->data->id,
+                        ]),
                     ]);
 
-                    $enrollment = $payment->enrollment;
-                    $enrollment->update(['status' => 'active']);
-
-                    $enrollment->initializeWeekProgress();
-                    $enrollment->cohort->incrementEnrollment();
+                    // Activate enrollment + assign auto-cohort + initialise week progress
+                    $this->activateEnrollment($payment);
 
                     if ($payment->payment_plan === 'installment') {
                         $payment->update(['installment_status' => 'partial']);
@@ -294,16 +283,16 @@ class PaymentController extends Controller
 
                     AuditLog::log('payment_completed', auth()->user(), [
                         'description' => 'Payment completed via Flutterwave',
-                        'model_type' => Payment::class,
-                        'model_id' => $payment->id,
-                        'amount' => $payment->final_amount
+                        'model_type'  => Payment::class,
+                        'model_id'    => $payment->id,
+                        'amount'      => $payment->final_amount,
                     ]);
 
                     DB::commit();
 
                     return redirect()->route('learner.dashboard')->with([
-                        'message' => 'Payment successful! You are now enrolled.',
-                        'alert-type' => 'success'
+                        'message'    => 'Payment successful! You are now enrolled.',
+                        'alert-type' => 'success',
                     ]);
 
                 } catch (\Exception $e) {
@@ -314,8 +303,8 @@ class PaymentController extends Controller
         }
 
         return redirect()->route('learner.dashboard')->with([
-            'message' => 'Payment verification failed',
-            'alert-type' => 'error'
+            'message'    => 'Payment verification failed',
+            'alert-type' => 'error',
         ]);
     }
 
@@ -330,7 +319,7 @@ class PaymentController extends Controller
 
         try {
             $enrollment = Enrollment::findOrFail($request->enrollment_id);
-            
+
             if ($enrollment->user_id !== auth()->id()) {
                 abort(403);
             }
@@ -347,31 +336,30 @@ class PaymentController extends Controller
 
             if ($secondPayment) {
                 return back()->with([
-                    'message' => 'Second installment already paid!',
-                    'alert-type' => 'info'
+                    'message'    => 'Second installment already paid!',
+                    'alert-type' => 'info',
                 ]);
             }
 
             $remainingAmount = $firstPayment->remaining_balance;
 
-            // Create second installment payment
             $payment = Payment::create([
-                'user_id' => auth()->id(),
-                'enrollment_id' => $enrollment->id,
-                'program_id' => $enrollment->program_id,
-                'reference' => 'REF-' . strtoupper(Str::random(10)),
-                'amount' => $remainingAmount,
-                'discount_amount' => 0,
-                'final_amount' => $remainingAmount,
-                'payment_plan' => 'installment',
+                'user_id'            => auth()->id(),
+                'enrollment_id'      => $enrollment->id,
+                'program_id'         => $enrollment->program_id,
+                'reference'          => 'REF-' . strtoupper(Str::random(10)),
+                'amount'             => $remainingAmount,
+                'discount_amount'    => 0,
+                'final_amount'       => $remainingAmount,
+                'payment_plan'       => 'installment',
                 'installment_number' => 2,
-                'remaining_balance' => 0,
-                'status' => 'pending',
-                'metadata' => [
+                'remaining_balance'  => 0,
+                'status'             => 'pending',
+                'metadata'           => [
                     'program_name' => $enrollment->program->name,
-                    'user_name' => auth()->user()->name,
-                    'user_email' => auth()->user()->email,
-                ]
+                    'user_name'    => auth()->user()->name,
+                    'user_email'   => auth()->user()->email,
+                ],
             ]);
 
             if ($this->useRealPayment) {
@@ -382,9 +370,46 @@ class PaymentController extends Controller
 
         } catch (\Exception $e) {
             return back()->with([
-                'message' => 'Failed to initiate installment payment: ' . $e->getMessage(),
-                'alert-type' => 'error'
+                'message'    => 'Failed to initiate installment payment: ' . $e->getMessage(),
+                'alert-type' => 'error',
             ]);
         }
+    }
+
+    // ── Private helpers ────────────────────────────────────────────────────────
+
+    /**
+     * Activate an enrollment after confirmed payment.
+     *
+     * This replaces the old pattern of:
+     *   $enrollment->update(['status' => 'active']);
+     *   $enrollment->cohort->incrementEnrollment();
+     *   $enrollment->initializeWeekProgress();
+     *
+     * Instead it auto-finds or creates the program's single default cohort,
+     * attaches it to the enrollment, increments the headcount, then unlocks
+     * week 1 so the learner can start immediately.
+     */
+    private function activateEnrollment(Payment $payment): void
+    {
+        $enrollment = $payment->enrollment;
+
+        if (!$enrollment || $enrollment->status === 'active') {
+            return; // Already active or missing — nothing to do
+        }
+
+        // Get or create the rolling default cohort for this program
+        $cohort = $enrollment->program->getOrCreateDefaultCohort();
+
+        $enrollment->update([
+            'status'    => 'active',
+            'cohort_id' => $cohort->id,
+        ]);
+
+        // Increment cohort headcount
+        $cohort->incrementEnrollment();
+
+        // Unlock week 1 and create all WeekProgress rows
+        $enrollment->initializeWeekProgress();
     }
 }

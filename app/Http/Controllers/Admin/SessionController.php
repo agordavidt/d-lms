@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
-use App\Models\Cohort;
 use App\Models\LiveSession;
 use App\Models\Program;
 use App\Models\User;
@@ -12,155 +11,133 @@ use Illuminate\Http\Request;
 
 class SessionController extends Controller
 {
+    /**
+     * Unified calendar page — shows all sessions across the platform.
+     * Admin can create their own platform-wide or program-specific sessions.
+     * Mentor sessions are visible but not editable by admin.
+     */
     public function index()
     {
-        $sessions = LiveSession::with(['program', 'cohort', 'mentor'])
-            ->latest('start_time')
-            ->paginate(20);
+        $programs = Program::where('status', 'active')->orderBy('name')->get(['id', 'name']);
+        $mentors  = User::where('role', 'mentor')->where('status', 'active')
+                        ->orderBy('first_name')->get(['id', 'first_name', 'last_name']);
 
-        return view('admin.sessions.index', compact('sessions'));
+        // Upcoming list for the sidebar
+        $upcoming = LiveSession::with(['program', 'mentor'])
+            ->where('status', 'scheduled')
+            ->where('start_time', '>', now())
+            ->orderBy('start_time')
+            ->take(20)
+            ->get();
+
+        return view('admin.sessions.index', compact('programs', 'mentors', 'upcoming'));
     }
 
-    public function calendar()
+    /**
+     * JSON feed for FullCalendar — all sessions on the platform.
+     */
+    public function events(Request $request)
     {
-        $programs = Program::active()->get();
-        $cohorts = Cohort::active()->get();
-        
-        return view('admin.sessions.calendar', compact('programs', 'cohorts'));
-    }
+        $query = LiveSession::with(['program', 'mentor'])
+            ->when($request->start, fn ($q) => $q->where('start_time', '>=', $request->start))
+            ->when($request->end,   fn ($q) => $q->where('start_time', '<=', $request->end))
+            ->when($request->program_id, fn ($q) => $q->where('program_id', $request->program_id));
 
-    public function getEvents(Request $request)
-    {
-        $query = LiveSession::query();
-
-        // Filter by cohort if provided
-        if ($request->cohort_id) {
-            $query->where('cohort_id', $request->cohort_id);
-        }
-
-        // Filter by program if provided
-        if ($request->program_id) {
-            $query->where('program_id', $request->program_id);
-        }
-
-        // Get events for calendar date range
-        if ($request->start && $request->end) {
-            $query->whereBetween('start_time', [$request->start, $request->end]);
-        }
-
-        $sessions = $query->with(['mentor', 'cohort'])->get();
-
-        $events = $sessions->map(function($session) {
-            return $session->calendar_event;
-        });
+        $events = $query->get()->map(fn ($s) => [
+            'id'              => $s->id,
+            'title'           => $s->title,
+            'start'           => $s->start_time->toIso8601String(),
+            'end'             => $s->end_time->toIso8601String(),
+            'backgroundColor' => $s->mentor_id === null ? '#1a1a2e' : match($s->session_type) {
+                'workshop' => '#10b981',
+                'q_and_a'  => '#8b5cf6',
+                default    => '#0056d2',
+            },
+            'borderColor'     => 'transparent',
+            'extendedProps'   => [
+                'program'     => $s->program?->name ?? 'Platform-wide',
+                'mentor'      => $s->mentor
+                                    ? $s->mentor->first_name . ' ' . $s->mentor->last_name
+                                    : 'Admin',
+                'meet_link'   => $s->meet_link,
+                'status'      => $s->status,
+                'is_admin'    => $s->mentor_id === null, // admin-created session
+                'session_id'  => $s->id,
+            ],
+        ]);
 
         return response()->json($events);
     }
 
-    public function create()
-    {
-        $programs = Program::active()->get();
-        $cohorts = Cohort::active()->get();
-        $mentors = User::where('role', 'mentor')->where('status', 'active')->get();
-
-        return view('admin.sessions.create', compact('programs', 'cohorts', 'mentors'));
-    }
-
+    /**
+     * Create an admin session (platform-wide or program-specific).
+     * mentor_id is left null — distinguishes admin sessions from mentor sessions.
+     */
     public function store(Request $request)
     {
-        $request->validate([
-            'program_id' => 'required|exists:programs,id',
-            'cohort_id' => 'required|exists:cohorts,id',
-            'mentor_id' => 'nullable|exists:users,id',
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'session_type' => 'required|in:live_class,workshop,q&a,assessment',
-            'start_time' => 'required|date|after:now',
-            'end_time' => 'required|date|after:start_time',
-            'meet_link' => 'nullable|url',
+        $data = $request->validate([
+            'title'        => 'required|string|max:200',
+            'session_type' => 'required|in:live_class,workshop,q_and_a',
+            'program_id'   => 'nullable|exists:programs,id',
+            'start_time'   => 'required|date|after:now',
+            'end_time'     => 'required|date|after:start_time',
+            'meet_link'    => 'nullable|url',
+            'notes'        => 'nullable|string|max:500',
         ]);
 
-        try {
-            $session = LiveSession::create($request->all());
+        $data['mentor_id']        = null;   // admin-owned session
+        $data['duration_minutes'] = (int) round(
+            (strtotime($data['end_time']) - strtotime($data['start_time'])) / 60
+        );
 
-            AuditLog::log('session_created', auth()->user(), [
-                'description' => 'Created live session: ' . $session->title,
-                'model_type' => LiveSession::class,
-                'model_id' => $session->id,
-            ]);
+        $session = LiveSession::create($data);
 
-            return redirect()->route('admin.sessions.calendar')
-                ->with(['message' => 'Session scheduled successfully!', 'alert-type' => 'success']);
+        AuditLog::log('session_created', auth()->user(), [
+            'description' => 'Admin scheduled session: ' . $session->title,
+            'model_type'  => LiveSession::class,
+            'model_id'    => $session->id,
+        ]);
 
-        } catch (\Exception $e) {
-            return back()->withInput()
-                ->with(['message' => 'Failed to create session: ' . $e->getMessage(), 'alert-type' => 'error']);
-        }
+        return response()->json(['success' => true, 'session' => $session]);
     }
 
-    public function edit(LiveSession $session)
-    {
-        $programs = Program::active()->get();
-        $cohorts = Cohort::active()->get();
-        $mentors = User::where('role', 'mentor')->where('status', 'active')->get();
-
-        return view('admin.sessions.edit', compact('session', 'programs', 'cohorts', 'mentors'));
-    }
-
+    /**
+     * Admin can only edit admin-created sessions (mentor_id = null).
+     */
     public function update(Request $request, LiveSession $session)
     {
-        $request->validate([
-            'program_id' => 'required|exists:programs,id',
-            'cohort_id' => 'required|exists:cohorts,id',
-            'mentor_id' => 'nullable|exists:users,id',
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'session_type' => 'required|in:live_class,workshop,q&a,assessment',
+        abort_if($session->mentor_id !== null, 403, 'Mentor sessions cannot be edited by admin.');
+
+        $data = $request->validate([
+            'title'      => 'required|string|max:200',
             'start_time' => 'required|date',
-            'end_time' => 'required|date|after:start_time',
-            'meet_link' => 'nullable|url',
-            'status' => 'required|in:scheduled,ongoing,completed,cancelled',
+            'end_time'   => 'required|date|after:start_time',
+            'meet_link'  => 'nullable|url',
+            'notes'      => 'nullable|string|max:500',
+            'status'     => 'in:scheduled,cancelled',
         ]);
 
-        try {
-            $session->update($request->all());
+        $data['duration_minutes'] = (int) round(
+            (strtotime($data['end_time']) - strtotime($data['start_time'])) / 60
+        );
 
-            AuditLog::log('session_updated', auth()->user(), [
-                'description' => 'Updated live session: ' . $session->title,
-                'model_type' => LiveSession::class,
-                'model_id' => $session->id,
-            ]);
+        $session->update($data);
 
-            return redirect()->route('admin.sessions.calendar')
-                ->with(['message' => 'Session updated successfully!', 'alert-type' => 'success']);
-
-        } catch (\Exception $e) {
-            return back()->withInput()
-                ->with(['message' => 'Failed to update session: ' . $e->getMessage(), 'alert-type' => 'error']);
-        }
+        return response()->json(['success' => true]);
     }
 
     public function destroy(LiveSession $session)
     {
-        try {
-            AuditLog::log('session_deleted', auth()->user(), [
-                'description' => 'Deleted live session: ' . $session->title,
-                'model_type' => LiveSession::class,
-                'model_id' => $session->id,
-            ]);
+        abort_if($session->mentor_id !== null, 403, 'Mentor sessions cannot be deleted by admin.');
 
-            $session->delete();
+        AuditLog::log('session_deleted', auth()->user(), [
+            'description' => 'Admin deleted session: ' . $session->title,
+            'model_type'  => LiveSession::class,
+            'model_id'    => $session->id,
+        ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Session deleted successfully!'
-            ]);
+        $session->delete();
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete session.'
-            ], 500);
-        }
+        return response()->json(['success' => true]);
     }
 }

@@ -1,332 +1,162 @@
 @extends('layouts.admin')
-
-@section('title', 'Payment Details')
-@section('breadcrumb-parent', 'Payments')
-@section('breadcrumb-current', 'Details')
+@section('title', 'Payment · ' . $payment->reference)
 
 @section('content')
-<div class="row">
-    <!-- Payment Information -->
-    <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header">
-                <h4 class="card-title">Payment Information</h4>
+<div class="page-header">
+    <div>
+        <div class="breadcrumb"><a href="{{ route('admin.payments.index') }}">Payments</a></div>
+        <h1>Payment Detail</h1>
+    </div>
+    <span class="badge {{ match($payment->status) {
+        'successful' => 'badge-green',
+        'failed'     => 'badge-red',
+        'pending'    => 'badge-yellow',
+        default      => 'badge-gray',
+    } }}" style="padding: 0.4rem 1rem; font-size: 0.8rem;">{{ ucfirst($payment->status) }}</span>
+</div>
+
+<div class="container section">
+<div style="display: grid; grid-template-columns: 1fr 280px; gap: 2rem; align-items: start;">
+
+    {{-- Main --}}
+    <div>
+
+        {{-- Core details --}}
+        <div class="card" style="margin-bottom: 1rem;">
+            <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); font-weight: 600; font-family: 'Source Serif 4', serif;">
+                Transaction
             </div>
             <div class="card-body">
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <h5 class="text-muted">Transaction Details</h5>
-                        <table class="table table-borderless">
-                            <tr>
-                                <td><strong>Transaction ID:</strong></td>
-                                <td>{{ $payment->transaction_id }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Reference:</strong></td>
-                                <td>{{ $payment->reference }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Status:</strong></td>
-                                <td>
-                                    @if($payment->status === 'successful')
-                                        <span class="badge badge-success badge-lg">Successful</span>
-                                    @elseif($payment->status === 'pending')
-                                        <span class="badge badge-warning badge-lg">Pending</span>
-                                    @elseif($payment->status === 'failed')
-                                        <span class="badge badge-danger badge-lg">Failed</span>
-                                    @else
-                                        <span class="badge badge-secondary badge-lg">{{ ucfirst($payment->status) }}</span>
-                                    @endif
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><strong>Payment Method:</strong></td>
-                                <td>{{ $payment->payment_method ? ucfirst($payment->payment_method) : 'N/A' }}</td>
-                            </tr>
-                        </table>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;">
+                    @foreach([
+                        'Reference'      => $payment->reference,
+                        'Transaction ID' => $payment->transaction_id ?? '—',
+                        'Program'        => $payment->program->name,
+                        'Payment Method' => ucfirst($payment->payment_method ?? '—'),
+                        'Plan'           => $payment->payment_plan === 'installment'
+                                            ? 'Installment ' . $payment->installment_number . '/2'
+                                            : 'One-time',
+                        'Paid At'        => $payment->paid_at?->format('M j, Y · g:i A') ?? '—',
+                    ] as $label => $value)
+                    <div>
+                        <div class="text-muted text-small" style="margin-bottom: 0.2rem;">{{ $label }}</div>
+                        <div style="font-weight: 500; font-size: 0.875rem;">{{ $value }}</div>
                     </div>
-
-                    <div class="col-md-6">
-                        <h5 class="text-muted">Student Information</h5>
-                        <table class="table table-borderless">
-                            <tr>
-                                <td><strong>Name:</strong></td>
-                                <td>{{ $payment->user->name }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Email:</strong></td>
-                                <td>{{ $payment->user->email }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Phone:</strong></td>
-                                <td>{{ $payment->user->phone ?? 'N/A' }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Student ID:</strong></td>
-                                <td>{{ $payment->user->id }}</td>
-                            </tr>
-                        </table>
-                    </div>
+                    @endforeach
                 </div>
+            </div>
+        </div>
 
-                <hr>
-
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <h5 class="text-muted">Program Details</h5>
-                        <table class="table table-borderless">
-                            <tr>
-                                <td><strong>Program:</strong></td>
-                                <td>{{ $payment->program->name }}</td>
-                            </tr>
-                            @if($payment->enrollment && $payment->enrollment->cohort)
-                            <tr>
-                                <td><strong>Cohort:</strong></td>
-                                <td>{{ $payment->enrollment->cohort->name }}</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Cohort Code:</strong></td>
-                                <td>{{ $payment->enrollment->cohort->code }}</td>
-                            </tr>
-                            @endif
-                            <tr>
-                                <td><strong>Enrollment Status:</strong></td>
-                                <td>
-                                    @if($payment->enrollment)
-                                        <span class="badge badge-{{ $payment->enrollment->status === 'active' ? 'success' : 'warning' }}">
-                                            {{ ucfirst($payment->enrollment->status) }}
-                                        </span>
-                                    @else
-                                        N/A
-                                    @endif
-                                </td>
-                            </tr>
-                        </table>
+        {{-- Amounts --}}
+        <div class="card" style="margin-bottom: 1rem;">
+            <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); font-weight: 600; font-family: 'Source Serif 4', serif;">
+                Amount Breakdown
+            </div>
+            <div class="card-body">
+                <div style="display: grid; gap: 0.75rem; font-size: 0.875rem; max-width: 300px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span class="text-muted">Original amount</span>
+                        <span>₦{{ number_format($payment->amount, 2) }}</span>
                     </div>
-
-                    <div class="col-md-6">
-                        <h5 class="text-muted">Payment Breakdown</h5>
-                        <table class="table table-borderless">
-                            <tr>
-                                <td><strong>Original Amount:</strong></td>
-                                <td>₦{{ number_format($payment->amount, 2) }}</td>
-                            </tr>
-                            @if($payment->discount_amount > 0)
-                            <tr>
-                                <td><strong>Discount:</strong></td>
-                                <td class="text-success">-₦{{ number_format($payment->discount_amount, 2) }}</td>
-                            </tr>
-                            @endif
-                            <tr>
-                                <td><strong>Final Amount:</strong></td>
-                                <td><h4>₦{{ number_format($payment->final_amount, 2) }}</h4></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Payment Plan:</strong></td>
-                                <td>
-                                    <span class="badge badge-{{ $payment->payment_plan === 'one-time' ? 'info' : 'primary' }}">
-                                        {{ ucfirst($payment->payment_plan) }}
-                                    </span>
-                                    @if($payment->installment_number)
-                                        - Installment {{ $payment->installment_number }}
-                                    @endif
-                                </td>
-                            </tr>
-                            @if($payment->remaining_balance > 0)
-                            <tr>
-                                <td><strong>Remaining Balance:</strong></td>
-                                <td class="text-warning">₦{{ number_format($payment->remaining_balance, 2) }}</td>
-                            </tr>
-                            @endif
-                        </table>
+                    @if($payment->discount_amount > 0)
+                    <div style="display: flex; justify-content: space-between;">
+                        <span class="text-muted">Discount</span>
+                        <span style="color: var(--success);">–₦{{ number_format($payment->discount_amount, 2) }}</span>
                     </div>
-                </div>
-
-                <hr>
-
-                <div class="row">
-                    <div class="col-md-6">
-                        <h5 class="text-muted">Timestamps</h5>
-                        <table class="table table-borderless">
-                            <tr>
-                                <td><strong>Created At:</strong></td>
-                                <td>{{ $payment->created_at->format('M d, Y H:i A') }}</td>
-                            </tr>
-                            @if($payment->paid_at)
-                            <tr>
-                                <td><strong>Paid At:</strong></td>
-                                <td>{{ $payment->paid_at->format('M d, Y H:i A') }}</td>
-                            </tr>
-                            @endif
-                            <tr>
-                                <td><strong>Last Updated:</strong></td>
-                                <td>{{ $payment->updated_at->format('M d, Y H:i A') }}</td>
-                            </tr>
-                        </table>
+                    @endif
+                    <div style="display: flex; justify-content: space-between; font-weight: 700; font-size: 1rem; padding-top: 0.5rem; border-top: 1px solid var(--border);">
+                        <span>Amount Paid</span>
+                        <span>₦{{ number_format($payment->final_amount, 2) }}</span>
                     </div>
-
-                    @if($payment->metadata)
-                    <div class="col-md-6">
-                        <h5 class="text-muted">Additional Information</h5>
-                        <table class="table table-borderless">
-                            @foreach($payment->metadata as $key => $value)
-                                @if(!in_array($key, ['program_name', 'user_name', 'user_email']))
-                                <tr>
-                                    <td><strong>{{ ucfirst(str_replace('_', ' ', $key)) }}:</strong></td>
-                                    <td>{{ is_array($value) ? json_encode($value) : $value }}</td>
-                                </tr>
-                                @endif
-                            @endforeach
-                        </table>
+                    @if($payment->payment_plan === 'installment' && $payment->remaining_balance > 0)
+                    <div style="display: flex; justify-content: space-between; color: var(--warning);">
+                        <span>Remaining balance</span>
+                        <span style="font-weight: 600;">₦{{ number_format($payment->remaining_balance, 2) }}</span>
                     </div>
                     @endif
                 </div>
             </div>
         </div>
 
-        <!-- Flutterwave Response (if available) -->
-        @if($payment->flutterwave_response)
-        <div class="card mt-3">
-            <div class="card-header">
-                <h4 class="card-title">Gateway Response</h4>
-            </div>
-            <div class="card-body">
-                <pre class="bg-light p-3" style="max-height: 300px; overflow-y: auto;">{{ json_encode(json_decode($payment->flutterwave_response), JSON_PRETTY_PRINT) }}</pre>
-            </div>
-        </div>
-        @endif
-    </div>
-
-    <!-- Sidebar -->
-    <div class="col-lg-4">
-        <!-- Quick Actions -->
+        {{-- Related payments (other installments) --}}
+        @if($relatedPayments->isNotEmpty())
         <div class="card">
-            <div class="card-header">
-                <h4 class="card-title">Quick Actions</h4>
+            <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); font-weight: 600; font-family: 'Source Serif 4', serif;">
+                Related Payments
             </div>
-            <div class="card-body">
-                <a href="{{ route('admin.payments.index') }}" class="btn btn-secondary btn-block mb-2">
-                    <i class="fa fa-arrow-left"></i> Back to Payments
-                </a>
-                
-                @if($payment->enrollment)
-                <a href="{{ route('admin.learners.show', $payment->user->id) }}" class="btn btn-primary btn-block mb-2">
-                    <i class="fa fa-user"></i> View Student Profile
-                </a>
-                @endif
-
-                <button onclick="window.print()" class="btn btn-info btn-block">
-                    <i class="fa fa-print"></i> Print Receipt
-                </button>
-            </div>
-        </div>
-
-        <!-- Related Payments -->
-        @if(count($relatedPayments) > 0)
-        <div class="card mt-3">
-            <div class="card-header">
-                <h4 class="card-title">Related Payments</h4>
-            </div>
-            <div class="card-body">
-                <div class="list-group">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Reference</th>
+                        <th>Installment</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
                     @foreach($relatedPayments as $related)
-                    <a href="{{ route('admin.payments.show', $related->id) }}" 
-                       class="list-group-item list-group-item-action">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <strong>{{ $related->transaction_id }}</strong>
-                                <br>
-                                <small>
-                                    @if($related->installment_number)
-                                        Installment {{ $related->installment_number }}
-                                    @else
-                                        {{ ucfirst($related->payment_plan) }}
-                                    @endif
-                                </small>
-                            </div>
-                            <div>
-                                <span class="badge badge-{{ $related->status === 'successful' ? 'success' : ($related->status === 'pending' ? 'warning' : 'danger') }}">
-                                    {{ ucfirst($related->status) }}
-                                </span>
-                                <br>
-                                <small>₦{{ number_format($related->final_amount, 2) }}</small>
-                            </div>
-                        </div>
-                    </a>
+                    <tr>
+                        <td><code style="font-size: 0.75rem;">{{ $related->reference }}</code></td>
+                        <td class="text-small">{{ $related->installment_number ? '#' . $related->installment_number : '—' }}</td>
+                        <td style="font-weight: 600; font-size: 0.875rem;">₦{{ number_format($related->final_amount, 0) }}</td>
+                        <td>
+                            <span class="badge {{ match($related->status) {
+                                'successful' => 'badge-green',
+                                'failed'     => 'badge-red',
+                                'pending'    => 'badge-yellow',
+                                default      => 'badge-gray',
+                            } }}">{{ ucfirst($related->status) }}</span>
+                        </td>
+                        <td class="text-muted text-small">{{ $related->created_at->format('M j, Y') }}</td>
+                    </tr>
                     @endforeach
-                </div>
-            </div>
+                </tbody>
+            </table>
         </div>
         @endif
 
-        <!-- Payment Summary (for installments) -->
-        @if($payment->payment_plan === 'installment')
-        <div class="card mt-3">
-            <div class="card-header bg-primary text-white">
-                <h4 class="card-title mb-0">Installment Summary</h4>
+    </div>
+
+    {{-- Sidebar --}}
+    <div>
+        <div class="card card-body" style="margin-bottom: 1rem;">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-family: 'Source Serif 4', serif; font-size: 0.95rem;">Learner</div>
+            <div style="font-weight: 500; margin-bottom: 0.2rem;">
+                {{ $payment->user->first_name }} {{ $payment->user->last_name }}
             </div>
-            <div class="card-body">
-                @php
-                    $allInstallments = collect([$payment])->merge($relatedPayments)
-                        ->where('payment_plan', 'installment')
-                        ->sortBy('installment_number');
-                    
-                    $totalPaid = $allInstallments->where('status', 'successful')->sum('final_amount');
-                    $totalAmount = $payment->program->price;
-                @endphp
+            <div class="text-muted text-small">{{ $payment->user->email }}</div>
+            @if($payment->user->phone)
+            <div class="text-muted text-small">{{ $payment->user->phone }}</div>
+            @endif
+            <div style="margin-top: 0.75rem;">
+                <a href="{{ route('admin.learners.show', $payment->user_id) }}" class="btn btn-sm btn-ghost">View Learner</a>
+            </div>
+        </div>
 
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span>Total Program Cost:</span>
-                        <strong>₦{{ number_format($totalAmount, 2) }}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between mb-2">
-                        <span>Total Paid:</span>
-                        <strong class="text-success">₦{{ number_format($totalPaid, 2) }}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between">
-                        <span>Balance:</span>
-                        <strong class="text-{{ $totalPaid >= $totalAmount ? 'success' : 'warning' }}">
-                            ₦{{ number_format($totalAmount - $totalPaid, 2) }}
-                        </strong>
-                    </div>
+        @if($payment->enrollment)
+        <div class="card card-body">
+            <div style="font-weight: 600; margin-bottom: 0.75rem; font-family: 'Source Serif 4', serif; font-size: 0.95rem;">Enrollment</div>
+            <div style="display: grid; gap: 0.5rem; font-size: 0.875rem;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="text-muted">Status</span>
+                    <span class="badge {{ $payment->enrollment->status === 'active' ? 'badge-green' : 'badge-gray' }}">
+                        {{ ucfirst($payment->enrollment->status) }}
+                    </span>
                 </div>
-
-                <div class="progress" style="height: 25px;">
-                    <div class="progress-bar bg-success" role="progressbar" 
-                         style="width: {{ ($totalPaid / $totalAmount) * 100 }}%">
-                        {{ number_format(($totalPaid / $totalAmount) * 100, 1) }}%
-                    </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="text-muted">Progress</span>
+                    <span style="font-weight: 600;">{{ number_format($payment->enrollment->progress_percentage, 0) }}%</span>
                 </div>
-
-                <div class="mt-3">
-                    @foreach($allInstallments as $inst)
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>Installment {{ $inst->installment_number }}:</span>
-                        <span class="badge badge-{{ $inst->status === 'successful' ? 'success' : 'warning' }}">
-                            {{ ucfirst($inst->status) }}
-                        </span>
-                    </div>
-                    @endforeach
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="text-muted">Enrolled</span>
+                    <span class="text-small">{{ \Carbon\Carbon::parse($payment->enrollment->enrolled_at)->format('M j, Y') }}</span>
                 </div>
             </div>
         </div>
         @endif
     </div>
+
+</div>
 </div>
 @endsection
-
-@push('styles')
-<style>
-@media print {
-    .card-header, .btn, .sidebar, .header, .footer, .nk-sidebar, .breadcrumb {
-        display: none !important;
-    }
-    
-    .content-body {
-        margin: 0 !important;
-        padding: 20px !important;
-    }
-}
-</style>
-@endpush

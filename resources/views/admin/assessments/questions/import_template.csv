@@ -1,6 +1,0 @@
-question_type,question_text,option_a,option_b,option_c,option_d,correct_answer,points,explanation
-multiple_choice,What is the primary purpose of version control?,Track file sizes,Manage code changes over time,Speed up compilation,Reduce memory usage,option_b,1,Version control systems like Git track changes to code over time allowing collaboration and rollback.
-true_false,Python is a compiled language.,True,False,,,option_b,1,Python is an interpreted language not compiled.
-multiple_choice,Which of these is NOT a JavaScript data type?,String,Boolean,Integer,Undefined,option_c,1,JavaScript has Number not Integer as a type.
-multiple_select,Which are valid HTTP methods? (select all that apply),GET,POST,FETCH,SEND,option_a|option_b,1,GET and POST are standard HTTP methods. FETCH and SEND are not HTTP methods.
-true_false,A database index always speeds up queries.,True,False,,,option_b,1,Indexes speed up reads but slow down writes and use additional storage.

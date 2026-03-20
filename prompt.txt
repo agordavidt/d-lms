@@ -1,0 +1,895 @@
+I do not fully understand the patches for PaymentController and LearningController. Can you help me apply the patches and give me updated files.
+
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\AuditLog;
+use App\Models\Enrollment;
+use App\Models\Payment;
+use App\Models\Program;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+class PaymentController extends Controller
+{
+    // Set to true when ready to use real Flutterwave
+    private $useRealPayment = false;
+    
+    /**
+     * Initiate payment for a program enrollment
+     */
+    public function initiatePayment(Request $request)
+    {
+        $request->validate([
+            'program_id' => 'required|exists:programs,id',
+            'cohort_id' => 'required|exists:cohorts,id',
+            'payment_plan' => 'required|in:one-time,installment',
+        ]);
+
+        try {
+            $user = auth()->user();
+            $program = Program::findOrFail($request->program_id);
+
+            // Check if already enrolled
+            $existingEnrollment = Enrollment::where('user_id', $user->id)
+                ->where('program_id', $program->id)
+                ->where('cohort_id', $request->cohort_id)
+                ->first();
+
+            if ($existingEnrollment) {
+                return back()->with([
+                    'message' => 'You are already enrolled in this program!',
+                    'alert-type' => 'warning'
+                ]);
+            }
+
+            // Calculate payment amount
+            $amount = $program->price;
+            $discount = 0;
+            
+            if ($request->payment_plan === 'one-time') {
+                // 10% discount for one-time payment
+                $discount = ($amount * $program->discount_percentage) / 100;
+            } else {
+                // First installment (50%)
+                $amount = $amount / 2;
+            }
+
+            $finalAmount = $amount - $discount;
+
+            // Create enrollment (pending until payment)
+            $enrollment = Enrollment::create([
+                'user_id' => $user->id,
+                'program_id' => $program->id,
+                'cohort_id' => $request->cohort_id,
+                'status' => 'pending',
+                'enrolled_at' => now(),
+            ]);
+
+            // Create payment record
+            $payment = Payment::create([
+                'user_id' => $user->id,
+                'enrollment_id' => $enrollment->id,
+                'program_id' => $program->id,
+                'reference' => 'REF-' . strtoupper(Str::random(10)),
+                'amount' => $amount,
+                'discount_amount' => $discount,
+                'final_amount' => $finalAmount,
+                'payment_plan' => $request->payment_plan,
+                'installment_number' => $request->payment_plan === 'installment' ? 1 : null,
+                'remaining_balance' => $request->payment_plan === 'installment' ? ($program->price / 2) : 0,
+                'installment_status' => $request->payment_plan === 'installment' ? 'partial' : null,
+                'status' => 'pending',
+                'metadata' => [
+                    'program_name' => $program->name,
+                    'user_name' => $user->name,
+                    'user_email' => $user->email,
+                ]
+            ]);
+
+            if ($this->useRealPayment) {
+                return $this->initiateFlutterwavePayment($payment, $user);
+            } else {
+                return $this->initiateSimulatedPayment($payment);
+            }
+
+        } catch (\Exception $e) {
+            return back()->with([
+                'message' => 'Payment initiation failed: ' . $e->getMessage(),
+                'alert-type' => 'error'
+            ]);
+        }
+    }
+
+    /**
+     * Simulated payment (for testing)
+     */
+    private function initiateSimulatedPayment($payment)
+    {
+        return view('payments.simulate', compact('payment'));
+    }
+
+    /**
+     * Real Flutterwave payment integration
+     */
+    private function initiateFlutterwavePayment($payment, $user)
+    {
+        $curl = curl_init();
+
+        $data = [
+            "tx_ref" => $payment->reference,
+            "amount" => $payment->final_amount,
+            "currency" => "NGN",
+            "redirect_url" => route('payment.callback'),
+            "payment_options" => "card,banktransfer,ussd",
+            "customer" => [
+                "email" => $user->email,
+                "phonenumber" => $user->phone ?? '',
+                "name" => $user->name
+            ],
+            "customizations" => [
+                "title" => "G-Luper Program Enrollment",
+                "description" => "Payment for " . $payment->metadata['program_name'],
+                "logo" => asset('images/logo.png')
+            ]
+        ];
+
+        curl_setopt_array($curl, [
+            CURLOPT_URL => "https://api.flutterwave.com/v3/payments",
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST => "POST",
+            CURLOPT_POSTFIELDS => json_encode($data),
+            CURLOPT_HTTPHEADER => [
+                "Authorization: Bearer " . config('services.flutterwave.secret_key'),
+                "Content-Type: application/json"
+            ],
+        ]);
+
+        $response = curl_exec($curl);
+        $err = curl_error($curl);
+        curl_close($curl);
+
+        if ($err) {
+            throw new \Exception("Payment gateway error: " . $err);
+        }
+
+        $result = json_decode($response);
+
+        if ($result->status === 'success') {
+            return redirect($result->data->link);
+        } else {
+            throw new \Exception("Payment initialization failed");
+        }
+    }
+
+    /**
+     * Handle payment callback
+     */
+    public function callback(Request $request)
+    {
+        if ($this->useRealPayment) {
+            return $this->handleFlutterwaveCallback($request);
+        } else {
+            return $this->handleSimulatedCallback($request);
+        }
+    }
+
+    /**
+     * Handle simulated payment callback
+     */
+    private function handleSimulatedCallback(Request $request)
+    {
+        try {
+            $payment = Payment::where('reference', $request->reference)->firstOrFail();
+
+            DB::beginTransaction();
+
+            // Update payment status
+            $payment->update([
+                'status' => 'successful',
+                'paid_at' => now(),
+                'payment_method' => 'simulation',
+                'metadata' => array_merge($payment->metadata ?? [], [
+                    'simulated' => true,
+                    'completed_at' => now()->toDateTimeString()
+                ])
+            ]);
+
+            // Update enrollment
+            $enrollment = $payment->enrollment;
+            $enrollment->update(['status' => 'active']);
+
+            $enrollment->initializeWeekProgress();
+
+            // Increment cohort enrollment count
+            $enrollment->cohort->incrementEnrollment();
+
+            // Update installment status
+            if ($payment->payment_plan === 'installment') {
+                $payment->update([
+                    'installment_status' => 'partial'
+                ]);
+            } else {
+                $payment->update([
+                    'remaining_balance' => 0
+                ]);
+            }
+
+            // Log activity
+            AuditLog::log('payment_completed', auth()->user(), [
+                'description' => 'Payment completed for ' . $payment->program->name,
+                'model_type' => Payment::class,
+                'model_id' => $payment->id,
+                'amount' => $payment->final_amount
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('learner.dashboard')->with([
+                'message' => 'Payment successful! You are now enrolled in ' . $payment->program->name,
+                'alert-type' => 'success'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return redirect()->route('learner.dashboard')->with([
+                'message' => 'Payment verification failed: ' . $e->getMessage(),
+                'alert-type' => 'error'
+            ]);
+        }
+    }
+
+    /**
+     * Handle real Flutterwave callback
+     */
+    private function handleFlutterwaveCallback(Request $request)
+    {
+        if ($request->status === 'successful') {
+            $transactionId = $request->transaction_id;
+            
+            $curl = curl_init();
+            curl_setopt_array($curl, [
+                CURLOPT_URL => "https://api.flutterwave.com/v3/transactions/{$transactionId}/verify",
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => [
+                    "Authorization: Bearer " . config('services.flutterwave.secret_key'),
+                    "Content-Type: application/json"
+                ],
+            ]);
+
+            $response = curl_exec($curl);
+            curl_close($curl);
+
+            $result = json_decode($response);
+
+            if ($result->status === 'success' && $result->data->status === 'successful') {
+                $payment = Payment::where('reference', $result->data->tx_ref)->firstOrFail();
+
+                DB::beginTransaction();
+
+                try {
+                    $payment->update([
+                        'status' => 'successful',
+                        'paid_at' => now(),
+                        'payment_method' => $result->data->payment_type,
+                        'flutterwave_response' => json_encode($result->data),
+                        'metadata' => array_merge($payment->metadata ?? [], [
+                            'transaction_id' => $transactionId,
+                            'flutterwave_id' => $result->data->id
+                        ])
+                    ]);
+
+                    $enrollment = $payment->enrollment;
+                    $enrollment->update(['status' => 'active']);
+
+                    $enrollment->initializeWeekProgress();
+                    $enrollment->cohort->incrementEnrollment();
+
+                    if ($payment->payment_plan === 'installment') {
+                        $payment->update(['installment_status' => 'partial']);
+                    } else {
+                        $payment->update(['remaining_balance' => 0]);
+                    }
+
+                    AuditLog::log('payment_completed', auth()->user(), [
+                        'description' => 'Payment completed via Flutterwave',
+                        'model_type' => Payment::class,
+                        'model_id' => $payment->id,
+                        'amount' => $payment->final_amount
+                    ]);
+
+                    DB::commit();
+
+                    return redirect()->route('learner.dashboard')->with([
+                        'message' => 'Payment successful! You are now enrolled.',
+                        'alert-type' => 'success'
+                    ]);
+
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    throw $e;
+                }
+            }
+        }
+
+        return redirect()->route('learner.dashboard')->with([
+            'message' => 'Payment verification failed',
+            'alert-type' => 'error'
+        ]);
+    }
+
+    /**
+     * Pay second installment
+     */
+    public function payInstallment(Request $request)
+    {
+        $request->validate([
+            'enrollment_id' => 'required|exists:enrollments,id',
+        ]);
+
+        try {
+            $enrollment = Enrollment::findOrFail($request->enrollment_id);
+            
+            if ($enrollment->user_id !== auth()->id()) {
+                abort(403);
+            }
+
+            $firstPayment = $enrollment->payments()
+                ->where('installment_number', 1)
+                ->where('status', 'successful')
+                ->firstOrFail();
+
+            // Check if second installment already paid
+            $secondPayment = $enrollment->payments()
+                ->where('installment_number', 2)
+                ->first();
+
+            if ($secondPayment) {
+                return back()->with([
+                    'message' => 'Second installment already paid!',
+                    'alert-type' => 'info'
+                ]);
+            }
+
+            $remainingAmount = $firstPayment->remaining_balance;
+
+            // Create second installment payment
+            $payment = Payment::create([
+                'user_id' => auth()->id(),
+                'enrollment_id' => $enrollment->id,
+                'program_id' => $enrollment->program_id,
+                'reference' => 'REF-' . strtoupper(Str::random(10)),
+                'amount' => $remainingAmount,
+                'discount_amount' => 0,
+                'final_amount' => $remainingAmount,
+                'payment_plan' => 'installment',
+                'installment_number' => 2,
+                'remaining_balance' => 0,
+                'status' => 'pending',
+                'metadata' => [
+                    'program_name' => $enrollment->program->name,
+                    'user_name' => auth()->user()->name,
+                    'user_email' => auth()->user()->email,
+                ]
+            ]);
+
+            if ($this->useRealPayment) {
+                return $this->initiateFlutterwavePayment($payment, auth()->user());
+            } else {
+                return $this->initiateSimulatedPayment($payment);
+            }
+
+        } catch (\Exception $e) {
+            return back()->with([
+                'message' => 'Failed to initiate installment payment: ' . $e->getMessage(),
+                'alert-type' => 'error'
+            ]);
+        }
+    }
+}
+
+
+
+
+<?php
+
+namespace App\Http\Controllers\Learner;
+
+use App\Http\Controllers\Controller;
+use App\Models\ContentProgress;
+use App\Models\Enrollment;
+use App\Models\LiveSession;
+use App\Models\WeekContent;
+use App\Models\WeekProgress;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+
+class LearningController extends Controller
+{
+    /**
+     * Main learning view for a specific enrollment.
+     * Called from My Learning page — enrollmentId is now explicit.
+     */
+    public function index($enrollmentId)
+    {
+        try {
+            $user       = auth()->user();
+            $enrollment = $this->resolveEnrollment($user, $enrollmentId);
+
+            // ── Current week ─────────────────────────────────────────────
+            $currentWeekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+                ->where('is_unlocked', true)
+                ->where('is_completed', false)
+                ->with('moduleWeek.programModule')
+                ->orderBy('created_at')
+                ->first();
+
+            if (!$currentWeekProgress) {
+                $publishedWeekCount = $enrollment->program->getPublishedWeeks()->count();
+                $completedCount     = WeekProgress::where('enrollment_id', $enrollment->id)
+                    ->where('is_completed', true)
+                    ->count();
+
+                if ($publishedWeekCount > 0 && $completedCount >= $publishedWeekCount) {
+                    return view('learner.learning.completed', compact('enrollment'));
+                }
+
+                return view('learner.learning.no-content', compact('enrollment'));
+            }
+
+            $currentWeek = $currentWeekProgress->moduleWeek;
+
+            $currentWeek->load([
+                'assessment.questions',
+                'assessment.attempts' => function ($q) use ($user, $enrollment) {
+                    $q->where('user_id', $user->id)
+                      ->where('enrollment_id', $enrollment->id)
+                      ->where('status', 'submitted');
+                },
+            ]);
+
+            // ── Contents for current week ─────────────────────────────────
+            $contents = $currentWeek->publishedContents()
+                ->with(['contentProgress' => function ($q) use ($user, $enrollment) {
+                    $q->where('user_id', $user->id)
+                      ->where('enrollment_id', $enrollment->id);
+                }])
+                ->orderBy('order')
+                ->get();
+
+            $contentsJson = $contents->map(function ($content) {
+                $progress = $content->contentProgress->first();
+                return [
+                    'id'             => $content->id,
+                    'title'          => $content->title,
+                    'type'           => $content->content_type,
+                    'description'    => $content->description,
+                    'video_url'      => $content->video_url,
+                    'video_duration' => $content->video_duration_minutes,
+                    'file_url'       => $content->file_url,
+                    'external_url'   => $content->external_url,
+                    'text_content'   => $content->text_content,
+                    'is_completed'   => $progress ? $progress->is_completed : false,
+                ];
+            });
+
+            // ── All week progress for sidebar navigation ─────────────────
+            $allWeekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+                ->with('moduleWeek.programModule')
+                ->orderBy('created_at')
+                ->get();
+
+            // ── Stats ─────────────────────────────────────────────────────
+            $stats = $this->calculateLearningStats($user, $enrollment);
+
+            return view('learner.learning.index', compact(
+                'enrollment',
+                'currentWeek',
+                'currentWeekProgress',
+                'contents',
+                'contentsJson',
+                'allWeekProgress',
+                'stats'
+            ));
+
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            return redirect()->route('learner.my-learning')
+                ->with(['message' => 'Access denied.', 'alert-type' => 'error']);
+        } catch (\Exception $e) {
+            return redirect()->route('learner.my-learning')
+                ->with(['message' => 'Could not load course. Please try again.', 'alert-type' => 'error']);
+        }
+    }
+
+    /**
+     * Show a specific week's content (if unlocked).
+     */
+    public function showWeek($enrollmentId, $weekId)
+    {
+        try {
+            $user       = auth()->user();
+            $enrollment = $this->resolveEnrollment($user, $enrollmentId);
+
+            $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+                ->where('module_week_id', $weekId)
+                ->firstOrFail();
+
+            if (!$weekProgress->is_unlocked) {
+                return redirect()->route('learner.learning.index', $enrollmentId)
+                    ->with(['message' => 'This week is not yet unlocked.', 'alert-type' => 'warning']);
+            }
+
+            $week = $weekProgress->moduleWeek()->with('programModule')->firstOrFail();
+
+            $contents = $week->publishedContents()
+                ->with(['contentProgress' => function ($q) use ($user, $enrollment) {
+                    $q->where('user_id', $user->id)
+                      ->where('enrollment_id', $enrollment->id);
+                }])
+                ->orderBy('order')
+                ->get();
+
+            $sessions = LiveSession::where('cohort_id', $enrollment->cohort_id)
+                ->where('week_id', $week->id)
+                ->orderBy('start_time')
+                ->get();
+
+            return view('learner.learning.week', compact(
+                'enrollment', 'week', 'weekProgress', 'contents', 'sessions'
+            ));
+
+        } catch (\Exception $e) {
+            return redirect()->route('learner.learning.index', $enrollmentId)
+                ->with(['message' => 'Could not load week content.', 'alert-type' => 'error']);
+        }
+    }
+
+    /**
+     * Show a specific content item.
+     */
+    public function showContent($contentId)
+    {
+        try {
+            $user       = auth()->user();
+            // Resolve from content — find the correct enrollment
+            $content    = WeekContent::with(['moduleWeek.programModule'])->findOrFail($contentId);
+            $programId  = $content->moduleWeek->programModule->program_id;
+
+            $enrollment = Enrollment::where('user_id', $user->id)
+                ->where('program_id', $programId)
+                ->where('status', 'active')
+                ->firstOrFail();
+
+            $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+                ->where('module_week_id', $content->module_week_id)
+                ->firstOrFail();
+
+            if (!$weekProgress->is_unlocked) {
+                return redirect()->route('learner.learning.index', $enrollment->id)
+                    ->with(['message' => 'This content is not yet available.', 'alert-type' => 'warning']);
+            }
+
+            $progress = $content->getProgressFor($user, $enrollment);
+            $progress->update(['last_accessed_at' => now()]);
+
+            return view('learner.learning.content', compact(
+                'enrollment', 'content', 'progress', 'weekProgress'
+            ));
+
+        } catch (\Exception $e) {
+            return redirect()->route('learner.my-learning')
+                ->with(['message' => 'Content not available.', 'alert-type' => 'error']);
+        }
+    }
+
+    /**
+     * Mark a content item as complete (AJAX).
+     */
+    public function markContentComplete(Request $request, $contentId)
+    {
+        try {
+            $user       = auth()->user();
+            $content    = WeekContent::findOrFail($contentId);
+            $enrollment = $this->resolveEnrollmentForContent($user, $content);
+
+            $progress = $content->getProgressFor($user, $enrollment);
+            $progress->markAsCompleted();
+
+            $weekProgress = $content->moduleWeek->getProgressFor($user, $enrollment);
+            $weekProgress->recalculateCompletion();
+
+            return response()->json([
+                'success'          => true,
+                'message'          => 'Marked as complete!',
+                'week_completion'  => $weekProgress->progress_percentage,
+                'week_completed'   => $weekProgress->is_completed,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not mark complete. Please try again.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Update video progress (AJAX — called periodically during video playback).
+     */
+    public function updateContentProgress(Request $request, $contentId)
+    {
+        $request->validate([
+            'progress_percentage' => 'required|integer|min:0|max:100',
+            'time_spent'          => 'nullable|integer|min:0',
+        ]);
+
+        try {
+            $user       = auth()->user();
+            $content    = WeekContent::findOrFail($contentId);
+            $enrollment = $this->resolveEnrollmentForContent($user, $content);
+
+            $progress = $content->getProgressFor($user, $enrollment);
+            $progress->updateProgress($request->progress_percentage);
+
+            if ($request->filled('time_spent')) {
+                $progress->addTimeSpent($request->time_spent);
+            }
+
+            return response()->json([
+                'success'      => true,
+                'is_completed' => $progress->is_completed,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['success' => false], 500);
+        }
+    }
+
+    // ── Private helpers ─────────────────────────────────────────────────────
+
+    /**
+     * Resolve and authorize an enrollment for the current user.
+     * Throws AuthorizationException if the enrollment doesn't belong to the user.
+     */
+    private function resolveEnrollment($user, $enrollmentId): Enrollment
+    {
+        $enrollment = Enrollment::with(['program', 'cohort'])
+            ->findOrFail($enrollmentId);
+
+        if ($enrollment->user_id !== $user->id) {
+            throw new \Illuminate\Auth\Access\AuthorizationException('Access denied.');
+        }
+
+        if (!in_array($enrollment->status, ['active', 'completed'])) {
+            throw new \RuntimeException('Enrollment is not active.');
+        }
+
+        return $enrollment;
+    }
+
+    /**
+     * Find the active enrollment for the program that contains a given content item.
+     */
+    private function resolveEnrollmentForContent($user, WeekContent $content): Enrollment
+    {
+        $programId = $content->moduleWeek->programModule->program_id;
+
+        return Enrollment::where('user_id', $user->id)
+            ->where('program_id', $programId)
+            ->whereIn('status', ['active', 'completed'])
+            ->firstOrFail();
+    }
+
+    /**
+     * Calculate summary learning statistics for a user's enrollment.
+     */
+    private function calculateLearningStats($user, Enrollment $enrollment): array
+    {
+        $totalWeeks = $enrollment->program->publishedModules()
+            ->withCount(['weeks' => fn ($q) => $q->where('status', 'published')])
+            ->get()
+            ->sum('weeks_count');
+
+        $completedWeeks = WeekProgress::where('enrollment_id', $enrollment->id)
+            ->where('is_completed', true)
+            ->count();
+
+        $totalContents = WeekContent::whereHas('moduleWeek.programModule', fn ($q) =>
+            $q->where('program_id', $enrollment->program_id)
+        )->where('status', 'published')->where('is_required', true)->count();
+
+        $completedContents = ContentProgress::where('user_id', $user->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->where('is_completed', true)
+            ->whereHas('weekContent', fn ($q) => $q->where('is_required', true))
+            ->count();
+
+        $totalSessions = LiveSession::where('cohort_id', $enrollment->cohort_id)
+            ->where('status', 'completed')
+            ->count();
+
+        $attendedSessions = LiveSession::where('cohort_id', $enrollment->cohort_id)
+            ->where('status', 'completed')
+            ->whereJsonContains('attendees', $user->id)
+            ->count();
+
+        return [
+            'overall_progress'  => $totalWeeks > 0 ? round(($completedWeeks / $totalWeeks) * 100, 1) : 0,
+            'completed_weeks'   => $completedWeeks,
+            'total_weeks'       => $totalWeeks,
+            'completed_contents' => $completedContents,
+            'total_contents'    => $totalContents,
+            'attended_sessions' => $attendedSessions,
+            'total_sessions'    => $totalSessions,
+            'attendance_rate'   => $totalSessions > 0 ? round(($attendedSessions / $totalSessions) * 100, 1) : 0,
+        ];
+    }
+
+    public function getWeekContents($enrollmentId, $weekId)
+    {
+        try {
+            $user       = auth()->user();
+            $enrollment = $this->resolveEnrollment($user, $enrollmentId);
+
+            $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+                ->where('module_week_id', $weekId)
+                ->firstOrFail();
+
+            if (!$weekProgress->is_unlocked) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This week is not yet unlocked.',
+                ], 403);
+            }
+
+            $week = $weekProgress->moduleWeek()
+                ->with(['programModule', 'assessment.questions'])
+                ->firstOrFail();
+
+            $contents = $week->publishedContents()
+                ->with(['contentProgress' => function ($q) use ($user, $enrollment) {
+                    $q->where('user_id', $user->id)
+                      ->where('enrollment_id', $enrollment->id);
+                }])
+                ->orderBy('order')
+                ->get()
+                ->map(function ($content) {
+                    $progress = $content->contentProgress->first();
+                    return [
+                        'id'             => $content->id,
+                        'title'          => $content->title,
+                        'type'           => $content->content_type,
+                        'description'    => $content->description,
+                        'video_url'      => $content->video_url,
+                        'video_duration' => $content->video_duration_minutes,
+                        'file_url'       => $content->file_url,
+                        'external_url'   => $content->external_url,
+                        'text_content'   => $content->text_content,
+                        'is_completed'   => $progress ? $progress->is_completed : false,
+                    ];
+                });
+
+            // Assessment summary for the sidebar item
+            $assessment = null;
+            if ($week->assessment) {
+                $submittedAttempt = $week->assessment->attempts()
+                    ->where('user_id', $user->id)
+                    ->where('enrollment_id', $enrollment->id)
+                    ->where('status', 'submitted')
+                    ->latest()
+                    ->first();
+
+                $assessment = [
+                    'id'             => $week->assessment->id,
+                    'title'          => $week->assessment->title ?? 'Week Assessment',
+                    'question_count' => $week->assessment->questions->count(),
+                    'is_submitted'   => (bool) $submittedAttempt,
+                    'score'          => $submittedAttempt?->score,
+                    'passing_score'  => $week->assessment->passing_score ?? 70,
+                ];
+            }
+
+            return response()->json([
+                'success'    => true,
+                'contents'   => $contents,
+                'assessment' => $assessment,
+                'week'       => [
+                    'id'     => $week->id,
+                    'title'  => $week->title,
+                    'module' => $week->programModule->title ?? '',
+                    'number' => $week->week_number,
+                ],
+            ]);
+
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            return response()->json(['success' => false, 'message' => 'Access denied.'], 403);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Could not load week content.'], 500);
+        }
+    }
+
+    /**
+     * AJAX — return full assessment data for rendering inline in the player.
+     * Called once when the learner clicks "Week Assessment" in the sidebar.
+     *
+     * Route: GET /learner/learning/{enrollmentId}/assessment/{assessmentId}
+     * Name:  learner.learning.assessment-data
+     */
+     public function getAssessmentData($enrollmentId, $assessmentId)
+        {
+            try {
+                $user       = auth()->user();
+                $enrollment = $this->resolveEnrollment($user, $enrollmentId);
+    
+                $assessment = \App\Models\Assessment::with('questions')->findOrFail($assessmentId);
+    
+                $week = $assessment->moduleWeek;
+                $weekProgress = \App\Models\WeekProgress::where('enrollment_id', $enrollment->id)
+                    ->where('module_week_id', $week->id)
+                    ->firstOrFail();
+    
+                if (!$weekProgress->is_unlocked) {
+                    return response()->json(['success' => false, 'message' => 'Assessment not yet available.'], 403);
+                }
+    
+                // Latest submitted attempt (if any)
+                $latestAttempt = $assessment->attempts()
+                    ->where('user_id', $user->id)
+                    ->where('enrollment_id', $enrollment->id)
+                    ->where('status', 'submitted')
+                    ->latest()
+                    ->first();
+    
+                // In-progress attempt (not yet submitted)
+                $inProgressAttempt = $assessment->attempts()
+                    ->where('user_id', $user->id)
+                    ->where('enrollment_id', $enrollment->id)
+                    ->where('status', 'in_progress')
+                    ->latest()
+                    ->first();
+    
+                $questions = $assessment->questions->map(function ($q) {
+                    return [
+                        'id'      => $q->id,
+                        'text'    => $q->question_text,
+                        'type'    => $q->question_type,  // multiple_choice | true_false | short_answer
+                        'options' => array_values($q->options ?? []),  // ensure indexed array for JS
+                        'points'  => $q->points ?? 1,
+                    ];
+                });
+    
+                // FIX #4: use pass_percentage (the actual DB column), not passing_score
+                $passMark = $assessment->pass_percentage ?? 70;
+    
+                return response()->json([
+                    'success'    => true,
+                    'assessment' => [
+                        'id'            => $assessment->id,
+                        'title'         => $assessment->title ?? 'Week Assessment',
+                        'description'   => $assessment->description ?? '',
+                        'passing_score' => $passMark,
+                        'time_limit'    => $assessment->time_limit_minutes ?? null,
+                    ],
+                    'questions'           => $questions,
+                    'latest_attempt'      => $latestAttempt ? [
+                        'id'           => $latestAttempt->id,
+                        // FIX: use ->percentage (the scored float column), not ->score
+                        'score'        => (float) $latestAttempt->percentage,
+                        'passed'       => (float) $latestAttempt->percentage >= $passMark,
+                        'submitted_at' => $latestAttempt->submitted_at?->diffForHumans(),
+                    ] : null,
+                    'in_progress_attempt' => $inProgressAttempt ? [
+                        'id' => $inProgressAttempt->id,
+                    ] : null,
+                    'enrollment_id'       => $enrollment->id,
+                ]);
+    
+            } catch (\Exception $e) {
+                return response()->json(['success' => false, 'message' => 'Could not load assessment.'], 500);
+            }
+        }
+}

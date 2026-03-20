@@ -3,280 +3,193 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Enrollment;
-use App\Models\User;
 use App\Models\AuditLog;
+use App\Models\Enrollment;
+use App\Models\ModuleWeek;
+use App\Models\Program;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class GraduationController extends Controller
 {
-    /**
-     * Display graduation queue
-     */
     public function index(Request $request)
     {
-        $query = Enrollment::with(['user', 'program', 'cohort'])
+        $query = Enrollment::with(['user', 'program'])
             ->where('graduation_status', 'pending_review')
-            ->orderBy('graduation_requested_at', 'desc');
+            ->orderBy('graduation_requested_at');
 
-        // Filters
         if ($request->filled('program_id')) {
             $query->where('program_id', $request->program_id);
         }
 
-        if ($request->filled('cohort_id')) {
-            $query->where('cohort_id', $request->cohort_id);
-        }
-
         $pendingGraduations = $query->paginate(20);
 
-        // Get filter options
-        $programs = \App\Models\Program::orderBy('name')->get();
-        $cohorts = \App\Models\Cohort::orderBy('name')->get();
+        $programs = Program::where('status', 'active')->orderBy('name')->get(['id', 'name']);
 
-        // Statistics
         $stats = [
-            'pending_count' => Enrollment::where('graduation_status', 'pending_review')->count(),
-            'graduated_this_month' => Enrollment::where('graduation_status', 'graduated')
-                ->whereMonth('graduation_approved_at', now()->month)
-                ->count(),
-            'avg_grade' => Enrollment::where('graduation_status', 'graduated')
-                ->avg('final_grade_avg'),
+            'pending_count'         => Enrollment::where('graduation_status', 'pending_review')->count(),
+            'graduated_this_month'  => Enrollment::where('graduation_status', 'graduated')
+                                           ->whereMonth('graduation_approved_at', now()->month)
+                                           ->whereYear('graduation_approved_at', now()->year)
+                                           ->count(),
+            'avg_grade'             => round(
+                                           Enrollment::where('graduation_status', 'graduated')
+                                               ->avg('final_grade_avg') ?? 0, 1
+                                       ),
         ];
 
-        return view('admin.graduations.index', compact(
-            'pendingGraduations',
-            'programs',
-            'cohorts',
-            'stats'
-        ));
+        return view('admin.graduations.index', compact('pendingGraduations', 'programs', 'stats'));
     }
 
-    /**
-     * Review individual graduation request
-     */
     public function review($enrollmentId)
     {
         $enrollment = Enrollment::with([
-            'user',
-            'program',
-            'cohort',
+            'user', 'program',
             'weekProgress.moduleWeek',
-            'assessmentAttempts.assessment'
+            'assessmentAttempts.assessment',
         ])->findOrFail($enrollmentId);
 
-        // Check eligibility details
         $eligibility = [
-            'all_content_complete' => $enrollment->hasCompletedAllContent(),
-            'all_assessments_taken' => $enrollment->hasAttemptedAllAssessments(),
+            'all_content_complete'    => $enrollment->hasCompletedAllContent(),
+            'all_assessments_passed'  => $enrollment->hasPassedAllAssessments(),
             'meets_grade_requirement' => $enrollment->meetsMinimumGradeRequirement(),
         ];
 
-        // Get week progress details
-        $weekProgressDetails = $enrollment->weekProgress()
-            ->with('moduleWeek')
-            ->where('is_completed', true)
-            ->get();
+        // FIXED: removed ->where('status', 'published') — no status column in new schema
+        $totalWeeks = ModuleWeek::whereHas('programModule', fn ($q) =>
+            $q->where('program_id', $enrollment->program_id)
+        )->count();
 
-        // Get assessment breakdown
+        $completedWeeks = $enrollment->weekProgress()
+            ->where('is_completed', true)->count();
+
         $assessmentBreakdown = $enrollment->weekProgress()
             ->whereNotNull('assessment_score')
             ->where('assessment_attempts', '>', 0)
             ->with('moduleWeek')
             ->get();
 
-        // Total weeks and completed
-        $totalWeeks = \App\Models\ModuleWeek::whereHas('programModule', function($q) use ($enrollment) {
-            $q->where('program_id', $enrollment->program_id);
-        })
-        ->where('status', 'published')
-        ->count();
-
-        $completedWeeks = $weekProgressDetails->count();
-
         return view('admin.graduations.review', compact(
-            'enrollment',
-            'eligibility',
-            'weekProgressDetails',
-            'assessmentBreakdown',
-            'totalWeeks',
-            'completedWeeks'
+            'enrollment', 'eligibility',
+            'assessmentBreakdown', 'totalWeeks', 'completedWeeks'
         ));
     }
 
-    /**
-     * Approve graduation
-     */
     public function approve(Request $request, $enrollmentId)
     {
         $enrollment = Enrollment::findOrFail($enrollmentId);
 
-        // Verify eligibility
         if (!$enrollment->isEligibleForGraduation()) {
             return back()->with([
-                'message' => 'This learner does not meet graduation requirements.',
-                'alert-type' => 'error'
+                'message'    => 'This learner does not meet graduation requirements.',
+                'alert-type' => 'error',
             ]);
         }
 
         DB::beginTransaction();
         try {
-            // Approve graduation
             $enrollment->approveGraduation(auth()->user());
 
-            // Log the action
             AuditLog::log('graduation_approved', auth()->user(), [
-                'description' => 'Approved graduation for ' . $enrollment->user->name,
-                'model_type' => get_class($enrollment),
-                'model_id' => $enrollment->id,
-                'old_values' => ['graduation_status' => 'pending_review'],
-                'new_values' => ['graduation_status' => 'graduated']
+                'description' => 'Approved graduation for ' . $enrollment->user->first_name . ' ' . $enrollment->user->last_name,
+                'model_type'  => Enrollment::class,
+                'model_id'    => $enrollment->id,
             ]);
-
-            // TODO: Send notification to learner
-            // TODO: Queue certificate generation
 
             DB::commit();
 
-            return redirect()->route('admin.graduations.index')->with([
-                'message' => 'Graduation approved successfully! Certificate will be generated.',
-                'alert-type' => 'success'
-            ]);
+            return redirect()->route('admin.graduations.index')
+                ->with(['message' => 'Graduation approved. Certificate key generated.', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with([
-                'message' => 'Failed to approve graduation: ' . $e->getMessage(),
-                'alert-type' => 'error'
-            ]);
+            return back()->with(['message' => 'Failed: ' . $e->getMessage(), 'alert-type' => 'error']);
         }
     }
 
-    /**
-     * Reject graduation
-     */
     public function reject(Request $request, $enrollmentId)
     {
-        $request->validate([
-            'reason' => 'required|string|max:1000'
-        ]);
+        $request->validate(['reason' => 'required|string|max:1000']);
 
         $enrollment = Enrollment::findOrFail($enrollmentId);
 
         DB::beginTransaction();
         try {
-            // Update status back to active
             $enrollment->update([
-                'graduation_status' => 'active',
-                'graduation_requested_at' => null,
+                'graduation_status'        => 'active',
+                'graduation_requested_at'  => null,
             ]);
 
-            // Log rejection
             AuditLog::log('graduation_rejected', auth()->user(), [
-                'description' => 'Rejected graduation for ' . $enrollment->user->name,
-                'model_type' => get_class($enrollment),
-                'model_id' => $enrollment->id,
-                'old_values' => ['graduation_status' => 'pending_review'],
-                'new_values' => [
-                    'graduation_status' => 'active',
-                    'rejection_reason' => $request->reason
-                ]
+                'description' => 'Rejected graduation for ' . $enrollment->user->first_name . ' ' . $enrollment->user->last_name,
+                'model_type'  => Enrollment::class,
+                'model_id'    => $enrollment->id,
+                'reason'      => $request->reason,
             ]);
-
-            // TODO: Send notification to learner with reason
 
             DB::commit();
 
-            return redirect()->route('admin.graduations.index')->with([
-                'message' => 'Graduation request rejected. Learner has been notified.',
-                'alert-type' => 'success'
-            ]);
+            return redirect()->route('admin.graduations.index')
+                ->with(['message' => 'Graduation request rejected.', 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with([
-                'message' => 'Failed to reject graduation: ' . $e->getMessage(),
-                'alert-type' => 'error'
-            ]);
+            return back()->with(['message' => 'Failed: ' . $e->getMessage(), 'alert-type' => 'error']);
         }
     }
 
-    /**
-     * Bulk approve graduations
-     */
     public function bulkApprove(Request $request)
     {
         $request->validate([
-            'enrollment_ids' => 'required|array',
-            'enrollment_ids.*' => 'exists:enrollments,id'
+            'enrollment_ids'   => 'required|array',
+            'enrollment_ids.*' => 'exists:enrollments,id',
         ]);
 
-        $approvedCount = 0;
-        $failedCount = 0;
+        $approved = 0;
+        $failed   = 0;
 
         DB::beginTransaction();
         try {
-            foreach ($request->enrollment_ids as $enrollmentId) {
-                $enrollment = Enrollment::find($enrollmentId);
-                
+            foreach ($request->enrollment_ids as $id) {
+                $enrollment = Enrollment::find($id);
                 if ($enrollment && $enrollment->isEligibleForGraduation()) {
                     $enrollment->approveGraduation(auth()->user());
-                    $approvedCount++;
+                    $approved++;
                 } else {
-                    $failedCount++;
+                    $failed++;
                 }
             }
-
             DB::commit();
 
-            $message = "Approved {$approvedCount} graduation(s).";
-            if ($failedCount > 0) {
-                $message .= " {$failedCount} failed (not eligible).";
-            }
+            $msg = "Approved {$approved} graduation(s).";
+            if ($failed) $msg .= " {$failed} skipped (not eligible).";
 
-            return back()->with([
-                'message' => $message,
-                'alert-type' => 'success'
-            ]);
+            return back()->with(['message' => $msg, 'alert-type' => 'success']);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with([
-                'message' => 'Bulk approval failed: ' . $e->getMessage(),
-                'alert-type' => 'error'
-            ]);
+            return back()->with(['message' => 'Bulk approval failed: ' . $e->getMessage(), 'alert-type' => 'error']);
         }
     }
 
-    /**
-     * Show graduated learners
-     */
     public function graduated(Request $request)
     {
-        $query = Enrollment::with(['user', 'program', 'cohort', 'approver'])
+        $query = Enrollment::with(['user', 'program'])
             ->where('graduation_status', 'graduated')
-            ->orderBy('graduation_approved_at', 'desc');
+            ->orderByDesc('graduation_approved_at');
 
-        // Filters
         if ($request->filled('program_id')) {
             $query->where('program_id', $request->program_id);
         }
 
-        if ($request->filled('cohort_id')) {
-            $query->where('cohort_id', $request->cohort_id);
-        }
-
         if ($request->filled('month')) {
-            $query->whereMonth('graduation_approved_at', $request->month);
+            $query->whereMonth('graduation_approved_at', $request->month)
+                  ->whereYear('graduation_approved_at', $request->year ?? now()->year);
         }
 
         $graduates = $query->paginate(20);
+        $programs  = Program::where('status', 'active')->orderBy('name')->get(['id', 'name']);
 
-        // Get filter options
-        $programs = \App\Models\Program::orderBy('name')->get();
-        $cohorts = \App\Models\Cohort::orderBy('name')->get();
-
-        return view('admin.graduations.graduated', compact('graduates', 'programs', 'cohorts'));
+        return view('admin.graduations.graduated', compact('graduates', 'programs'));
     }
 }
