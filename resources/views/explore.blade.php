@@ -47,14 +47,22 @@
         <div class="ml-auto flex items-center gap-3">
            @auth
                 @if(auth()->user()->hasVerifiedEmail())
-                    <a href="{{ route('learner.my-learning') }}" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">My Learning</a>
+                    <a href="{{ route('learner.my-learning') }}" 
+                    class="bg-blue-600 ... rounded-full">My Learning</a>
                 @else
-                    <a href="{{ route('verification.notice') }}" class="text-sm font-semibold text-amber-600 hover:text-amber-700 transition hidden sm:block">Verify Email</a>
-                    <button onclick="openModal('login-modal')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">Continue</button>
+                    <a href="{{ route('verification.notice') }}" 
+                    class="text-sm font-semibold text-amber-600 hover:text-amber-700 transition hidden sm:block">
+                        Verify Email
+                    </a>
+                    {{-- No login modal — they're already logged in --}}
+                    <a href="{{ route('verification.notice') }}" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
+                        Continue Setup
+                    </a>
                 @endif
             @else
-                <button onclick="openModal('login-modal')" class="text-sm font-semibold text-blue-600 hover:text-blue-700 transition hidden sm:block">Log In</button>
-                <button onclick="openModal('register-modal')" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">Join for Free</button>
+                <button onclick="openModal('login-modal')" ...>Log In</button>
+                <button onclick="openModal('register-modal')" ...>Join for Free</button>
             @endauth
         </div>
     </div>

@@ -57,14 +57,11 @@ class RegisterController extends Controller
             event(new Registered($user));
 
             // Auto-login to allow access to the verification notice page (behind auth middleware).
-            Auth::login($user);
-
             $verifyRoute = route('verification.notice');
 
             if ($request->wantsJson()) {
                 return response()->json(['success' => true, 'redirect' => $verifyRoute]);
             }
-
             return redirect($verifyRoute);
 
         } catch (\Exception $e) {

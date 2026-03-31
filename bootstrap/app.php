@@ -36,4 +36,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], 419);
             }
         });
+
+        // Expired or tampered verification link
+        $exceptions->render(function (InvalidSignatureException $e, $request) {
+            \Illuminate\Support\Facades\Log::warning('Invalid verification signature', [
+                'ip'  => $request->ip(),
+                'url' => $request->fullUrl(),
+            ]);
+    
+            return response()->view('auth.verification-expired', [], 403);
+        });
     })->create();

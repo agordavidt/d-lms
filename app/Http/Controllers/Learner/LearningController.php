@@ -204,20 +204,21 @@ class LearningController extends Controller
             $user       = auth()->user();
             $content    = WeekContent::findOrFail($contentId);
             $enrollment = $this->resolveEnrollmentForContent($user, $content);
-
+ 
             $progress = $content->getProgressFor($user, $enrollment);
             $progress->markAsCompleted();
-
+ 
             $weekProgress = $content->moduleWeek->getProgressFor($user, $enrollment);
             $weekProgress->recalculateCompletion();
-
+            $weekProgress->refresh(); 
+ 
             return response()->json([
                 'success'         => true,
                 'message'         => 'Marked as complete!',
                 'week_completion' => $weekProgress->progress_percentage,
                 'week_completed'  => $weekProgress->is_completed,
             ]);
-
+ 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -225,6 +226,7 @@ class LearningController extends Controller
             ], 500);
         }
     }
+ 
 
     /**
      * Update video progress (AJAX — called periodically during video playback).

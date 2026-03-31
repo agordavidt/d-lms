@@ -11,22 +11,12 @@ class Enrollment extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id',
-        'program_id',
-        'cohort_id',
-        'enrollment_number',
-        'status',
-        'graduation_status',
-        'final_grade_avg',
-        'weekly_assessment_avg',
-        'periodic_assessment_avg',
-        'enrolled_at',
-        'completed_at',
-        'graduation_requested_at',
-        'graduation_approved_at',
-        'approved_by',
-        'certificate_key',
-        'certificate_issued_at',
+        'user_id', 'program_id', 'cohort_id', 'enrollment_number',
+        'status', 'graduation_status',
+        'final_grade_avg', 'weekly_assessment_avg',
+        'enrolled_at', 'completed_at',
+        'graduation_requested_at', 'graduation_approved_at',
+        'approved_by', 'certificate_key', 'certificate_issued_at',
     ];
 
     protected $casts = [
@@ -37,7 +27,6 @@ class Enrollment extends Model
         'certificate_issued_at'   => 'datetime',
         'final_grade_avg'         => 'decimal:2',
         'weekly_assessment_avg'   => 'decimal:2',
-        'periodic_assessment_avg' => 'decimal:2',
     ];
 
     protected static function boot()
@@ -142,8 +131,8 @@ class Enrollment extends Model
 
     protected function recalculatePeriodicAssessmentAverage(): void
     {
-        // Placeholder — periodic assessments not yet implemented
-        $this->update(['periodic_assessment_avg' => null]);
+        // Periodic assessments not implemented — column removed from schema.
+        // This is a no-op until periodic assessments are added.
     }
 
     protected function recalculateFinalGradeAverage(): void
