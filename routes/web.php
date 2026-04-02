@@ -27,8 +27,8 @@ use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
-use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 
@@ -43,7 +43,7 @@ Route::get('/', function () {
 
 Route::get('/explore', [ExploreController::class, 'index'])->name('explore');
 
-// Public certificate verification — no auth required
+// Public certificate verification
 Route::get('/certificate/verify/{key}', function ($key) {
     $enrollment = \App\Models\Enrollment::where('certificate_key', $key)->first();
     if (! $enrollment || $enrollment->graduation_status !== 'graduated') {
@@ -52,12 +52,11 @@ Route::get('/certificate/verify/{key}', function ($key) {
     return view('public.certificate-verify', compact('enrollment'));
 })->name('certificate.verify');
 
-// Verification notice — public so unverified users reach it regardless of session state.
-// Verified users are pushed straight to their dashboard.
+// ── Email Verification — Notice ───────────────────────────────────────────────
+// Public. Verified users are pushed to their dashboard immediately.
 Route::get('/email/verify', function () {
     if (auth()->check()) {
         $user = auth()->user();
-
         if ($user->hasVerifiedEmail()) {
             return redirect()->route(match ($user->role) {
                 'superadmin', 'admin' => 'admin.dashboard',
@@ -66,9 +65,65 @@ Route::get('/email/verify', function () {
             });
         }
     }
-
     return view('auth.verify-email');
 })->name('verification.notice');
+
+// ── Email Verification — Link Handler ────────────────────────────────────────
+// Public — intentionally outside the auth group.
+//
+// WHY: EmailVerificationRequest requires an active session. Without auto-login
+// after registration the user has no session, so the auth middleware would
+// silently redirect them to /login → home, storing the signed URL as "intended".
+// Verification would only complete after a separate login — broken UX.
+//
+// FIX: Manually validate the signed URL and hash, then auto-login on success.
+// The signed middleware still guarantees the URL has not been tampered with
+// and has not expired, so security is equivalent.
+Route::get('/email/verify/{id}/{hash}', function (Request $request, string $id, string $hash) {
+    // Tampered or expired signature — renders the custom 403 view via bootstrap/app.php
+    if (! $request->hasValidSignature()) {
+        abort(403);
+    }
+
+    $user = \App\Models\User::findOrFail($id);
+
+    // Hash mismatch — token does not belong to this email address
+    if (! hash_equals((string) sha1($user->getEmailForVerification()), (string) $hash)) {
+        abort(403);
+    }
+
+    $dashboardRoute = match ($user->role) {
+        'superadmin', 'admin' => 'admin.dashboard',
+        'mentor'              => 'mentor.dashboard',
+        default               => 'learner.dashboard',
+    };
+
+    // Duplicate click — already verified
+    if ($user->hasVerifiedEmail()) {
+        // Log them in if they aren't already, then send to dashboard
+        if (! auth()->check()) {
+            Auth::login($user);
+            $request->session()->regenerate();
+        }
+        return redirect()->route($dashboardRoute)->with([
+            'message'    => 'Your email is already verified.',
+            'alert-type' => 'info',
+        ]);
+    }
+
+    // Mark verified and fire the Verified event
+    $user->markEmailAsVerified();
+    event(new \Illuminate\Auth\Events\Verified($user));
+
+    // Auto-login and send to dashboard
+    Auth::login($user);
+    $request->session()->regenerate();
+
+    return redirect()->route($dashboardRoute)->with([
+        'message'    => 'Email verified! Welcome to G-Luper, ' . $user->first_name . '.',
+        'alert-type' => 'success',
+    ]);
+})->middleware('signed')->name('verification.verify');
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -101,40 +156,11 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
 
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 
-
-    // ── Email Verification ────────────────────────────────────────────────────
-    // Applies to learners and mentors — admins are exempt.
-    // Both routes require a session: EmailVerificationRequest calls $this->user() internally.
-    // No-session flow: auth middleware stores the signed URL as the intended destination,
-    // redirects to login; after login redirect()->intended() completes verification.
-
-    // Signed link handler — sent from the verification email
-    Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
-        $user = $request->user();
-
-        $dashboardRoute = match ($user->role) {
-            'superadmin', 'admin' => 'admin.dashboard',
-            'mentor'              => 'mentor.dashboard',
-            default               => 'learner.dashboard',
-        };
-
-        // Already verified — duplicate click guard
-        if ($user->hasVerifiedEmail()) {
-            return redirect()->route($dashboardRoute)->with([
-                'message'    => 'Your email is already verified.',
-                'alert-type' => 'info',
-            ]);
-        }
-
-        $request->fulfill(); // Sets email_verified_at, fires Verified event
-
-        return redirect()->route($dashboardRoute)->with([
-            'message'    => 'Email verified! Welcome to G-Luper, ' . $user->first_name . '.',
-            'alert-type' => 'success',
-        ]);
-    })->middleware('signed')->name('verification.verify');
-
-    // Resend verification email — rate-limited to 1 request per minute
+    // ── Resend Verification Email ─────────────────────────────────────────────
+    // Requires auth — the session identifies who to resend to.
+    // Scenario: user logs in (no verified check on login), lands here from
+    // the verified middleware, and can request a fresh link. Rate-limited to
+    // 1 request per minute to prevent mail server abuse.
     Route::post('/email/verification-notification', function (Request $request) {
         $user = $request->user();
 
