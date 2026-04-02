@@ -19,8 +19,11 @@
 <body class="bg-[#f7f9fc] text-slate-900 antialiased">
 
 {{-- Navigation --}}
+{{-- Navigation --}}
 <nav class="sticky top-0 z-50 bg-white border-b border-slate-200">
     <div class="max-w-7xl mx-auto px-5 h-[60px] flex items-center gap-4">
+
+        {{-- Logo --}}
         <a href="{{ route('home') }}" class="flex items-center gap-2 flex-shrink-0 group">
             <div class="w-7 h-7 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[7px] flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
                 <span class="text-white font-bold text-xs">G</span>
@@ -28,43 +31,65 @@
             <span class="text-[16px] font-bold tracking-tight hidden sm:block">Luper</span>
         </a>
 
+        {{-- Active nav links --}}
         <div class="h-[60px] flex items-center">
-            <span class="px-3 h-full flex items-center text-sm font-bold text-blue-600 border-b-2 border-blue-600">Explore</span>
+            <span class="px-3 h-full flex items-center text-sm font-bold text-blue-600 border-b-2 border-blue-600">
+                Explore
+            </span>
             @auth
                 @if(auth()->user()->hasVerifiedEmail())
-                    <a href="{{ route('learner.my-learning') }}" class="px-3 h-full flex items-center text-sm font-medium text-slate-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500 transition-all">My Learning</a>
+                    <a href="{{ route('learner.my-learning') }}"
+                       class="px-3 h-full flex items-center text-sm font-medium text-slate-600 hover:text-blue-600 border-b-2 border-transparent hover:border-blue-500 transition-all">
+                        My Learning
+                    </a>
                 @endif
             @endauth
         </div>
 
+        {{-- Search --}}
         <div class="flex-1 max-w-xs mx-auto hidden lg:block">
             <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-4 py-2">
-                <svg class="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                <input type="text" id="search-input" placeholder="Search programs…" class="bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none w-full">
+                <svg class="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input type="text" id="search-input" placeholder="Search programs…"
+                       class="bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none w-full">
             </div>
         </div>
 
+        {{-- Auth actions --}}
         <div class="ml-auto flex items-center gap-3">
-           @auth
+            @auth
                 @if(auth()->user()->hasVerifiedEmail())
-                    <a href="{{ route('learner.my-learning') }}" 
-                    class="bg-blue-600 ... rounded-full">My Learning</a>
+                    {{-- Verified: go to dashboard --}}
+                    <a href="{{ route('learner.my-learning') }}"
+                       class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
+                        My Learning
+                    </a>
                 @else
-                    <a href="{{ route('verification.notice') }}" 
-                    class="text-sm font-semibold text-amber-600 hover:text-amber-700 transition hidden sm:block">
+                    {{-- Authenticated but unverified: prompt to verify, no login modal --}}
+                    <a href="{{ route('verification.notice') }}"
+                       class="text-sm font-semibold text-amber-600 hover:text-amber-700 transition hidden sm:block">
                         Verify Email
                     </a>
-                    {{-- No login modal — they're already logged in --}}
-                    <a href="{{ route('verification.notice') }}" 
-                    class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
+                    <a href="{{ route('verification.notice') }}"
+                       class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
                         Continue Setup
                     </a>
                 @endif
             @else
-                <button onclick="openModal('login-modal')" ...>Log In</button>
-                <button onclick="openModal('register-modal')" ...>Join for Free</button>
+                {{-- Guest: show login / register modals --}}
+                <button onclick="openModal('login-modal')"
+                        class="text-sm font-semibold text-blue-600 hover:text-blue-700 transition hidden sm:block">
+                    Log In
+                </button>
+                <button onclick="openModal('register-modal')"
+                        class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
+                    Join for Free
+                </button>
             @endauth
         </div>
+
     </div>
 </nav>
 

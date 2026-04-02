@@ -30,43 +30,65 @@
 @php $programs = $programs ?? collect([]); @endphp
 
 {{-- ── Navigation ── --}}
+{{-- ── Navigation ── --}}
 <nav id="top-nav" class="sticky top-0 z-50 bg-white border-b border-slate-200 transition-shadow duration-200">
     <div class="max-w-7xl mx-auto px-5 h-16 flex items-center gap-5">
+
+        {{-- Logo --}}
         <a href="{{ route('home') }}" class="flex items-center gap-2 flex-shrink-0">
             <div class="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[8px] flex items-center justify-center shadow-sm">
                 <span class="text-white font-bold text-sm leading-none">G</span>
             </div>
             <span class="text-[17px] font-bold tracking-tight text-slate-900">Luper</span>
         </a>
+
         <a href="{{ route('explore') }}" class="text-sm font-medium text-slate-600 hover:text-blue-600 transition hidden md:block whitespace-nowrap">Explore</a>
-        <div class="search-wrap flex-1 max-w-lg flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-full px-4 py-2.5 transition-all cursor-text hidden sm:flex" onclick="document.getElementById('nav-search').focus()">
-            <svg class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <input id="nav-search" type="text" placeholder="What do you want to learn?" class="bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none w-full">
+
+        {{-- Search --}}
+        <div class="search-wrap flex-1 max-w-lg flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-full px-4 py-2.5 transition-all cursor-text hidden sm:flex"
+             onclick="document.getElementById('nav-search').focus()">
+            <svg class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input id="nav-search" type="text" placeholder="What do you want to learn?"
+                   class="bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none w-full">
         </div>
+
+        {{-- Auth actions --}}
         <div class="flex items-center gap-4 ml-auto flex-shrink-0">
-           @auth
+            @auth
                 @if(auth()->user()->hasVerifiedEmail())
-                    <a href="{{ route('learner.my-learning') }}" 
-                    class="bg-blue-600 ... rounded-full">My Learning</a>
+                    {{-- Verified: go to dashboard --}}
+                    <a href="{{ route('learner.my-learning') }}"
+                       class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
+                        My Learning
+                    </a>
                 @else
-                    <a href="{{ route('verification.notice') }}" 
-                    class="text-sm font-semibold text-amber-600 hover:text-amber-700 transition hidden sm:block">
+                    {{-- Authenticated but unverified: prompt to verify, no login modal --}}
+                    <a href="{{ route('verification.notice') }}"
+                       class="text-sm font-semibold text-amber-600 hover:text-amber-700 transition hidden sm:block">
                         Verify Email
                     </a>
-                    {{-- No login modal — they're already logged in --}}
-                    <a href="{{ route('verification.notice') }}" 
-                    class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
+                    <a href="{{ route('verification.notice') }}"
+                       class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
                         Continue Setup
                     </a>
                 @endif
             @else
-                <button onclick="openModal('login-modal')" ...>Log In</button>
-                <button onclick="openModal('register-modal')" ...>Join for Free</button>
+                {{-- Guest: show login / register modals --}}
+                <button onclick="openModal('login-modal')"
+                        class="text-sm font-semibold text-blue-600 hover:text-blue-700 transition hidden sm:block">
+                    Log In
+                </button>
+                <button onclick="openModal('register-modal')"
+                        class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors shadow-sm">
+                    Join for Free
+                </button>
             @endauth
         </div>
+
     </div>
 </nav>
-
 {{-- ── Hero Slider ── --}}
 <section class="bg-[#f0f6ff] py-8 px-5">
     <div class="max-w-7xl mx-auto">

@@ -14,11 +14,28 @@ use Illuminate\Validation\Rules\Password;
 
 class RegisterController extends Controller
 {
+    /**
+     * Redirect authenticated users away from the registration form.
+     * Verified   → role-based dashboard.
+     * Unverified → back to the verification notice.
+     * Guest      → show the form (rarely hit; GET /register redirects to home).
+     */
     public function showRegistrationForm()
     {
         if (Auth::check()) {
-            return redirect()->route('learner.dashboard');
+            $user = Auth::user();
+
+            if (! $user->hasVerifiedEmail()) {
+                return redirect()->route('verification.notice');
+            }
+
+            return redirect()->route(match ($user->role) {
+                'superadmin', 'admin' => 'admin.dashboard',
+                'mentor'              => 'mentor.dashboard',
+                default               => 'learner.dashboard',
+            });
         }
+
         return view('auth.register');
     }
 
@@ -32,7 +49,7 @@ class RegisterController extends Controller
         ], [
             'first_name.required' => 'First name is required.',
             'last_name.required'  => 'Last name is required.',
-            'email.unique' => 'Unable to create account with these details.',
+            'email.unique'        => 'Unable to create account with these details.',
             'password.min'        => 'Password must be at least 8 characters.',
             'password.mixed'      => 'Password must contain both uppercase and lowercase letters.',
             'password.numbers'    => 'Password must contain at least one number.',
@@ -54,24 +71,31 @@ class RegisterController extends Controller
 
             // Fires sendEmailVerificationNotification() via the Registered listener.
             // That method in User.php queues App\Mail\VerifyEmail — the only mail sent.
+            // No session is created here. The user must verify before accessing the app.
             event(new Registered($user));
 
-            // Auto-login to allow access to the verification notice page (behind auth middleware).
             $verifyRoute = route('verification.notice');
 
             if ($request->wantsJson()) {
                 return response()->json(['success' => true, 'redirect' => $verifyRoute]);
             }
+
             return redirect($verifyRoute);
 
         } catch (\Exception $e) {
             Log::error('Registration failed for ' . $request->email . ': ' . $e->getMessage());
 
             if ($request->wantsJson()) {
-                return response()->json(['success' => false, 'message' => 'Registration failed. Please try again.'], 500);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Registration failed. Please try again.',
+                ], 500);
             }
 
-            return back()->withInput()->with(['message' => 'Registration failed. Please try again.', 'alert-type' => 'error']);
+            return back()->withInput()->with([
+                'message'    => 'Registration failed. Please try again.',
+                'alert-type' => 'error',
+            ]);
         }
     }
 }
