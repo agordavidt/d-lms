@@ -483,22 +483,17 @@
 
             {{-- ─── VIDEO PLAYER ──────────────────────────────────────── --}}
             <div id="view-video" class="hidden flex-col">
-                <div class="video-wrapper" id="video-wrapper">
-                    <video id="video-player" controls preload="metadata"
-                           class="w-full h-full"
-                           onended="onVideoEnded()"
-                           ontimeupdate="onVideoTimeUpdate()">
-                        <source id="video-source" src="" type="video/mp4">
-                        Your browser does not support video.
-                    </video>
-                </div>
+                {{-- wrapper is populated dynamically by JS --}}
+                <div class="video-wrapper" id="video-wrapper"></div>
 
                 {{-- Tab bar --}}
                 <div class="tab-bar bg-white px-5 flex gap-0 flex-shrink-0">
                     <button class="tab-btn active" onclick="switchTab('overview')" id="tab-overview">Overview</button>
                     <button class="tab-btn" onclick="switchTab('transcript')" id="tab-transcript">Transcript</button>
                     <button class="tab-btn" onclick="switchTab('notes')" id="tab-notes">Notes</button>
-                </div>
+                </div>              
+
+               
 
                 {{-- Tab: Overview --}}
                 <div id="pane-overview" class="px-6 py-6 max-w-3xl">
@@ -1022,17 +1017,61 @@ function hideAllViews() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// RENDER: VIDEO — gate complete button at 75% watch time
+// VIDEO URL PARSER — detects YouTube / GDrive / Vimeo / file / generic iframe
+// ════════════════════════════════════════════════════════════════════════════
+function parseVideoUrl(url) {
+    if (!url) return { type: 'none', embedUrl: '' };
+
+    // YouTube — watch, short, or embed URL
+    var yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    if (yt) return {
+        type: 'youtube',
+        videoId: yt[1],
+        embedUrl: 'https://www.youtube.com/embed/' + yt[1]
+                  + '?enablejsapi=1&rel=0&modestbranding=1'
+    };
+
+    // Vimeo
+    var vm = url.match(/vimeo\.com\/(\d+)/);
+    if (vm) return { type: 'iframe', embedUrl: 'https://player.vimeo.com/video/' + vm[1] };
+
+    // Google Drive share/view link
+    var gd = url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]+)/);
+    if (gd) return { type: 'iframe', embedUrl: 'https://drive.google.com/file/d/' + gd[1] + '/preview' };
+
+    // Direct video file
+    if (url.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i)) return { type: 'file', embedUrl: url };
+
+    // Anything else (Loom, Wistia, custom embed, etc.)
+    return { type: 'iframe', embedUrl: url };
+}
+
+// YouTube IFrame API bootstrap (loaded once on demand)
+var _ytAPILoaded = false, _ytReadyQueue = [];
+function _ensureYouTubeAPI() {
+    if (_ytAPILoaded) return;
+    _ytAPILoaded = true;
+    var tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+}
+window.onYouTubeIframeAPIReady = function() {
+    _ytReadyQueue.forEach(function(fn) { fn(); });
+    _ytReadyQueue = [];
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// RENDER: VIDEO
 // ════════════════════════════════════════════════════════════════════════════
 function renderVideo(c) {
-    var view = document.getElementById('view-video');
-    view.classList.remove('hidden'); view.classList.add('flex');
+    var view    = document.getElementById('view-video');
+    var wrapper = document.getElementById('video-wrapper');
+    view.classList.remove('hidden');
+    view.classList.add('flex');
+    wrapper.innerHTML = ''; // clear previous player
+
     document.getElementById('video-title').textContent       = c.title;
     document.getElementById('video-description').textContent = '';
-
-    var player = document.getElementById('video-player');
-    document.getElementById('video-source').src = c.video_url || '';
-    player.load();
 
     var btn  = document.getElementById('video-complete-btn');
     var hint = document.getElementById('video-complete-hint');
@@ -1042,47 +1081,133 @@ function renderVideo(c) {
         setCompleteBtn(btn, 'done');
         hint.textContent = 'Completed ✓';
     } else if (c.video_duration && c.video_duration > 0) {
-        // Gate: disable until 75% watched
         videoGateUnlocked = false;
         setCompleteBtn(btn, 'locked');
         hint.textContent = 'Watch at least 75% to enable completion';
     } else {
-        // No duration — available immediately
         videoGateUnlocked = true;
         setCompleteBtn(btn, 'ready');
-        hint.textContent = 'Mark as complete when you\'re done';
+        hint.textContent = "Mark as complete when you're done";
     }
 
-    videoProgressTimer = setInterval(function() {
-        if (!player.paused && player.duration > 0) {
-            pingProgress(c.id, Math.round((player.currentTime / player.duration) * 100), 15);
-        }
-    }, 15000);
+    var parsed = parseVideoUrl(c.video_url);
+
+    if (parsed.type === 'file') {
+        // ── Native <video> (original behaviour) ──────────────────
+        var vid = document.createElement('video');
+        vid.controls = true;
+        vid.preload  = 'metadata';
+        vid.style.cssText = 'width:100%;height:100%;';
+        var src = document.createElement('source');
+        src.src  = parsed.embedUrl;
+        src.type = 'video/mp4';
+        vid.appendChild(src);
+        wrapper.appendChild(vid);
+        vid.load();
+
+        vid.addEventListener('timeupdate', function() {
+            if (!c.is_completed && vid.duration > 0) {
+                var pct = (vid.currentTime / vid.duration) * 100;
+                if (!videoGateUnlocked && pct >= 75) {
+                    videoGateUnlocked = true;
+                    setCompleteBtn(btn, 'ready');
+                    hint.textContent = "Ready — mark as complete when you're done";
+                }
+                if (pct >= 90) { markComplete(true); }
+            }
+        });
+        vid.addEventListener('ended', function() { markComplete(true); });
+
+        // Progress ping every 15 s
+        videoProgressTimer = setInterval(function() {
+            if (!vid.paused && vid.duration > 0) {
+                pingProgress(c.id, Math.round((vid.currentTime / vid.duration) * 100), 15);
+            }
+        }, 15000);
+
+    } else if (parsed.type === 'youtube') {
+        // ── YouTube IFrame API ────────────────────────────────────
+        var div = document.createElement('div');
+        div.id  = 'yt-player-' + Date.now();
+        div.style.cssText = 'width:100%;height:100%;';
+        wrapper.appendChild(div);
+
+        var initYT = function() {
+            var player = new YT.Player(div.id, {
+                videoId: parsed.videoId,
+                playerVars: { rel: 0, modestbranding: 1 },
+                events: {
+                    onStateChange: function(e) {
+                        if (e.data === YT.PlayerState.ENDED) { markComplete(true); }
+                    },
+                    onReady: function() {
+                        videoProgressTimer = setInterval(function() {
+                            try {
+                                var dur = player.getDuration();
+                                var cur = player.getCurrentTime();
+                                if (dur > 0) {
+                                    var pct = (cur / dur) * 100;
+                                    if (!videoGateUnlocked && pct >= 75) {
+                                        videoGateUnlocked = true;
+                                        setCompleteBtn(btn, 'ready');
+                                        hint.textContent = "Ready — mark as complete when you're done";
+                                    }
+                                    if (pct >= 90 && !c.is_completed) { markComplete(true); }
+                                    pingProgress(c.id, Math.round(pct), 15);
+                                }
+                            } catch(err) {}
+                        }, 15000);
+                    }
+                }
+            });
+        };
+
+        _ensureYouTubeAPI();
+        if (window.YT && window.YT.Player) { initYT(); }
+        else { _ytReadyQueue.push(initYT); }
+
+    } else {
+        // ── Generic iframe (GDrive, Vimeo, Loom, etc.) ───────────
+        var fr = document.createElement('iframe');
+        fr.src             = parsed.embedUrl;
+        fr.allowFullscreen = true;
+        fr.allow           = 'autoplay; fullscreen; picture-in-picture';
+        fr.style.cssText   = 'width:100%;height:100%;border:none;';
+        wrapper.appendChild(fr);
+
+        // Timer-based gate: unlock complete button after 75% of stated duration
+        // Fall back to 5-minute minimum if no duration set
+        var gateSecs = c.video_duration
+            ? Math.round(c.video_duration * 60 * 0.75)
+            : 300;
+        var elapsed = 0;
+        videoProgressTimer = setInterval(function() {
+            elapsed++;
+            if (!videoGateUnlocked && elapsed >= gateSecs) {
+                videoGateUnlocked = true;
+                setCompleteBtn(btn, 'ready');
+                hint.textContent = "Ready — mark as complete when you're done";
+            }
+            // Auto-complete at 90% of duration
+            var autoSecs = c.video_duration
+                ? Math.round(c.video_duration * 60 * 0.9)
+                : gateSecs + 60;
+            if (elapsed >= autoSecs && !c.is_completed) {
+                clearInterval(videoProgressTimer);
+                markComplete(true);
+            }
+        }, 1000);
+    }
 
     switchTab('overview');
 }
 
-function onVideoTimeUpdate() {
-    var player = document.getElementById('video-player');
-    if (!currentData || currentData.type !== 'video' || !player.duration) return;
+// onVideoTimeUpdate and onVideoEnded are no longer needed (logic is inside renderVideo),
+// but keep empty stubs so existing onclick= attributes in other parts don't throw errors.
+function onVideoTimeUpdate() {}
+function onVideoEnded() {}
 
-    var pct = (player.currentTime / player.duration) * 100;
 
-    // Unlock complete button at 75%
-    if (!videoGateUnlocked && pct >= 75) {
-        videoGateUnlocked = true;
-        var btn = document.getElementById('video-complete-btn');
-        setCompleteBtn(btn, 'ready');
-        document.getElementById('video-complete-hint').textContent = 'Ready — mark as complete when you\'re done';
-    }
-
-    // Auto-silently complete at 90%
-    if (pct >= 90 && !currentData.is_completed) markComplete(true);
-}
-
-function onVideoEnded() {
-    if (currentData && !currentData.is_completed) markComplete(true);
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // RENDER: ARTICLE / PDF / EXTERNAL
