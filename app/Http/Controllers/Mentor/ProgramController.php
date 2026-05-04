@@ -71,7 +71,10 @@ class ProgramController extends Controller
     {
         $this->authorise($program);
 
-        $program->load(['modules.weeks.contents', 'modules.weeks.assessment']);
+        // ── CHANGE 1 ──────────────────────────────────────────────────────────
+        // Load assessment.questions so the week rows can display question counts
+        // without extra queries.
+        $program->load(['modules.weeks.contents', 'modules.weeks.assessment.questions']);
 
         $stats = [
             'modules'     => $program->modules->count(),
@@ -127,7 +130,12 @@ class ProgramController extends Controller
 
         $program->update($data);
 
-        return back()->with(['message' => 'Program updated.', 'alert-type' => 'success']);
+        // ── CHANGE 2 ──────────────────────────────────────────────────────────
+        // Redirect to the program's show page instead of back() to the edit form,
+        // so the mentor can see the updated details in context and continue work.
+        return redirect()
+            ->route('mentor.programs.show', $program)
+            ->with(['message' => 'Program updated.', 'alert-type' => 'success']);
     }
 
     /** Submit program to admin for review */
@@ -136,21 +144,21 @@ class ProgramController extends Controller
         $this->authorise($program);
 
         if ($program->status !== 'draft') {
-            return back()->with([
+            return response()->json([
                 'message' => 'Only draft programs can be submitted for review.',
-                'alert-type' => 'warning',
-            ]);
+            ], 422);
         }
 
-        // Basic readiness check
+        // Basic readiness check — load if not already eager-loaded
+        $program->loadMissing('modules.weeks.contents');
+
         $weekCount    = $program->modules->sum(fn ($m) => $m->weeks->count());
         $contentCount = $program->modules->sum(fn ($m) => $m->weeks->sum(fn ($w) => $w->contents->count()));
 
         if ($weekCount === 0 || $contentCount === 0) {
-            return back()->with([
+            return response()->json([
                 'message' => 'Add at least one week with content before submitting for review.',
-                'alert-type' => 'warning',
-            ]);
+            ], 422);
         }
 
         $program->update([
@@ -158,7 +166,7 @@ class ProgramController extends Controller
             'submitted_at' => now(),
         ]);
 
-        return back()->with(['message' => 'Submitted for review. Admin will be notified.', 'alert-type' => 'success']);
+        return response()->json(['success' => true]);
     }
 
     public function destroy(Program $program)

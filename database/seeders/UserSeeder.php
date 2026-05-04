@@ -99,20 +99,6 @@ class UserSeeder extends Seeder
                 'remember_token' => Str::random(10),
             ]);
         }
-
-        // Output count of created users
-        $this->command->info('Users seeded successfully:');
-        $this->command->info('-----------------------');
-        $this->command->info('Super Admin: 1');
-        $this->command->info('Admin: 1');
-        $this->command->info('Mentors: ' . count($mentors));
-        $this->command->info('Learners: ' . count($learners));
-        $this->command->info('-----------------------');
-        $this->command->info('Total: ' . (1 + 1 + count($mentors) + count($learners)));
         
-        $this->command->info('');
-        $this->command->info('Default credentials for all users:');
-        $this->command->info('Email: [user email as shown above]');
-        $this->command->info('Password: password');
     }
 }
