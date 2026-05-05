@@ -23,7 +23,9 @@ class ProgramController extends Controller
 
         $programs = $query->latest()->paginate(20);
 
+        // ── CHANGE: added 'all' so the All tab can display a count ──
         $counts = [
+            'all'          => Program::count(),
             'under_review' => Program::where('status', 'under_review')->count(),
             'active'       => Program::where('status', 'active')->count(),
             'draft'        => Program::where('status', 'draft')->count(),
@@ -43,11 +45,13 @@ class ProgramController extends Controller
         ]);
 
         $stats = [
+            'modules'     => $program->modules->count(),
             'weeks'       => $program->modules->sum(fn ($m) => $m->weeks->count()),
             'contents'    => $program->modules->sum(fn ($m) => $m->weeks->sum(fn ($w) => $w->contents->count())),
             'assessments' => $program->modules->sum(fn ($m) => $m->weeks->filter(fn ($w) => $w->assessment)->count()),
             'questions'   => $program->modules->sum(fn ($m) => $m->weeks->sum(fn ($w) =>
                                 $w->assessment ? $w->assessment->questions->count() : 0)),
+            'enrolled'    => $program->enrollments()->count(),
         ];
 
         return view('admin.programs.show', compact('program', 'stats'));
@@ -65,11 +69,10 @@ class ProgramController extends Controller
             'review_notes' => $request->review_notes,
         ]);
 
-        // TODO: notify mentor
         return back()->with(['message' => "'{$program->name}' is now live for learners.", 'alert-type' => 'success']);
     }
 
-    /** Reject — send back to draft with notes */
+    /** Reject — send back to draft with notes so mentor can edit again */
     public function reject(Request $request, Program $program)
     {
         $request->validate(['review_notes' => 'required|string|max:500']);
@@ -81,7 +84,6 @@ class ProgramController extends Controller
             'review_notes' => $request->review_notes,
         ]);
 
-        // TODO: notify mentor with review_notes
         return back()->with(['message' => 'Program returned to mentor with feedback.', 'alert-type' => 'success']);
     }
 

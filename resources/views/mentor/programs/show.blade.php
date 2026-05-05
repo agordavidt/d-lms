@@ -46,7 +46,7 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h2 style="font-family: 'Source Serif 4', serif; font-size: 1.1rem;">Curriculum</h2>
         @if(in_array($program->status, ['draft', 'inactive']))
-        <button onclick="openModal('module-modal')" class="btn btn-outline btn-sm">Add Module</button>
+        <button onclick="openModal_newModule()" class="btn btn-outline btn-sm">Add Module</button>
         @endif
     </div>
 
@@ -54,7 +54,7 @@
     <div class="card card-body" style="text-align: center; color: var(--muted); padding: 3rem;">
         <p>Start building your curriculum by adding the first module.</p>
         @if(in_array($program->status, ['draft', 'inactive']))
-        <button onclick="openModal('module-modal')" class="btn btn-primary" style="margin-top: 1rem;">Add Module</button>
+        <button onclick="openModal_newModule()" class="btn btn-primary" style="margin-top: 1rem;">Add Module</button>
         @endif
     </div>
     @endif
@@ -87,6 +87,16 @@
         @endif
 
         @foreach($module->weeks as $week)
+        @php
+            $questionCount = $week->assessment?->questions->count() ?? 0;
+            $assessmentData = $week->assessment ? json_encode([
+                'title'               => $week->assessment->title,
+                'pass_percentage'     => $week->assessment->pass_percentage,
+                'time_limit_minutes'  => $week->assessment->time_limit_minutes,
+                'randomize_questions' => (bool) $week->assessment->randomize_questions,
+                'questions_count'     => $questionCount,
+            ]) : 'null';
+        @endphp
         <div style="border-bottom: 1px solid var(--border);" id="week-{{ $week->id }}">
 
             {{-- Week row --}}
@@ -97,14 +107,29 @@
                 </div>
                 <div style="display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0;">
                     <span class="text-muted text-small">{{ $week->contents->count() }} item{{ $week->contents->count() !== 1 ? 's' : '' }}</span>
+
+                    {{-- ── CHANGE: assessment badge now shows question count ── --}}
                     @if($week->has_assessment)
-                    <span class="badge badge-blue" style="font-size: 0.7rem;">Assessment</span>
+                    <span class="badge badge-blue" style="font-size: 0.7rem; cursor: pointer;"
+                          onclick="openManageAssessment({{ $week->id }}, {{ $week->assessment?->id ?? 'null' }}, '{{ addslashes($week->title) }}', true, {!! $assessmentData !!})">
+                        ✓ Assessment
+                        @if($questionCount > 0)
+                        &nbsp;·&nbsp;{{ $questionCount }}Q
+                        @else
+                        <span style="color: #b45309;"> · No questions yet</span>
+                        @endif
+                    </span>
                     @endif
+
                     @if(in_array($program->status, ['draft', 'inactive']))
                     <button onclick="openAddContent({{ $week->id }}, {{ $module->id }}, '{{ addslashes($week->title) }}')" class="btn btn-sm btn-ghost">Add Content</button>
-                    <button onclick="openManageAssessment({{ $week->id }}, {{ $week->assessment?->id ?? 'null' }}, '{{ addslashes($week->title) }}', {{ $week->has_assessment ? 'true' : 'false' }})" class="btn btn-sm btn-ghost">
-                        {{ $week->has_assessment ? 'Assessment' : 'Add Assessment' }}
+
+                    {{-- ── CHANGE: button label is always clear about state ── --}}
+                    <button onclick="openManageAssessment({{ $week->id }}, {{ $week->assessment?->id ?? 'null' }}, '{{ addslashes($week->title) }}', {{ $week->has_assessment ? 'true' : 'false' }}, {!! $assessmentData !!})"
+                            class="btn btn-sm btn-ghost {{ $week->has_assessment ? '' : '' }}">
+                        {{ $week->has_assessment ? 'Edit Assessment' : 'Add Assessment' }}
                     </button>
+
                     <button onclick="deleteWeek({{ $week->id }}, '{{ addslashes($week->title) }}')" style="background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 0.25rem 0.4rem;">&#215;</button>
                     @endif
                 </div>
@@ -150,7 +175,7 @@
 
 {{-- ════════════════════ MODALS ════════════════════ --}}
 
-{{-- Add Module --}}
+{{-- Add / Edit Module --}}
 <div class="modal-overlay" id="module-modal">
     <div class="modal">
         <button class="modal-close" onclick="closeModal('module-modal')">&#215;</button>
@@ -263,39 +288,63 @@
     </div>
 </div>
 
-{{-- Assessment modal --}}
+{{-- ── Assessment modal ──────────────────────────────────────────────────────── --}}
 <div class="modal-overlay" id="assessment-modal">
     <div class="modal">
         <button class="modal-close" onclick="closeModal('assessment-modal')">&#215;</button>
         <h2 id="assessment-modal-title">Assessment</h2>
         <p class="text-muted text-small" id="assessment-modal-subtitle" style="margin-bottom: 1rem;"></p>
-        <form id="assessment-form" onsubmit="saveAssessment(event)">
-            <input type="hidden" id="assessment-week-id">
-            <input type="hidden" id="assessment-id">
-            <div class="form-group">
-                <label class="form-label">Assessment Title</label>
-                <input type="text" id="assessment-title" class="form-control" required placeholder="e.g. Week 1 Quiz">
-            </div>
-            <div class="grid-2">
+
+        {{-- Form section (shown by default) --}}
+        <div id="assessment-form-section">
+            <form id="assessment-form" onsubmit="saveAssessment(event)">
+                <input type="hidden" id="assessment-week-id">
+                <input type="hidden" id="assessment-id">
                 <div class="form-group">
-                    <label class="form-label">Pass Percentage</label>
-                    <input type="number" id="assessment-pass-pct" class="form-control" value="70" min="1" max="100">
+                    <label class="form-label">Assessment Title</label>
+                    <input type="text" id="assessment-title" class="form-control" required placeholder="e.g. Week 1 Quiz">
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Time Limit (minutes)</label>
-                    <input type="number" id="assessment-time" class="form-control" min="1" placeholder="Leave blank for no limit">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label class="form-label">Pass Percentage</label>
+                        <input type="number" id="assessment-pass-pct" class="form-control" value="70" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Time Limit (minutes)</label>
+                        <input type="number" id="assessment-time" class="form-control" min="1" placeholder="Leave blank for no limit">
+                    </div>
                 </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.25rem;">
+                    <input type="checkbox" id="assessment-randomize" style="width:16px;height:16px;">
+                    <label for="assessment-randomize" class="form-label" style="margin:0;">Randomise question order</label>
+                </div>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="submit" class="btn btn-primary" id="assessment-save-btn">Save Assessment</button>
+                    {{-- Questions link — only visible when editing an existing assessment --}}
+                    <a id="assessment-questions-link" href="#" class="btn btn-outline" style="display:none;">Manage Questions</a>
+                    <button type="button" onclick="closeModal('assessment-modal')" class="btn btn-ghost">Cancel</button>
+                </div>
+            </form>
+        </div>
+
+        {{-- ── Success section (shown after save, hidden by default) ── --}}
+        <div id="assessment-success-section" style="display:none; text-align: center; padding: 1rem 0 0.5rem;">
+            <div style="width: 48px; height: 48px; border-radius: 50%; background: #f0fdf4; border: 2px solid #bbf7d0;
+                        display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem;
+                        font-size: 1.4rem; color: #16a34a;">✓</div>
+            <div style="font-weight: 600; font-size: 1rem; margin-bottom: 0.35rem;">Assessment saved</div>
+            <p class="text-muted text-small" style="margin-bottom: 1.5rem; line-height: 1.6;">
+                Settings saved. Add questions to make this assessment active for learners.
+            </p>
+            <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+                <a id="assessment-questions-go-link" href="#" class="btn btn-primary">Manage Questions →</a>
+                <button type="button" onclick="closeModal('assessment-modal'); location.reload();" class="btn btn-ghost">Done</button>
             </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
-                <input type="checkbox" id="assessment-randomize" style="width:16px;height:16px;">
-                <label for="assessment-randomize" class="form-label" style="margin:0;">Randomise question order</label>
-            </div>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <button type="submit" class="btn btn-primary">Save Assessment</button>
-                <a id="assessment-questions-link" href="#" class="btn btn-outline" style="display:none;">Manage Questions</a>
-                <button type="button" onclick="closeModal('assessment-modal')" class="btn btn-ghost">Cancel</button>
-            </div>
-        </form>
+            <p class="text-muted" style="font-size: 0.75rem; margin-top: 1.25rem;">
+                You can also edit assessment settings later by clicking "Edit Assessment" on the week row.
+            </p>
+        </div>
+
     </div>
 </div>
 
@@ -317,14 +366,6 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
 // ── Modules ──────────────────────────────────────────────────────────────────
 let editingModuleId = null;
 
-function editModule(id, title) {
-    editingModuleId = id;
-    document.getElementById('module-modal-title').textContent = 'Edit Module';
-    document.getElementById('module-id').value = id;
-    document.getElementById('module-title-input').value = title;
-    openModal('module-modal');
-}
-
 function openModal_newModule() {
     editingModuleId = null;
     document.getElementById('module-modal-title').textContent = 'Add Module';
@@ -332,9 +373,14 @@ function openModal_newModule() {
     document.getElementById('module-title-input').value = '';
     openModal('module-modal');
 }
-// Override the button
-document.querySelector('[onclick="openModal(\'module-modal\')"]')
-    ?.setAttribute('onclick', 'openModal_newModule()');
+
+function editModule(id, title) {
+    editingModuleId = id;
+    document.getElementById('module-modal-title').textContent = 'Edit Module';
+    document.getElementById('module-id').value = id;
+    document.getElementById('module-title-input').value = title;
+    openModal('module-modal');
+}
 
 async function saveModule(e) {
     e.preventDefault();
@@ -442,17 +488,46 @@ async function deleteContent(id, title) {
 }
 
 // ── Assessment ─────────────────────────────────────────────────────────────────
-function openManageAssessment(weekId, assessmentId, weekTitle, hasAssessment) {
-    document.getElementById('assessment-week-id').value = weekId;
-    document.getElementById('assessment-id').value = assessmentId || '';
-    document.getElementById('assessment-modal-subtitle').textContent = weekTitle;
-    document.getElementById('assessment-modal-title').textContent = hasAssessment ? 'Edit Assessment' : 'Add Assessment';
-    document.getElementById('assessment-title').value = '';
 
+/**
+ * assessmentData — full object passed from Blade when an assessment already
+ * exists on this week, or null for new weeks.
+ */
+function openManageAssessment(weekId, assessmentId, weekTitle, hasAssessment, assessmentData) {
+    // Reset to form view (in case success screen was showing)
+    document.getElementById('assessment-form-section').style.display  = 'block';
+    document.getElementById('assessment-success-section').style.display = 'none';
+
+    // Set identifiers
+    document.getElementById('assessment-week-id').value = weekId;
+    document.getElementById('assessment-id').value      = assessmentId || '';
+    document.getElementById('assessment-modal-subtitle').textContent  = weekTitle;
+    document.getElementById('assessment-modal-title').textContent     =
+        hasAssessment ? 'Edit Assessment' : 'Add Assessment';
+
+    // ── Pre-populate fields from existing assessment data ──
+    if (assessmentData) {
+        document.getElementById('assessment-title').value         = assessmentData.title          || '';
+        document.getElementById('assessment-pass-pct').value      = assessmentData.pass_percentage ?? 70;
+        document.getElementById('assessment-time').value          = assessmentData.time_limit_minutes || '';
+        document.getElementById('assessment-randomize').checked   = !!assessmentData.randomize_questions;
+    } else {
+        // Blank defaults for new assessments
+        document.getElementById('assessment-title').value         = '';
+        document.getElementById('assessment-pass-pct').value      = 70;
+        document.getElementById('assessment-time').value          = '';
+        document.getElementById('assessment-randomize').checked   = false;
+    }
+
+    // Show "Manage Questions" link only when an assessment already exists
     const qLink = document.getElementById('assessment-questions-link');
     if (assessmentId) {
         qLink.style.display = 'inline-flex';
         qLink.href = `/mentor/programs/${PROGRAM_ID}/assessments/${assessmentId}/questions`;
+        const qCount = assessmentData?.questions_count ?? 0;
+        qLink.textContent = qCount > 0
+            ? `Manage Questions (${qCount})`
+            : 'Add Questions';
     } else {
         qLink.style.display = 'none';
     }
@@ -462,6 +537,7 @@ function openManageAssessment(weekId, assessmentId, weekTitle, hasAssessment) {
 
 async function saveAssessment(e) {
     e.preventDefault();
+
     const weekId = document.getElementById('assessment-week-id').value;
     const assId  = document.getElementById('assessment-id').value;
     const body   = {
@@ -471,13 +547,30 @@ async function saveAssessment(e) {
         randomize_questions: document.getElementById('assessment-randomize').checked ? 1 : 0,
     };
 
+    // Save — create or update
+    let data;
     if (assId) {
-        await api('PUT', `/mentor/programs/${PROGRAM_ID}/assessments/${assId}`, body);
+        data = await api('PUT', `/mentor/programs/${PROGRAM_ID}/assessments/${assId}`, body);
     } else {
-        await api('POST', `/mentor/programs/${PROGRAM_ID}/weeks/${weekId}/assessment`, body);
+        data = await api('POST', `/mentor/programs/${PROGRAM_ID}/weeks/${weekId}/assessment`, body);
     }
-    closeModal('assessment-modal');
-    location.reload();
+
+    // Resolve assessment ID (new: comes from response; update: already in form)
+    const resolvedId = data?.assessment?.id || assId;
+
+    // Update the "Manage Questions" link in the form view too (for future opens)
+    const qLinkForm = document.getElementById('assessment-questions-link');
+    qLinkForm.href         = `/mentor/programs/${PROGRAM_ID}/assessments/${resolvedId}/questions`;
+    qLinkForm.style.display = 'inline-flex';
+
+    // ── Switch to success screen with clear next-step CTA ──
+    document.getElementById('assessment-questions-go-link').href =
+        `/mentor/programs/${PROGRAM_ID}/assessments/${resolvedId}/questions`;
+    document.getElementById('assessment-form-section').style.display   = 'none';
+    document.getElementById('assessment-success-section').style.display = 'block';
+
+    // Update the hidden assessment-id so re-saving without page reload does a PUT
+    document.getElementById('assessment-id').value = resolvedId;
 }
 
 // ── Submit for review ──────────────────────────────────────────────────────────
@@ -496,7 +589,11 @@ async function submitForReview() {
 async function api(method, url, body = null) {
     const opts = {
         method,
-        headers: { 'X-CSRF-TOKEN': CSRF, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        headers: {
+            'X-CSRF-TOKEN': CSRF,
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        }
     };
     if (body) {
         if (method === 'DELETE' || method === 'PUT') {
