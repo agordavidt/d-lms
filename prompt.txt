@@ -1,666 +1,662 @@
-==== admin programs review ===
+==== graduation flow ====
 <?php
 
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
+use App\Models\Enrollment;
+use App\Models\ModuleWeek;
 use App\Models\Program;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
-class ProgramController extends Controller
+class GraduationController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Program::with(['mentor'])
-            ->withCount(['enrollments', 'modules']);
+        $query = Enrollment::with(['user', 'program'])
+            ->where('graduation_status', 'pending_review')
+            ->orderBy('graduation_requested_at');
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+        if ($request->filled('program_id')) {
+            $query->where('program_id', $request->program_id);
         }
 
-        if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
-        }
+        $pendingGraduations = $query->paginate(20);
 
-        $programs = $query->latest()->paginate(20);
-
-        $counts = [
-            'under_review' => Program::where('status', 'under_review')->count(),
-            'active'       => Program::where('status', 'active')->count(),
-            'draft'        => Program::where('status', 'draft')->count(),
-            'inactive'     => Program::where('status', 'inactive')->count(),
-        ];
-
-        return view('admin.programs.index', compact('programs', 'counts'));
-    }
-
-    /** Full program preview for admin review */
-    public function show(Program $program)
-    {
-        $program->load([
-            'mentor',
-            'modules.weeks.contents',
-            'modules.weeks.assessment.questions',
-        ]);
+        $programs = Program::where('status', 'active')->orderBy('name')->get(['id', 'name']);
 
         $stats = [
-            'weeks'       => $program->modules->sum(fn ($m) => $m->weeks->count()),
-            'contents'    => $program->modules->sum(fn ($m) => $m->weeks->sum(fn ($w) => $w->contents->count())),
-            'assessments' => $program->modules->sum(fn ($m) => $m->weeks->filter(fn ($w) => $w->assessment)->count()),
-            'questions'   => $program->modules->sum(fn ($m) => $m->weeks->sum(fn ($w) =>
-                                $w->assessment ? $w->assessment->questions->count() : 0)),
+            'pending_count'         => Enrollment::where('graduation_status', 'pending_review')->count(),
+            'graduated_this_month'  => Enrollment::where('graduation_status', 'graduated')
+                                           ->whereMonth('graduation_approved_at', now()->month)
+                                           ->whereYear('graduation_approved_at', now()->year)
+                                           ->count(),
+            'avg_grade'             => round(
+                                           Enrollment::where('graduation_status', 'graduated')
+                                               ->avg('final_grade_avg') ?? 0, 1
+                                       ),
         ];
 
-        return view('admin.programs.show', compact('program', 'stats'));
+        return view('admin.graduations.index', compact('pendingGraduations', 'programs', 'stats'));
     }
 
-    /** Publish (approve) a program — makes it visible to learners */
-    public function publish(Request $request, Program $program)
+    public function review($enrollmentId)
     {
-        $request->validate(['review_notes' => 'nullable|string|max:500']);
+        $enrollment = Enrollment::with([
+            'user', 'program',
+            'weekProgress.moduleWeek',
+            'assessmentAttempts.assessment',
+        ])->findOrFail($enrollmentId);
 
-        $program->update([
-            'status'       => 'active',
-            'reviewed_at'  => now(),
-            'reviewed_by'  => auth()->id(),
-            'review_notes' => $request->review_notes,
+        $eligibility = [
+            'all_content_complete'    => $enrollment->hasCompletedAllContent(),
+            'all_assessments_passed'  => $enrollment->hasPassedAllAssessments(),
+            'meets_grade_requirement' => $enrollment->meetsMinimumGradeRequirement(),
+        ];
+
+        // FIXED: removed ->where('status', 'published') — no status column in new schema
+        $totalWeeks = ModuleWeek::whereHas('programModule', fn ($q) =>
+            $q->where('program_id', $enrollment->program_id)
+        )->count();
+
+        $completedWeeks = $enrollment->weekProgress()
+            ->where('is_completed', true)->count();
+
+        $assessmentBreakdown = $enrollment->weekProgress()
+            ->whereNotNull('assessment_score')
+            ->where('assessment_attempts', '>', 0)
+            ->with('moduleWeek')
+            ->get();
+
+        return view('admin.graduations.review', compact(
+            'enrollment', 'eligibility',
+            'assessmentBreakdown', 'totalWeeks', 'completedWeeks'
+        ));
+    }
+
+    public function approve(Request $request, $enrollmentId)
+    {
+        $enrollment = Enrollment::findOrFail($enrollmentId);
+
+        if (!$enrollment->isEligibleForGraduation()) {
+            return back()->with([
+                'message'    => 'This learner does not meet graduation requirements.',
+                'alert-type' => 'error',
+            ]);
+        }
+
+        DB::beginTransaction();
+        try {
+            $enrollment->approveGraduation(auth()->user());
+
+            AuditLog::log('graduation_approved', auth()->user(), [
+                'description' => 'Approved graduation for ' . $enrollment->user->first_name . ' ' . $enrollment->user->last_name,
+                'model_type'  => Enrollment::class,
+                'model_id'    => $enrollment->id,
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('admin.graduations.index')
+                ->with(['message' => 'Graduation approved. Certificate key generated.', 'alert-type' => 'success']);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with(['message' => 'Failed: ' . $e->getMessage(), 'alert-type' => 'error']);
+        }
+    }
+
+    public function reject(Request $request, $enrollmentId)
+    {
+        $request->validate(['reason' => 'required|string|max:1000']);
+
+        $enrollment = Enrollment::findOrFail($enrollmentId);
+
+        DB::beginTransaction();
+        try {
+            $enrollment->update([
+                'graduation_status'        => 'active',
+                'graduation_requested_at'  => null,
+            ]);
+
+            AuditLog::log('graduation_rejected', auth()->user(), [
+                'description' => 'Rejected graduation for ' . $enrollment->user->first_name . ' ' . $enrollment->user->last_name,
+                'model_type'  => Enrollment::class,
+                'model_id'    => $enrollment->id,
+                'reason'      => $request->reason,
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('admin.graduations.index')
+                ->with(['message' => 'Graduation request rejected.', 'alert-type' => 'success']);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with(['message' => 'Failed: ' . $e->getMessage(), 'alert-type' => 'error']);
+        }
+    }
+
+    public function bulkApprove(Request $request)
+    {
+        $request->validate([
+            'enrollment_ids'   => 'required|array',
+            'enrollment_ids.*' => 'exists:enrollments,id',
         ]);
 
-        // TODO: notify mentor
-        return back()->with(['message' => "'{$program->name}' is now live for learners.", 'alert-type' => 'success']);
+        $approved = 0;
+        $failed   = 0;
+
+        DB::beginTransaction();
+        try {
+            foreach ($request->enrollment_ids as $id) {
+                $enrollment = Enrollment::find($id);
+                if ($enrollment && $enrollment->isEligibleForGraduation()) {
+                    $enrollment->approveGraduation(auth()->user());
+                    $approved++;
+                } else {
+                    $failed++;
+                }
+            }
+            DB::commit();
+
+            $msg = "Approved {$approved} graduation(s).";
+            if ($failed) $msg .= " {$failed} skipped (not eligible).";
+
+            return back()->with(['message' => $msg, 'alert-type' => 'success']);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with(['message' => 'Bulk approval failed: ' . $e->getMessage(), 'alert-type' => 'error']);
+        }
     }
 
-    /** Reject — send back to draft with notes */
-    public function reject(Request $request, Program $program)
+    public function graduated(Request $request)
     {
-        $request->validate(['review_notes' => 'required|string|max:500']);
+        $query = Enrollment::with(['user', 'program'])
+            ->where('graduation_status', 'graduated')
+            ->orderByDesc('graduation_approved_at');
 
-        $program->update([
-            'status'       => 'draft',
-            'reviewed_at'  => now(),
-            'reviewed_by'  => auth()->id(),
-            'review_notes' => $request->review_notes,
-        ]);
+        if ($request->filled('program_id')) {
+            $query->where('program_id', $request->program_id);
+        }
 
-        // TODO: notify mentor with review_notes
-        return back()->with(['message' => 'Program returned to mentor with feedback.', 'alert-type' => 'success']);
-    }
+        if ($request->filled('month')) {
+            $query->whereMonth('graduation_approved_at', $request->month)
+                  ->whereYear('graduation_approved_at', $request->year ?? now()->year);
+        }
 
-    /** Take a live program offline — existing learners keep access, no new enrollments */
-    public function takeOffline(Request $request, Program $program)
-    {
-        $request->validate(['review_notes' => 'nullable|string|max:500']);
+        $graduates = $query->paginate(20);
+        $programs  = Program::where('status', 'active')->orderBy('name')->get(['id', 'name']);
 
-        $program->update([
-            'status'       => 'inactive',
-            'reviewed_at'  => now(),
-            'reviewed_by'  => auth()->id(),
-            'review_notes' => $request->review_notes,
-        ]);
-
-        return back()->with(['message' => "'{$program->name}' taken offline. Existing learners unaffected.", 'alert-type' => 'success']);
-    }
-
-    /** Restore an inactive program back to active */
-    public function restore(Program $program)
-    {
-        $program->update([
-            'status'      => 'active',
-            'reviewed_at' => now(),
-            'reviewed_by' => auth()->id(),
-        ]);
-
-        return back()->with(['message' => "'{$program->name}' restored and live again.", 'alert-type' => 'success']);
-    }
-
-    public function destroy(Program $program)
-    {
-        abort_if($program->enrollments()->exists(), 403,
-            'Cannot delete a program with enrolled learners.');
-
-        $program->delete();
-
-        return redirect()->route('admin.programs.index')
-            ->with(['message' => 'Program deleted.', 'alert-type' => 'success']);
+        return view('admin.graduations.graduated', compact('graduates', 'programs'));
     }
 }
 
 
-----s\resources\views\admin\programs\index.blade.php
-@extends('layouts.admin') 
-@section('title', 'Programs')
+<?php
 
-@section('content')
-<div class="page-header">
-    <div><h1>Programs</h1></div>
-</div>
+namespace App\Http\Controllers\Learner;
 
-<div class="container section">
+use App\Http\Controllers\Controller;
+use App\Models\Enrollment;
 
-    {{-- Count tabs --}}
-    <div style="display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem;">
-        @foreach(['all' => 'All', 'under_review' => 'Under Review (' . $counts['under_review'] . ')', 'active' => 'Live', 'draft' => 'Draft', 'inactive' => 'Offline'] as $val => $label)
-        <a href="{{ request()->fullUrlWithQuery(['status' => $val === 'all' ? null : $val]) }}"
-           style="padding: 0.6rem 1rem; font-size: 0.875rem; font-weight: 500; text-decoration: none;
-                  color: {{ request('status', 'all') === $val ? 'var(--blue)' : 'var(--muted)' }};
-                  border-bottom: 2px solid {{ request('status', 'all') === $val ? 'var(--blue)' : 'transparent' }};
-                  margin-bottom: -1px; white-space: nowrap;">
-            {{ $label }}
-        </a>
-        @endforeach
-    </div>
+class CertificationsController extends Controller
+{
+    /**
+     * Learner certifications — graduated + certificate approved enrollments only.
+     */
+    public function index()
+    {
+        try {
+            $user = auth()->user();
 
-    {{-- Search --}}
-    <form method="GET" style="display: flex; gap: 0.75rem; margin-bottom: 1.25rem;">
-        <input type="hidden" name="status" value="{{ request('status') }}">
-        <input type="text" name="search" class="form-control" style="max-width: 300px;"
-               placeholder="Search programs…" value="{{ request('search') }}">
-        <button type="submit" class="btn btn-outline">Search</button>
-    </form>
+            $certifications = Enrollment::where('user_id', $user->id)
+                ->where('graduation_status', 'graduated')
+                ->whereNotNull('certificate_key')
+                ->with(['program', 'cohort'])
+                ->latest('updated_at')
+                ->get();
 
-    <div class="card">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Program</th>
-                    <th>Mentor</th>
-                    <th>Submitted</th>
-                    <th>Learners</th>
-                    <th>Status</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($programs as $program)
-                <tr>
-                    <td>
-                        <div style="font-weight: 500;">{{ $program->name }}</div>
-                        <div class="text-muted text-small">{{ $program->duration }} &middot; {{ $program->modules_count }} module{{ $program->modules_count !== 1 ? 's' : '' }}</div>
-                    </td>
-                    <td class="text-small">
-                        @if($program->mentor)
-                            {{ $program->mentor->first_name }} {{ $program->mentor->last_name }}
-                        @else
-                            <span class="text-muted">—</span>
-                        @endif
-                    </td>
-                    <td class="text-muted text-small">
-                        {{ $program->submitted_at ? $program->submitted_at->format('M j, Y') : '—' }}
-                    </td>
-                    <td class="text-small">{{ $program->enrollments_count }}</td>
-                    <td>
-                        <span class="badge {{ match($program->status) {
-                            'active'       => 'badge-green',
-                            'under_review' => 'badge-yellow',
-                            'inactive'     => 'badge-gray',
-                            default        => 'badge-gray',
-                        } }}">
-                            {{ match($program->status) {
-                                'active'       => 'Live',
-                                'under_review' => 'Under Review',
-                                'inactive'     => 'Offline',
-                                default        => 'Draft',
-                            } }}
-                        </span>
-                    </td>
-                    <td>
-                        <a href="{{ route('admin.programs.show', $program) }}" class="btn btn-sm btn-outline">Review</a>
-                    </td>
-                </tr>
-                @empty
-                <tr><td colspan="6" style="text-align: center; color: var(--muted); padding: 2rem;">No programs found.</td></tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
+            return view('learner.certifications', compact('certifications'));
 
-    <div style="margin-top: 1.25rem;">{{ $programs->links() }}</div>
+        } catch (\Exception $e) {
+            return back()->with([
+                'message'    => 'Unable to load certifications.',
+                'alert-type' => 'error',
+            ]);
+        }
+    }
+}
 
-</div>
-@endsection
+<?php
 
+namespace App\Http\Controllers\Learner;
 
-------s\resources\views\admin\programs\show.blade.php
+use App\Http\Controllers\Controller;
+use App\Models\Enrollment;
+use Illuminate\Http\Request;
 
-@extends('layouts.admin')
-@section('title', $program->name)
+class GraduationController extends Controller
+{
+    
+    public function request(Request $request, Enrollment $enrollment)
+    {
+        $user = auth()->user();
 
-@section('content')
-<div class="page-header">
-    <div>
-        <div class="breadcrumb"><a href="{{ route('admin.programs.index') }}">Programs</a></div>
-        <h1>{{ $program->name }}</h1>
-    </div>
-    <div style="display: flex; gap: 0.5rem; align-items: center;">
-        <span class="badge {{ match($program->status) {
-            'active'       => 'badge-green',
-            'under_review' => 'badge-yellow',
-            'inactive'     => 'badge-gray',
-            default        => 'badge-gray',
-        } }}" style="padding: 0.35rem 0.9rem;">
-            {{ match($program->status) { 'active' => 'Live', 'under_review' => 'Under Review', 'inactive' => 'Offline', default => 'Draft' } }}
-        </span>
-
-        @if($program->status === 'under_review')
-            <button onclick="openModal('publish-modal')" class="btn btn-primary btn-sm">Publish</button>
-            <button onclick="openModal('reject-modal')" class="btn btn-outline btn-sm" style="color: var(--error); border-color: #fca5a5;">Return to Mentor</button>
-        @elseif($program->status === 'active')
-            <button onclick="openModal('offline-modal')" class="btn btn-ghost btn-sm">Take Offline</button>
-        @elseif($program->status === 'inactive')
-            <form method="POST" action="{{ route('admin.programs.restore', $program) }}" style="display:inline;">
-                @csrf
-                <button type="submit" class="btn btn-outline btn-sm">Restore to Live</button>
-            </form>
-        @endif
-
-        @if(!$program->enrollments()->exists())
-        <form method="POST" action="{{ route('admin.programs.destroy', $program) }}" style="display:inline;"
-              onsubmit="return confirm('Permanently delete this program?')">
-            @csrf @method('DELETE')
-            <button type="submit" class="btn btn-ghost btn-sm" style="color: var(--error);">Delete</button>
-        </form>
-        @endif
-    </div>
-</div>
-
-<div class="container section">
-<div style="display: grid; grid-template-columns: 1fr 300px; gap: 2rem; align-items: start;">
-
-    {{-- Curriculum preview --}}
-    <div>
-        <h2 style="font-family: 'Source Serif 4', serif; font-size: 1.05rem; margin-bottom: 1rem;">Curriculum</h2>
-
-        @forelse($program->modules as $module)
-        <div class="card" style="margin-bottom: 1rem;">
-            <div style="padding: 0.9rem 1.25rem; border-bottom: 1px solid var(--border); font-weight: 600; display: flex; justify-content: space-between;">
-                <span>{{ $module->title }}</span>
-                <span class="text-muted text-small">{{ $module->weeks->count() }} week{{ $module->weeks->count() !== 1 ? 's' : '' }}</span>
-            </div>
-
-            @foreach($module->weeks as $week)
-            <div style="border-bottom: 1px solid var(--border);">
-                <div style="padding: 0.75rem 1.25rem 0.75rem 2rem; background: var(--bg); display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <span class="text-muted text-small">Week {{ $week->week_number }} &nbsp;&middot;&nbsp;</span>
-                        <span style="font-size: 0.875rem; font-weight: 500;">{{ $week->title }}</span>
-                    </div>
-                    <div style="display: flex; gap: 0.75rem; align-items: center;">
-                        <span class="text-muted text-small">{{ $week->contents->count() }} items</span>
-                        @if($week->has_assessment)
-                        <span class="badge badge-blue" style="font-size: 0.7rem;">Assessment · {{ $week->assessment?->questions?->count() ?? 0 }} Qs</span>
-                        @endif
-                    </div>
-                </div>
-
-                @foreach($week->contents as $content)
-                <div style="padding: 0.5rem 1.25rem 0.5rem 3rem; border-bottom: 1px solid var(--border); display: flex; gap: 0.75rem; align-items: center; font-size: 0.875rem;">
-                    <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--muted); font-weight: 600; min-width: 44px;">{{ $content->content_type }}</span>
-                    <span>{{ $content->title }}</span>
-                </div>
-                @endforeach
-            </div>
-            @endforeach
-        </div>
-        @empty
-        <div class="card card-body" style="color: var(--muted); text-align: center;">No curriculum content yet.</div>
-        @endforelse
-    </div>
-
-    {{-- Right: program info + actions --}}
-    <div>
-        {{-- Cover image --}}
-        @if($program->cover_image)
-        <div style="border-radius: 8px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--border);">
-            <img src="{{ asset('storage/' . $program->cover_image) }}" style="width: 100%; display: block;" alt="">
-        </div>
-        @endif
-
-        <div class="card card-body" style="margin-bottom: 1rem;">
-            <div style="font-weight: 600; margin-bottom: 0.75rem; font-family: 'Source Serif 4', serif;">Details</div>
-            <div style="display: grid; gap: 0.6rem; font-size: 0.875rem;">
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Mentor</span>
-                    <span>{{ $program->mentor?->first_name }} {{ $program->mentor?->last_name }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Duration</span>
-                    <span>{{ $program->duration }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Price</span>
-                    <span>₦{{ number_format($program->price, 2) }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Pass Average</span>
-                    <span>{{ $program->min_passing_average }}%</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Submitted</span>
-                    <span>{{ $program->submitted_at?->format('M j, Y') ?? '—' }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Learners</span>
-                    <span>{{ $stats['enrolled'] ?? $program->enrollments()->count() }}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="card card-body">
-            <div style="font-weight: 600; margin-bottom: 0.5rem; font-family: 'Source Serif 4', serif;">Description</div>
-            <p style="font-size: 0.875rem; color: var(--muted); line-height: 1.6;">{{ $program->description }}</p>
-        </div>
-
-        @if($program->review_notes)
-        <div class="card card-body" style="margin-top: 1rem; background: #fffbeb; border-color: #fde68a;">
-            <div style="font-size: 0.8rem; font-weight: 600; color: #92400e; margin-bottom: 0.4rem;">Previous Feedback</div>
-            <p style="font-size: 0.875rem; color: #92400e;">{{ $program->review_notes }}</p>
-        </div>
-        @endif
-    </div>
-
-</div>
-</div>
-
-{{-- Publish modal --}}
-<div class="modal-overlay" id="publish-modal">
-    <div class="modal" style="max-width: 460px;">
-        <button class="modal-close" onclick="closeModal('publish-modal')">&#215;</button>
-        <h2>Publish Program</h2>
-        <p style="color: var(--muted); font-size: 0.875rem; margin-bottom: 1.25rem;">
-            This will make the program visible to learners on the Explore page.
-        </p>
-        <form method="POST" action="{{ route('admin.programs.publish', $program) }}">
-            @csrf
-            <div class="form-group">
-                <label class="form-label">Note to Mentor (optional)</label>
-                <textarea name="review_notes" class="form-control" rows="3" maxlength="500"
-                          placeholder="Any feedback or guidance…"></textarea>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <button type="submit" class="btn btn-primary">Publish</button>
-                <button type="button" onclick="closeModal('publish-modal')" class="btn btn-ghost">Cancel</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-{{-- Reject modal --}}
-<div class="modal-overlay" id="reject-modal">
-    <div class="modal" style="max-width: 460px;">
-        <button class="modal-close" onclick="closeModal('reject-modal')">&#215;</button>
-        <h2>Return to Mentor</h2>
-        <p style="color: var(--muted); font-size: 0.875rem; margin-bottom: 1.25rem;">
-            The program will return to Draft status. Explain what needs to be revised.
-        </p>
-        <form method="POST" action="{{ route('admin.programs.reject', $program) }}">
-            @csrf
-            <div class="form-group">
-                <label class="form-label">Feedback <span style="color:var(--error)">*</span></label>
-                <textarea name="review_notes" class="form-control" rows="4" required maxlength="500"
-                          placeholder="Explain what changes are needed before this can be published…"></textarea>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <button type="submit" class="btn btn-primary" style="background: var(--error); border-color: var(--error);">Return to Mentor</button>
-                <button type="button" onclick="closeModal('reject-modal')" class="btn btn-ghost">Cancel</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-{{-- Take offline modal --}}
-<div class="modal-overlay" id="offline-modal">
-    <div class="modal" style="max-width: 460px;">
-        <button class="modal-close" onclick="closeModal('offline-modal')">&#215;</button>
-        <h2>Take Program Offline</h2>
-        <p style="color: var(--muted); font-size: 0.875rem; margin-bottom: 1.25rem;">
-            Existing learners keep their access. No new enrollments will be accepted.
-        </p>
-        <form method="POST" action="{{ route('admin.programs.take-offline', $program) }}">
-            @csrf
-            <div class="form-group">
-                <label class="form-label">Reason (optional)</label>
-                <textarea name="review_notes" class="form-control" rows="3" maxlength="500"></textarea>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <button type="submit" class="btn btn-primary">Take Offline</button>
-                <button type="button" onclick="closeModal('offline-modal')" class="btn btn-ghost">Cancel</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-@endsection
-
-@push('scripts')
-<script>
-function openModal(id)  { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-document.querySelectorAll('.modal-overlay').forEach(el =>
-    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); }));
-</script>
-@endpush
-
-
-
-=== layout file ===
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'Admin') — G-Luper</title>
-
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --blue:       #0056d2;
-            --blue-light: #e8f0fe;
-            --text:       #1f1f1f;
-            --muted:      #6b7280;
-            --border:     #e5e7eb;
-            --bg:         #f9fafb;
-            --white:      #ffffff;
-            --nav-h:      60px;
-            --success:    #16a34a;
-            --warning:    #b45309;
-            --error:      #dc2626;
+        // Security — enrollment must belong to this user
+        if ($enrollment->user_id !== $user->id) {
+            abort(403, 'Unauthorized');
         }
 
-        body { font-family: 'DM Sans', system-ui, sans-serif; font-size: 15px; color: var(--text); background: var(--bg); line-height: 1.6; }
+        // Already in the graduation pipeline
+        if (in_array($enrollment->graduation_status, ['pending_review', 'graduated'])) {
+            $message = $enrollment->graduation_status === 'graduated'
+                ? 'You have already graduated!'
+                : 'Your graduation request is already under review.';
 
-        /* ── Top Nav ── */
-        .top-nav { position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h); background: var(--white); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 2rem; gap: 2rem; z-index: 100; }
-        .nav-brand { font-family: 'Source Serif 4', serif; font-size: 1.2rem; font-weight: 600; color: var(--blue); text-decoration: none; white-space: nowrap; margin-right: 1rem; }
-        .nav-brand span { font-size: 0.7rem; font-family: 'DM Sans', sans-serif; font-weight: 500; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.4rem; margin-left: 0.4rem; vertical-align: middle; }
-        .nav-links { display: flex; gap: 0; flex: 1; }
-        .nav-link { display: inline-block; padding: 0 1.1rem; height: var(--nav-h); line-height: var(--nav-h); font-size: 0.875rem; font-weight: 500; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; white-space: nowrap; }
-        .nav-link:hover    { color: var(--text); }
-        .nav-link.active   { color: var(--blue); border-bottom-color: var(--blue); }
-        .nav-badge { display: inline-block; background: var(--error); color: #fff; font-size: 0.65rem; font-weight: 700; border-radius: 10px; padding: 0.05rem 0.4rem; margin-left: 0.3rem; vertical-align: middle; line-height: 1.6; }
-        .nav-right { display: flex; align-items: center; gap: 1rem; margin-left: auto; }
-        .nav-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--text); color: var(--white); font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
-        .avatar-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0; min-width: 180px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); z-index: 200; }
-        .nav-avatar:hover .avatar-dropdown { display: block; }
-        .avatar-dropdown a, .avatar-dropdown button { display: block; width: 100%; padding: 0.5rem 1rem; font-size: 0.875rem; color: var(--text); text-decoration: none; text-align: left; background: none; border: none; cursor: pointer; font-family: inherit; }
-        .avatar-dropdown a:hover, .avatar-dropdown button:hover { background: var(--bg); }
-        .avatar-dropdown hr { border: none; border-top: 1px solid var(--border); margin: 0.25rem 0; }
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => $message], 422);
+            }
 
-        /* ── Page body ── */
-        .page-body { margin-top: var(--nav-h); min-height: calc(100vh - var(--nav-h)); }
-        .page-header { background: var(--white); border-bottom: 1px solid var(--border); padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-        .page-header h1 { font-family: 'Source Serif 4', serif; font-size: 1.4rem; font-weight: 600; }
-        .breadcrumb { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.2rem; }
-        .breadcrumb a { color: var(--blue); text-decoration: none; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
-        .section { padding: 2rem 0; }
+            return back()->with(['message' => $message, 'alert-type' => 'info']);
+        }
 
-        /* ── Buttons ── */
-        .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1.1rem; border-radius: 4px; font-size: 0.875rem; font-weight: 500; font-family: inherit; cursor: pointer; border: 1px solid transparent; text-decoration: none; transition: background 0.15s, border-color 0.15s, color 0.15s; line-height: 1.4; }
-        .btn-primary  { background: var(--blue);  color: var(--white); border-color: var(--blue); }
-        .btn-primary:hover  { background: #0047b0; }
-        .btn-outline  { background: var(--white); color: var(--blue);  border-color: var(--blue); }
-        .btn-outline:hover  { background: var(--blue-light); }
-        .btn-ghost    { background: transparent;  color: var(--muted); border-color: var(--border); }
-        .btn-ghost:hover    { background: var(--bg); color: var(--text); }
-        .btn-danger   { background: var(--white);  color: var(--error); border-color: #fca5a5; }
-        .btn-danger:hover   { background: #fef2f2; }
-        .btn-sm       { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+        // Try to request graduation
+        $requested = $enrollment->requestGraduation();
 
-        /* ── Flash ── */
-        .flash { padding: 0.8rem 1.25rem; border-radius: 6px; font-size: 0.875rem; margin-bottom: 1.5rem; }
-        .flash-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-        .flash-warning { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
-        .flash-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        if (!$requested) {
+            // Build a helpful message explaining which criteria aren't met yet
+            $reasons = [];
 
-        /* ── Cards ── */
-        .card { background: var(--white); border: 1px solid var(--border); border-radius: 8px; }
-        .card-body { padding: 1.5rem; }
+            if (!$enrollment->hasCompletedAllContent()) {
+                $reasons[] = 'not all course content is completed';
+            }
+            if (!$enrollment->hasPassedAllAssessments()) {
+                $reasons[] = 'not all weekly assessments have been attempted';
+            }
+            if (!$enrollment->meetsMinimumGradeRequirement()) {
+                $avg     = $enrollment->final_grade_avg ?? 0;
+                $min     = $enrollment->program->min_passing_average ?? 0;
+                $reasons[] = "your current average ({$avg}%) is below the required {$min}%";
+            }
 
-        /* ── Form ── */
-        .form-group { margin-bottom: 1.25rem; }
-        .form-label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.35rem; }
-        .form-control { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid var(--border); border-radius: 4px; font-size: 0.875rem; font-family: inherit; color: var(--text); background: var(--white); transition: border-color 0.15s; line-height: 1.5; }
-        .form-control:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,86,210,0.08); }
-        select.form-control { cursor: pointer; }
-        textarea.form-control { resize: vertical; min-height: 90px; }
-        .form-hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem; }
-        .invalid-feedback { font-size: 0.78rem; color: var(--error); margin-top: 0.25rem; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+            $detail  = count($reasons) ? ' Reason: ' . implode('; ', $reasons) . '.' : '';
+            $message = 'You are not yet eligible for graduation.' . $detail;
 
-        /* ── Table ── */
-        .table { width: 100%; border-collapse: collapse; }
-        .table th { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 0.75rem 1rem; border-bottom: 2px solid var(--border); text-align: left; }
-        .table td { padding: 0.9rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.875rem; vertical-align: middle; }
-        .table tr:last-child td { border-bottom: none; }
-        .table tr:hover td { background: var(--bg); }
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => $message], 422);
+            }
 
-        /* ── Badge ── */
-        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.73rem; font-weight: 500; }
-        .badge-blue   { background: var(--blue-light); color: var(--blue); }
-        .badge-green  { background: #f0fdf4; color: #166534; }
-        .badge-yellow { background: #fffbeb; color: #92400e; }
-        .badge-red    { background: #fef2f2; color: #991b1b; }
-        .badge-gray   { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+            return back()->with(['message' => $message, 'alert-type' => 'warning']);
+        }
 
-        /* ── Stats ── */
-        .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .stat-box { background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem 1.5rem; }
-        .stat-box .stat-value { font-family: 'Source Serif 4', serif; font-size: 1.8rem; font-weight: 600; line-height: 1; margin-bottom: 0.3rem; }
-        .stat-box .stat-label { font-size: 0.8rem; color: var(--muted); }
-        .stat-box.highlight { border-color: var(--blue); }
-        .stat-box.highlight .stat-value { color: var(--blue); }
-        .stat-box.alert { border-color: #fde68a; }
-        .stat-box.alert .stat-value { color: var(--warning); }
+        $successMsg = 'Your graduation request has been submitted! Our team will review it shortly.';
 
-        /* ── Tabs ── */
-        .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
-        .tab-link { padding: 0.65rem 1.25rem; font-size: 0.875rem; font-weight: 500; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; transition: color 0.15s; }
-        .tab-link:hover  { color: var(--text); }
-        .tab-link.active { color: var(--blue); border-bottom-color: var(--blue); }
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => $successMsg]);
+        }
 
-        /* ── Modal ── */
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 500; align-items: center; justify-content: center; }
-        .modal-overlay.open { display: flex; }
-        .modal { background: var(--white); border-radius: 10px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative; }
-        .modal h2 { font-family: 'Source Serif 4', serif; font-size: 1.15rem; margin-bottom: 1.25rem; }
-        .modal-close { position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--muted); }
+        return back()->with(['message' => $successMsg, 'alert-type' => 'success']);
+    }
 
-        /* ── Progress ── */
-        .progress-bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
-        .progress-bar-fill  { height: 100%; background: var(--blue); border-radius: 2px; transition: width 0.3s; }
+    /**
+     * Show graduation status page for a specific enrollment.
+     *
+     * Route: GET /learner/graduation/{enrollment}
+     * Name:  learner.graduation.status
+     */
+    public function status(Enrollment $enrollment)
+    {
+        $user = auth()->user();
 
-        /* ── Misc ── */
-        .text-muted  { color: var(--muted); }
-        .text-small  { font-size: 0.8rem; }
-        .text-right  { text-align: right; }
-        .mt-1 { margin-top: 0.5rem; }
-        .mt-2 { margin-top: 1rem; }
-        .mt-3 { margin-top: 1.5rem; }
-        .flex { display: flex; }
-        .items-center { align-items: center; }
-        .justify-between { justify-content: space-between; }
-        .gap-1 { gap: 0.5rem; }
-        .gap-2 { gap: 1rem; }
-    </style>
-    @stack('styles')
-</head>
-<body>
+        if ($enrollment->user_id !== $user->id) {
+            abort(403, 'Unauthorized');
+        }
 
-<nav class="top-nav">
-    <a href="{{ route('admin.dashboard') }}" class="nav-brand">
-        G-Luper <span>Admin</span>
-    </a>
+        $enrollment->load(['program', 'cohort', 'weekProgress']);
 
-    <div class="nav-links">
-        <a href="{{ route('admin.programs.index') }}"
-           class="nav-link {{ request()->routeIs('admin.programs.*') ? 'active' : '' }}">
-            Programs
-            @php $pending = \App\Models\Program::where('status','under_review')->count(); @endphp
-            @if($pending) <span class="nav-badge">{{ $pending }}</span> @endif
-        </a>
-        <a href="{{ route('admin.mentors.index') }}"
-           class="nav-link {{ request()->routeIs('admin.mentors.*') ? 'active' : '' }}">
-            Mentors
-        </a>
-        <a href="{{ route('admin.learners.index') }}"
-           class="nav-link {{ request()->routeIs('admin.learners.*') ? 'active' : '' }}">
-            Learners
-        </a>
-        <a href="{{ route('admin.sessions.index') }}"
-           class="nav-link {{ request()->routeIs('admin.sessions.*') ? 'active' : '' }}">
-            Sessions
-        </a>
-        <a href="{{ route('admin.graduations.index') }}"
-           class="nav-link {{ request()->routeIs('admin.graduations.*') ? 'active' : '' }}">
-            Graduations
-            @php $grad = \App\Models\Enrollment::where('graduation_status','pending_review')->count(); @endphp
-            @if($grad) <span class="nav-badge">{{ $grad }}</span> @endif
-        </a>
-        <a href="{{ route('admin.payments.index') }}"
-           class="nav-link {{ request()->routeIs('admin.payments.*') ? 'active' : '' }}">
-            Payments
-        </a>
-        <a href="{{ route('admin.activity-log') }}"
-           class="nav-link {{ request()->routeIs('admin.activity-log*') ? 'active' : '' }}">
-            Activity
-        </a>
-    </div>
+        $eligibility = [
+            'all_content_complete'   => $enrollment->hasCompletedAllContent(),
+            'all_assessments_taken'  => $enrollment->hasPassedAllAssessments(),
+            'meets_grade_requirement' => $enrollment->meetsMinimumGradeRequirement(),
+        ];
 
-    <div class="nav-right">
-        <div class="nav-avatar">
-            {{ strtoupper(substr(auth()->user()->first_name, 0, 1)) }}
-            <div class="avatar-dropdown">
-                <div style="padding: 0.5rem 1rem 0.4rem; font-size: 0.8rem; color: var(--muted);">
-                    {{ auth()->user()->first_name }} · {{ ucfirst(auth()->user()->role) }}
-                </div>
-                <hr>
-                <form method="POST" action="{{ route('logout') }}">
-                    @csrf
-                    <button type="submit">Sign out</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</nav>
+        return view('learner.graduation.status', compact('enrollment', 'eligibility'));
+    }
+}
 
-<div class="page-body">
-    @if(session('message'))
-    <div style="padding: 0 2rem; padding-top: 1rem;">
-        <div class="flash flash-{{ session('alert-type') === 'success' ? 'success' : (session('alert-type') === 'warning' ? 'warning' : 'error') }}">
-            {{ session('message') }}
-        </div>
-    </div>
-    @endif
 
-    @yield('content')
-</div>
+==== models relating to graduation ===
+<?php
 
-@stack('scripts')
-</body>
-</html>
+namespace App\Models;
+
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Mail;
+
+class User extends Authenticatable implements MustVerifyEmail
+{
+    use HasFactory, Notifiable, SoftDeletes;
+
+    protected $fillable = [
+        'first_name', 'last_name', 'email', 'password',
+        'phone', 'avatar', 'role', 'status',
+        'last_login_at', 'last_login_ip',
+    ];
+
+    protected $hidden = ['password', 'remember_token'];
+
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'last_login_at'     => 'datetime',
+        'locked_until'      => 'datetime',
+        'password'          => 'hashed',
+    ];
+
+    // ── Email verification ────────────────────────────────────────────────────
+
+    public function sendEmailVerificationNotification(): void
+    {
+        Mail::to($this->email)->queue(new \App\Mail\VerifyEmail($this));
+    }
+
+    // ── Accessors ─────────────────────────────────────────────────────────────
+
+    public function getNameAttribute(): string     { return $this->first_name . ' ' . $this->last_name; }
+    public function getFullNameAttribute(): string { return $this->first_name . ' ' . $this->last_name; }
+    public function getInitialsAttribute(): string { return strtoupper(substr($this->first_name, 0, 1) . substr($this->last_name, 0, 1)); }
+
+    public function getAvatarUrlAttribute(): string
+    {
+        return $this->avatar
+            ? asset('storage/' . $this->avatar)
+            : 'https://ui-avatars.com/api/?name=' . urlencode($this->full_name) . '&color=4f46e5&background=EBF4FF';
+    }
+
+    // ── Role helpers ──────────────────────────────────────────────────────────
+
+    public function isSuperAdmin(): bool { return $this->role === 'superadmin'; }
+    public function isAdmin(): bool      { return in_array($this->role, ['admin', 'superadmin']); }
+    public function isMentor(): bool     { return $this->role === 'mentor'; }
+    public function isLearner(): bool    { return $this->role === 'learner'; }
+
+    // ── Account status helpers ────────────────────────────────────────────────
+
+    public function isActive(): bool    { return $this->status === 'active'; }
+    public function isSuspended(): bool { return $this->status === 'suspended'; }
+    public function isLocked(): bool    { return $this->locked_until && $this->locked_until->isFuture(); }
+
+    // ── Security / login tracking ─────────────────────────────────────────────
+
+    public function recordLoginAttempt(): void
+    {
+        $this->increment('login_attempts');
+        if ($this->login_attempts >= config('auth.max_login_attempts', 5)) {
+            $this->lockAccount();
+        }
+    }
+
+    public function lockAccount(): void
+    {
+        $this->update(['locked_until' => now()->addMinutes(config('auth.lockout_time', 15))]);
+    }
+
+    public function resetLoginAttempts(): void
+    {
+        $this->update(['login_attempts' => 0, 'locked_until' => null]);
+    }
+
+    public function recordLogin(string $ip): void
+    {
+        $this->update([
+            'last_login_at'   => now(),
+            'last_login_ip'   => $ip,
+            'login_attempts'  => 0,
+            'locked_until'    => null,
+        ]);
+    }
+
+    // ── Relationships ─────────────────────────────────────────────────────────
+
+    /** Programs this mentor owns (mentor_id = this user) */
+    public function programs()
+    {
+        return $this->hasMany(Program::class, 'mentor_id');
+    }
+
+    public function enrollments()
+    {
+        return $this->hasMany(Enrollment::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    public function auditLogs()
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
+    public function contentProgress()
+    {
+        return $this->hasMany(ContentProgress::class);
+    }
+
+    public function weekProgress()
+    {
+        return $this->hasMany(WeekProgress::class);
+    }
+
+    public function assessmentAttempts()
+    {
+        return $this->hasMany(AssessmentAttempt::class);
+    }
+
+    public function createdContents()
+    {
+        return $this->hasMany(WeekContent::class, 'created_by');
+    }
+
+    public function mentorSessions()
+    {
+        return $this->hasMany(LiveSession::class, 'mentor_id');
+    }
+
+    // ── Learning helpers ──────────────────────────────────────────────────────
+
+    public function getCurrentWeek(Enrollment $enrollment)
+    {
+        return WeekProgress::where('user_id', $this->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->where('is_unlocked', true)
+            ->where('is_completed', false)
+            ->with('moduleWeek')
+            ->orderBy('created_at')
+            ->first();
+    }
+
+    public function getLearningProgress(Enrollment $enrollment): float
+    {
+        $totalWeeks = $enrollment->program->getPublishedWeeks()->count();
+        if ($totalWeeks === 0) return 0;
+
+        $completedWeeks = WeekProgress::where('user_id', $this->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->where('is_completed', true)
+            ->count();
+
+        return round(($completedWeeks / $totalWeeks) * 100, 1);
+    }
+}
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class ContentProgress extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'week_content_id',
+        'enrollment_id',
+        'is_completed',
+        'progress_percentage',
+        'time_spent_seconds',
+        'last_accessed_at',
+        'completed_at',
+    ];
+
+    protected $casts = [
+        'is_completed' => 'boolean',
+        'progress_percentage' => 'integer',
+        'time_spent_seconds' => 'integer',
+        'last_accessed_at' => 'datetime',
+        'completed_at' => 'datetime',
+    ];
+
+    // Relationships
+    
+    /**
+     * The user who is making progress
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The week content being progressed through
+     * Note: This is the correct relationship name based on the foreign key
+     */
+    public function weekContent()
+    {
+        return $this->belongsTo(WeekContent::class, 'week_content_id');
+    }
+
+    /**
+     * Alias for weekContent to support both naming conventions
+     */
+    public function content()
+    {
+        return $this->weekContent();
+    }
+
+    /**
+     * The enrollment this progress is associated with
+     */
+    public function enrollment()
+    {
+        return $this->belongsTo(Enrollment::class);
+    }
+
+    // Scopes
+
+    /**
+     * Scope to get completed progress
+     */
+    public function scopeCompleted($query)
+    {
+        return $query->where('is_completed', true);
+    }
+
+    /**
+     * Scope to get in-progress items
+     */
+    public function scopeInProgress($query)
+    {
+        return $query->where('is_completed', false)
+                     ->where('progress_percentage', '>', 0);
+    }
+
+    /**
+     * Scope to get not started items
+     */
+    public function scopeNotStarted($query)
+    {
+        return $query->where('progress_percentage', 0);
+    }
+
+    // Helper Methods
+
+    /**
+     * Mark content as completed
+     */
+    public function markAsCompleted()
+    {
+        $this->update([
+            'is_completed' => true,
+            'progress_percentage' => 100,
+            'completed_at' => now(),
+        ]);
+    }
+
+    /**
+     * Update progress percentage
+     */
+    public function updateProgress(int $percentage)
+    {
+        $this->update([
+            'progress_percentage' => min(100, max(0, $percentage)),
+            'last_accessed_at' => now(),
+        ]);
+
+        if ($percentage >= 100) {
+            $this->markAsCompleted();
+        }
+    }
+
+    /**
+     * Add time spent
+     */
+    public function addTimeSpent(int $seconds)
+    {
+        $this->increment('time_spent_seconds', $seconds);
+        $this->update(['last_accessed_at' => now()]);
+    }
+
+    /**
+     * Get formatted time spent
+     */
+    public function getFormattedTimeSpentAttribute()
+    {
+        $hours = floor($this->time_spent_seconds / 3600);
+        $minutes = floor(($this->time_spent_seconds % 3600) / 60);
+        
+        if ($hours > 0) {
+            return sprintf('%d hr %d min', $hours, $minutes);
+        }
+        
+        return sprintf('%d min', $minutes);
+    }
+
+    /**
+     * Check if content is in progress
+     */
+    public function isInProgress()
+    {
+        return !$this->is_completed && $this->progress_percentage > 0;
+    }
+
+    /**
+     * Check if content is not started
+     */
+    public function isNotStarted()
+    {
+        return $this->progress_percentage === 0;
+    }
+}
+

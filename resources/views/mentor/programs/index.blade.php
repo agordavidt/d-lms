@@ -11,26 +11,52 @@
 
 <div class="container section">
 
-    @if($programs->isEmpty())
+    @if($programs->isEmpty() && !request('status'))
+    {{-- Empty state — only shown when no programs exist at all, not when a filter returns zero --}}
     <div class="card card-body" style="text-align: center; padding: 4rem 2rem; color: var(--muted);">
         <p style="font-size: 1.05rem; margin-bottom: 0.5rem;">You haven't created any programs yet.</p>
         <p style="font-size: 0.875rem; margin-bottom: 1.5rem;">Build your first program and submit it for review when it's ready.</p>
         <a href="{{ route('mentor.programs.create') }}" class="btn btn-primary">Create a Program</a>
     </div>
     @else
+   
+    @php
+        $currentStatus = request('status', '');
+        $tabs = [
+            ''             => 'All',
+            'draft'        => 'Draft',
+            'under_review' => 'Under Review',
+            'active'       => 'Live',
+            'inactive'     => 'Offline',
+        ];
+    @endphp
 
-    {{-- Status filter tabs --}}
     <div style="display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem;">
-        @foreach(['all' => 'All', 'draft' => 'Draft', 'under_review' => 'Under Review', 'active' => 'Live', 'inactive' => 'Offline'] as $val => $label)
-        <a href="{{ request()->fullUrlWithQuery(['status' => $val === 'all' ? null : $val]) }}"
+        @foreach($tabs as $val => $label)
+        @php
+            $isActive = $currentStatus === $val;
+            $params   = array_filter(['status' => $val !== '' ? $val : null], fn($v) => $v !== null);
+            $tabUrl   = route('mentor.programs.index', $params);
+        @endphp
+        <a href="{{ $tabUrl }}"
            style="padding: 0.6rem 1rem; font-size: 0.875rem; font-weight: 500; text-decoration: none;
-                  color: {{ request('status', 'all') === $val ? 'var(--blue)' : 'var(--muted)' }};
-                  border-bottom: 2px solid {{ request('status', 'all') === $val ? 'var(--blue)' : 'transparent' }};
-                  margin-bottom: -1px;">
+                  color: {{ $isActive ? 'var(--blue)' : 'var(--muted)' }};
+                  border-bottom: 2px solid {{ $isActive ? 'var(--blue)' : 'transparent' }};
+                  margin-bottom: -1px; white-space: nowrap;">
             {{ $label }}
         </a>
         @endforeach
     </div>
+
+    {{-- Zero results under a filter --}}
+    @if($programs->isEmpty())
+    <div class="card card-body" style="text-align: center; padding: 3rem 2rem; color: var(--muted);">
+        <p>No {{ $tabs[$currentStatus] ?? '' }} programs found.</p>
+        @if($currentStatus !== '')
+        <a href="{{ route('mentor.programs.index') }}" class="btn btn-ghost" style="margin-top: 1rem;">View all programs</a>
+        @endif
+    </div>
+    @else
 
     <div style="display: grid; gap: 0.75rem;">
         @foreach($programs as $program)
@@ -67,7 +93,7 @@
                     @endif
                 </div>
 
-                {{-- Status --}}
+                {{-- Status badge --}}
                 <span class="badge {{ match($program->status) {
                     'active'       => 'badge-green',
                     'under_review' => 'badge-yellow',
@@ -96,9 +122,11 @@
     </div>
 
     <div style="margin-top: 1.5rem;">
-        {{ $programs->links() }}
+        {{ $programs->withQueryString()->links() }}
     </div>
 
-    @endif
+    @endif {{-- end empty filter check --}}
+    @endif {{-- end all-programs empty check --}}
+
 </div>
 @endsection

@@ -15,12 +15,13 @@
         <a href="{{ route('mentor.assessments.questions.template') }}" class="btn btn-ghost btn-sm">Download Template</a>
         <button onclick="openModal('import-modal')" class="btn btn-outline btn-sm">Import CSV</button>
         <button onclick="openModal('add-question-modal')" class="btn btn-primary btn-sm">Add Question</button>
+        {{-- ── Exit: returns to the program curriculum page ── --}}
+        <a href="{{ route('mentor.programs.show', $program) }}" class="btn btn-ghost btn-sm">Done</a>
     </div>
 </div>
 
 <div class="container section">
 
-    {{-- Assessment settings summary --}}
     <div style="display: flex; gap: 2rem; margin-bottom: 1.5rem; font-size: 0.875rem; color: var(--muted);">
         <span>Pass: <strong style="color: var(--text);">{{ $assessment->pass_percentage }}%</strong></span>
         <span>Time limit: <strong style="color: var(--text);">{{ $assessment->time_limit_minutes ? $assessment->time_limit_minutes . ' min' : 'None' }}</strong></span>
@@ -28,7 +29,6 @@
         <span>Total points: <strong style="color: var(--text);">{{ $assessment->questions->sum('points') }}</strong></span>
     </div>
 
-    {{-- Questions list --}}
     @if($assessment->questions->isEmpty())
     <div class="card card-body" style="text-align: center; color: var(--muted); padding: 3rem;">
         <p>No questions yet. Import a CSV or add questions manually.</p>
@@ -80,12 +80,19 @@
     @endforeach
     </div>
 
+    {{-- Subtle footer exit so the mentor always has a clear way back --}}
+    <div style="margin-top: 1.5rem; text-align: right;">
+        <a href="{{ route('mentor.programs.show', $program) }}"
+           style="font-size: 0.875rem; color: var(--muted); text-decoration: none;">
+            ← Back to {{ $program->name }}
+        </a>
+    </div>
+
     @endif
 </div>
 
 {{-- ═══════════════ MODALS ═══════════════ --}}
 
-{{-- Add/Edit Question --}}
 <div class="modal-overlay" id="add-question-modal">
     <div class="modal" style="max-width: 600px;">
         <button class="modal-close" onclick="closeModal('add-question-modal')">&#215;</button>
@@ -107,7 +114,6 @@
                 <textarea id="q-text" class="form-control" rows="3" required placeholder="Write your question here..."></textarea>
             </div>
 
-            {{-- Options (shown for multiple_choice + multiple_select) --}}
             <div id="options-section">
                 <div class="form-label" style="margin-bottom: 0.5rem;">Answer Options</div>
                 <div style="display: grid; gap: 0.5rem;" id="options-rows">
@@ -122,7 +128,6 @@
                 <div class="form-hint" id="correct-hint">Check the correct answer(s)</div>
             </div>
 
-            {{-- True/False (hidden by default) --}}
             <div id="tf-section" style="display: none;">
                 <div class="form-label" style="margin-bottom: 0.5rem;">Correct Answer</div>
                 <select id="tf-correct" class="form-control">
@@ -140,7 +145,7 @@
             </div>
 
             <div class="form-group">
-                <label class="form-label">Explanation (shown after submission)</label>
+                <label class="form-label">Explanation <span class="text-muted text-small">(shown after submission)</span></label>
                 <textarea id="q-explanation" class="form-control" rows="2" placeholder="Optional — explain why the answer is correct"></textarea>
             </div>
 
@@ -152,7 +157,6 @@
     </div>
 </div>
 
-{{-- CSV Import --}}
 <div class="modal-overlay" id="import-modal">
     <div class="modal">
         <button class="modal-close" onclick="closeModal('import-modal')">&#215;</button>
@@ -215,23 +219,20 @@ function resetQuestionForm() {
 function editQuestion(id, q) {
     resetQuestionForm();
     document.getElementById('q-modal-title').textContent = 'Edit Question';
-    document.getElementById('q-id').value = id;
+    document.getElementById('q-id').value   = id;
     document.getElementById('q-type').value = q.question_type;
     document.getElementById('q-text').value = q.question_text;
-    document.getElementById('q-points').value = q.points;
-    document.getElementById('q-explanation').value = q.explanation || '';
-
+    document.getElementById('q-points').value       = q.points;
+    document.getElementById('q-explanation').value  = q.explanation || '';
     onQTypeChange(q.question_type);
-
     if (q.question_type === 'true_false') {
         document.getElementById('tf-correct').value = q.correct_answer[0];
     } else {
-        const letters = ['a','b','c','d'];
-        (q.options || []).forEach((opt, i) => {
-            if (letters[i]) {
-                document.getElementById(`opt-${letters[i]}`).value = opt;
-                document.getElementById(`correct-${letters[i]}`).checked =
-                    q.correct_answer.includes(opt);
+        ['a','b','c','d'].forEach((l, i) => {
+            const opt = (q.options || [])[i];
+            if (opt !== undefined) {
+                document.getElementById(`opt-${l}`).value = opt;
+                document.getElementById(`correct-${l}`).checked = q.correct_answer.includes(opt);
             }
         });
     }
@@ -242,12 +243,10 @@ async function saveQuestion(e) {
     e.preventDefault();
     const id   = document.getElementById('q-id').value;
     const type = document.getElementById('q-type').value;
-
     let options = [], correct = [];
-
     if (type === 'true_false') {
-        options  = ['True', 'False'];
-        correct  = [document.getElementById('tf-correct').value];
+        options = ['True', 'False'];
+        correct = [document.getElementById('tf-correct').value];
     } else {
         ['a','b','c','d'].forEach(l => {
             const val = document.getElementById(`opt-${l}`).value.trim();
@@ -257,9 +256,7 @@ async function saveQuestion(e) {
             }
         });
     }
-
     if (correct.length === 0) { alert('Mark at least one correct answer.'); return; }
-
     const body = {
         question_type:  type,
         question_text:  document.getElementById('q-text').value,
@@ -268,13 +265,11 @@ async function saveQuestion(e) {
         points:         parseInt(document.getElementById('q-points').value) || 1,
         explanation:    document.getElementById('q-explanation').value,
     };
-
     if (id) {
         await api('PUT', `/mentor/programs/${PROGRAM_ID}/assessments/${ASSESSMENT_ID}/questions/${id}`, body);
     } else {
         await api('POST', `/mentor/programs/${PROGRAM_ID}/assessments/${ASSESSMENT_ID}/questions`, body);
     }
-
     closeModal('add-question-modal');
     location.reload();
 }
@@ -298,7 +293,6 @@ async function api(method, url, body = null) {
     return data;
 }
 
-// Init
 document.getElementById('add-question-modal').querySelector('.modal-close')
     .addEventListener('click', resetQuestionForm);
 </script>

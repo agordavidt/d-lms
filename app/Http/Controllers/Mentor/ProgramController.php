@@ -15,13 +15,18 @@ class ProgramController extends Controller
         return Program::where('mentor_id', auth()->id());
     }
 
-    /** List all programs belonging to this mentor */
-    public function index()
+    public function index(Request $request)
     {
-        $programs = $this->mentorPrograms()
+        $query = $this->mentorPrograms()
             ->withCount(['enrollments', 'modules'])
-            ->latest()
-            ->paginate(12);
+            ->latest();
+
+        // ── Status filter — drives the tab navigation ──
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $programs = $query->paginate(12);
 
         return view('mentor.programs.index', compact('programs'));
     }
@@ -52,7 +57,6 @@ class ProgramController extends Controller
         $data['status']    = 'draft';
         $data['slug']      = Str::slug($data['name']);
 
-        // Ensure unique slug
         $baseSlug = $data['slug'];
         $i = 1;
         while (Program::where('slug', $data['slug'])->exists()) {
@@ -66,14 +70,10 @@ class ProgramController extends Controller
             ->with(['message' => 'Program created. Start building your curriculum.', 'alert-type' => 'success']);
     }
 
-    /** Program detail / curriculum builder */
     public function show(Program $program)
     {
         $this->authorise($program);
 
-        // ── CHANGE 1 ──────────────────────────────────────────────────────────
-        // Load assessment.questions so the week rows can display question counts
-        // without extra queries.
         $program->load(['modules.weeks.contents', 'modules.weeks.assessment.questions']);
 
         $stats = [
@@ -91,10 +91,9 @@ class ProgramController extends Controller
     {
         $this->authorise($program);
 
-        // Prevent editing once under review or active — require admin to take offline first
         if (in_array($program->status, ['under_review', 'active'])) {
             return back()->with([
-                'message' => 'This program is ' . $program->status . '. Contact admin to make it editable.',
+                'message'    => 'This program is ' . $program->status . '. Contact admin to make it editable.',
                 'alert-type' => 'warning',
             ]);
         }
@@ -120,7 +119,6 @@ class ProgramController extends Controller
         ]);
 
         if ($request->hasFile('cover_image')) {
-            // Delete old image
             if ($program->cover_image) {
                 Storage::disk('public')->delete($program->cover_image);
             }
@@ -130,15 +128,11 @@ class ProgramController extends Controller
 
         $program->update($data);
 
-        // ── CHANGE 2 ──────────────────────────────────────────────────────────
-        // Redirect to the program's show page instead of back() to the edit form,
-        // so the mentor can see the updated details in context and continue work.
         return redirect()
             ->route('mentor.programs.show', $program)
             ->with(['message' => 'Program updated.', 'alert-type' => 'success']);
     }
 
-    /** Submit program to admin for review */
     public function submitForReview(Program $program)
     {
         $this->authorise($program);
@@ -149,7 +143,6 @@ class ProgramController extends Controller
             ], 422);
         }
 
-        // Basic readiness check — load if not already eager-loaded
         $program->loadMissing('modules.weeks.contents');
 
         $weekCount    = $program->modules->sum(fn ($m) => $m->weeks->count());
