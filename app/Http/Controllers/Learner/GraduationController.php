@@ -3,94 +3,98 @@
 namespace App\Http\Controllers\Learner;
 
 use App\Http\Controllers\Controller;
+use App\Models\AssessmentAttempt;
 use App\Models\Enrollment;
 use Illuminate\Http\Request;
 
 class GraduationController extends Controller
 {
-    
     public function request(Request $request, Enrollment $enrollment)
     {
         $user = auth()->user();
+        if ($enrollment->user_id !== $user->id) abort(403);
 
-        // Security — enrollment must belong to this user
-        if ($enrollment->user_id !== $user->id) {
-            abort(403, 'Unauthorized');
-        }
-
-        // Already in the graduation pipeline
         if (in_array($enrollment->graduation_status, ['pending_review', 'graduated'])) {
             $message = $enrollment->graduation_status === 'graduated'
                 ? 'You have already graduated!'
                 : 'Your graduation request is already under review.';
 
-            if ($request->expectsJson()) {
-                return response()->json(['success' => false, 'message' => $message], 422);
-            }
-
-            return back()->with(['message' => $message, 'alert-type' => 'info']);
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => $message], 422)
+                : back()->with(['message' => $message, 'alert-type' => 'info']);
         }
 
-        // Try to request graduation
         $requested = $enrollment->requestGraduation();
 
         if (!$requested) {
-            // Build a helpful message explaining which criteria aren't met yet
             $reasons = [];
-
-            if (!$enrollment->hasCompletedAllContent()) {
-                $reasons[] = 'not all course content is completed';
-            }
-            if (!$enrollment->hasPassedAllAssessments()) {
-                $reasons[] = 'not all weekly assessments have been attempted';
-            }
+            if (!$enrollment->hasCompletedAllContent())    $reasons[] = 'not all course content is completed';
+            if (!$enrollment->hasPassedAllAssessments())   $reasons[] = 'not all assessments (including the final examination) have been passed';
             if (!$enrollment->meetsMinimumGradeRequirement()) {
-                $avg     = $enrollment->final_grade_avg ?? 0;
-                $min     = $enrollment->program->min_passing_average ?? 0;
-                $reasons[] = "your current average ({$avg}%) is below the required {$min}%";
+                $avg = $enrollment->final_grade_avg ?? 0;
+                $min = $enrollment->program->min_passing_average ?? 0;
+                $reasons[] = "your average ({$avg}%) is below the required {$min}%";
             }
 
-            $detail  = count($reasons) ? ' Reason: ' . implode('; ', $reasons) . '.' : '';
-            $message = 'You are not yet eligible for graduation.' . $detail;
+            $message = 'You are not yet eligible for graduation.'
+                . (count($reasons) ? ' Reason: ' . implode('; ', $reasons) . '.' : '');
 
-            if ($request->expectsJson()) {
-                return response()->json(['success' => false, 'message' => $message], 422);
-            }
-
-            return back()->with(['message' => $message, 'alert-type' => 'warning']);
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => $message], 422)
+                : back()->with(['message' => $message, 'alert-type' => 'warning']);
         }
 
-        $successMsg = 'Your graduation request has been submitted! Our team will review it shortly.';
+        $msg = 'Your completion has been submitted. An administrator will issue your certificate shortly.';
 
-        if ($request->expectsJson()) {
-            return response()->json(['success' => true, 'message' => $successMsg]);
-        }
-
-        return back()->with(['message' => $successMsg, 'alert-type' => 'success']);
+        return $request->expectsJson()
+            ? response()->json(['success' => true, 'message' => $msg])
+            : back()->with(['message' => $msg, 'alert-type' => 'success']);
     }
 
-    /**
-     * Show graduation status page for a specific enrollment.
-     *
-     * Route: GET /learner/graduation/{enrollment}
-     * Name:  learner.graduation.status
-     */
     public function status(Enrollment $enrollment)
     {
         $user = auth()->user();
-
-        if ($enrollment->user_id !== $user->id) {
-            abort(403, 'Unauthorized');
-        }
+        if ($enrollment->user_id !== $user->id) abort(403);
 
         $enrollment->load(['program', 'cohort', 'weekProgress']);
 
         $eligibility = [
-            'all_content_complete'   => $enrollment->hasCompletedAllContent(),
-            'all_assessments_taken'  => $enrollment->hasPassedAllAssessments(),
+            'all_content_complete'    => $enrollment->hasCompletedAllContent(),
+            'all_assessments_passed'  => $enrollment->hasPassedAllAssessments(),
             'meets_grade_requirement' => $enrollment->meetsMinimumGradeRequirement(),
         ];
 
-        return view('learner.graduation.status', compact('enrollment', 'eligibility'));
+        // Final exam attempt info if program has one
+        $finalExam = null;
+        $finalAttempt = null;
+
+        $finalAssessment = \App\Models\Assessment::whereHas('moduleWeek.programModule', fn($q) =>
+            $q->where('program_id', $enrollment->program_id)
+        )->where('is_final', true)->first();
+
+        if ($finalAssessment) {
+            $finalExam    = $finalAssessment;
+            $finalAttempt = $finalAssessment->getLatestAttempt($user, $enrollment->id);
+        }
+
+        return view('learner.graduation.status', compact(
+            'enrollment', 'eligibility', 'finalExam', 'finalAttempt'
+        ));
+    }
+
+    /**
+     * Score-only result page for the final examination.
+     * Route: GET /learner/attempts/{attempt}/final-result
+     */
+    public function finalResult(AssessmentAttempt $attempt)
+    {
+        $user = auth()->user();
+        if ($attempt->user_id !== $user->id) abort(403);
+        if (!$attempt->assessment->is_final) abort(404);
+        if ($attempt->status !== 'submitted') {
+            return redirect()->route('learner.attempts.show', $attempt->id);
+        }
+
+        return view('learner.assessments.final_result', compact('attempt'));
     }
 }

@@ -1,70 +1,99 @@
-@extends('layouts.admin')
+@extends('layouts.app')
 @section('title', 'Graduates')
 
 @section('content')
+
 <div class="page-header">
     <div>
-        <div class="breadcrumb"><a href="{{ route('admin.graduations.index') }}">Graduations</a></div>
+        <div class="breadcrumb"><a href="{{ route('admin.graduations.index') }}">Graduation Approvals</a></div>
         <h1>Graduates</h1>
     </div>
 </div>
 
-<div class="container section">
+<div class="grad-page" style="padding-top:0;">
 
-    <form method="GET" style="display: flex; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
-        <select name="program_id" class="form-control" style="max-width: 240px;">
+    {{-- Filters --}}
+    <form method="GET" action="{{ route('admin.graduations.graduated') }}"
+          style="display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
+        <select name="program_id" class="form-control" style="width:220px;" onchange="this.form.submit()">
             <option value="">All Programs</option>
             @foreach($programs as $p)
             <option value="{{ $p->id }}" {{ request('program_id') == $p->id ? 'selected' : '' }}>{{ $p->name }}</option>
             @endforeach
         </select>
-        <button type="submit" class="btn btn-outline">Filter</button>
-        @if(request()->hasAny(['program_id','month']))
-        <a href="{{ route('admin.graduations.graduated') }}" class="btn btn-ghost">Clear</a>
+        <select name="month" class="form-control" style="width:160px;" onchange="this.form.submit()">
+            <option value="">All Months</option>
+            @foreach(range(1, 12) as $m)
+            <option value="{{ $m }}" {{ request('month') == $m ? 'selected' : '' }}>{{ date('F', mktime(0,0,0,$m,1)) }}</option>
+            @endforeach
+        </select>
+        @if(request('program_id') || request('month'))
+        <a href="{{ route('admin.graduations.graduated') }}" class="btn btn-ghost btn-sm">Clear</a>
         @endif
     </form>
 
-    <div class="card">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Graduate</th>
-                    <th>Program</th>
-                    <th>Grade</th>
-                    <th>Certificate Key</th>
-                    <th>Approved</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($graduates as $enrollment)
-                <tr>
-                    <td>
-                        <div style="font-weight: 500;">{{ $enrollment->user->first_name }} {{ $enrollment->user->last_name }}</div>
-                        <div class="text-muted text-small">{{ $enrollment->user->email }}</div>
-                    </td>
-                    <td class="text-small">{{ $enrollment->program->name }}</td>
-                    <td style="font-weight: 600; font-size: 0.875rem;">
-                        {{ $enrollment->final_grade_avg ? number_format($enrollment->final_grade_avg, 1) . '%' : '—' }}
-                    </td>
-                    <td>
-                        @if($enrollment->certificate_key)
-                        <code style="font-size: 0.78rem; background: var(--bg); padding: 0.2rem 0.4rem; border-radius: 4px;">{{ $enrollment->certificate_key }}</code>
-                        @else
-                        <span class="text-muted text-small">—</span>
-                        @endif
-                    </td>
-                    <td class="text-muted text-small">
-                        {{ $enrollment->graduation_approved_at?->format('M j, Y') ?? '—' }}
-                    </td>
-                </tr>
-                @empty
-                <tr><td colspan="5" style="text-align: center; color: var(--muted); padding: 2.5rem;">No graduates yet.</td></tr>
-                @endforelse
-            </tbody>
-        </table>
+    @if($graduates->isEmpty())
+    <div class="card card-body" style="text-align:center;padding:48px;color:var(--muted);">
+        No graduates found for the selected filters.
     </div>
+    @else
 
-    <div style="margin-top: 1.25rem;">{{ $graduates->links() }}</div>
+    <table class="grant-table">
+        <thead>
+            <tr>
+                <th>Graduate</th>
+                <th>Program</th>
+                <th>Final Grade</th>
+                <th>Certificate</th>
+                <th>Approved</th>
+                <th>Approved By</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($graduates as $enrollment)
+            <tr>
+                <td>
+                    <div style="font-weight:600;">{{ $enrollment->user->full_name }}</div>
+                    <div style="font-size:12px;color:var(--muted);">{{ $enrollment->user->email }}</div>
+                </td>
+                <td>
+                    <div>{{ $enrollment->program->name }}</div>
+                    <div style="font-size:12px;color:var(--muted);">{{ $enrollment->cohort->name ?? '' }}</div>
+                </td>
+                <td>
+                    @if($enrollment->final_grade_avg)
+                    <span class="score-badge {{ $enrollment->final_grade_avg >= 80 ? 'high' : 'medium' }}">
+                        {{ number_format($enrollment->final_grade_avg, 1) }}%
+                    </span>
+                    @else
+                    <span style="font-size:12px;color:var(--muted);">—</span>
+                    @endif
+                </td>
+                <td>
+                    @if($enrollment->certificate_key)
+                    <a href="{{ route('certificate.verify', $enrollment->certificate_key) }}"
+                       target="_blank"
+                       style="font-size:12px;color:var(--blue);font-weight:600;text-decoration:none;">
+                        {{ $enrollment->certificate_key }}
+                    </a>
+                    @else
+                    <span style="font-size:12px;color:var(--muted);">—</span>
+                    @endif
+                </td>
+                <td style="font-size:13px;color:var(--muted);">
+                    {{ $enrollment->graduation_approved_at?->format('M d, Y') ?? '—' }}
+                </td>
+                <td style="font-size:13px;color:var(--muted);">
+                    {{ $enrollment->approver?->full_name ?? 'System' }}
+                </td>
+            </tr>
+            @endforeach
+        </tbody>
+    </table>
 
+    <div style="margin-top:16px;">
+        {{ $graduates->appends(request()->query())->links() }}
+    </div>
+    @endif
 </div>
 @endsection

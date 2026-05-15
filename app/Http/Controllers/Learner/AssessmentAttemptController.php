@@ -18,135 +18,69 @@ class AssessmentAttemptController extends Controller
     }
 
     /**
-     * Show assessment start page (overview before taking)
-     */
-    public function start(Assessment $assessment)
-    {
-        $user = auth()->user();
-        $enrollment = $user->enrollments()->where('status', 'active')->first();
-
-        if (!$enrollment) {
-            return redirect()->route('learner.programs.index')
-                ->with(['message' => 'No active enrollment found.', 'alert-type' => 'error']);
-        }
-
-        $week = $assessment->moduleWeek;
-        $weekProgress = $week->getProgressFor($user, $enrollment);
-
-        if (!$weekProgress->canTakeAssessment()) {
-            return redirect()->route('learner.learning.index')
-                ->with(['message' => 'Please complete all content before taking the assessment.', 'alert-type' => 'warning']);
-        }
-
-        $attempts = $assessment->getUserAttempts($user);
-        $attemptsUsed = $attempts->where('status', 'submitted')->count();
-        $bestScore = $assessment->getUserBestScore($user);
-        $remainingAttempts = $assessment->getRemainingAttempts($user);
-        $inProgressAttempt = $attempts->where('status', 'in_progress')->first();
-
-        return view('learner.assessments.start', compact(
-            'assessment',
-            'week',
-            'weekProgress',
-            'attemptsUsed',
-            'bestScore',
-            'remainingAttempts',
-            'inProgressAttempt'
-        ));
-    }
-
-    /**
-     * AJAX — Create a new attempt and return its ID for the inline player.
-     *
-     * Route: POST /learner/assessments/{assessment}/attempt
-     * Body:  { enrollment_id: X }
-     *
-     * FIX #2: Was returning { redirect: url } — now returns { attempt_id: X }
-     * FIX #5: Now uses the enrollment_id from the request body instead of
-     *         blindly grabbing the first active enrollment.
+     * AJAX — Create a new attempt.
+     * Blocked if the learner is on a final-exam cooldown.
      */
     public function createAttempt(Request $request, Assessment $assessment)
     {
-        $user = auth()->user();
-
-        // FIX #5: Resolve the specific enrollment sent by the inline player.
+        $user         = auth()->user();
         $enrollmentId = $request->input('enrollment_id');
 
         $enrollment = $user->enrollments()
             ->where('id', $enrollmentId)
             ->whereIn('status', ['active', 'completed'])
-            ->first();
-
-        // Fallback: if no enrollment_id supplied, find the first active one
-        // (preserves backward-compat with any other callers).
-        if (!$enrollment) {
-            $enrollment = $user->enrollments()
-                ->where('status', 'active')
-                ->first();
-        }
+            ->first()
+            ?? $user->enrollments()->where('status', 'active')->first();
 
         if (!$enrollment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No active enrollment found.',
-            ], 400);
+            return response()->json(['success' => false, 'message' => 'No active enrollment found.'], 400);
         }
 
         try {
             $attempt = $this->scoringService->createAttempt($assessment, $user, $enrollment);
 
-            // FIX #2: Return attempt_id so the inline JS can store it.
-            return response()->json([
-                'success'    => true,
-                'attempt_id' => $attempt->id,
-            ]);
+            return response()->json(['success' => true, 'attempt_id' => $attempt->id]);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 400);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 400);
         }
     }
 
     /**
-     * Show assessment taking page (questions) — used by the traditional
-     * full-page flow; not called by the inline player.
+     * Show the assessment taking page (non-inline/full-page flow).
      */
-    public function show(AssessmentAttempt $attempt)
+   public function show(AssessmentAttempt $attempt)
     {
         $user = auth()->user();
-
-        if ($attempt->user_id !== $user->id) {
-            abort(403, 'Unauthorized');
-        }
-
+        if ($attempt->user_id !== $user->id) abort(403);
+    
         if ($attempt->status === 'submitted') {
+            // Final exam goes to score-only result page
+            if ($attempt->assessment->is_final) {
+                return redirect()->route('learner.attempts.final-result', $attempt->id);
+            }
             return redirect()->route('learner.attempts.results', $attempt->id);
         }
-
+    
         $assessment = $attempt->assessment;
         $questions  = $assessment->getQuestionsForAttempt();
-
+    
         if ($assessment->time_limit_minutes && $attempt->isTimeLimitExceeded()) {
             $this->scoringService->submitAttempt($attempt, []);
-            return redirect()->route('learner.attempts.results', $attempt->id)
-                ->with(['message' => 'Time limit exceeded. Assessment auto-submitted.', 'alert-type' => 'warning']);
+            $attempt->refresh();
+            $route = $assessment->is_final ? 'learner.attempts.final-result' : 'learner.attempts.results';
+            return redirect()->route($route, $attempt->id)
+                ->with(['message' => 'Time limit exceeded. Auto-submitted.', 'alert-type' => 'warning']);
         }
-
+    
         return view('learner.assessments.take', compact('attempt', 'assessment', 'questions'));
     }
 
     /**
-     * AJAX — Submit answers from the inline player and return scored results.
+     * AJAX — Submit answers.
      *
-     * Route: POST /learner/attempts/{attempt}/submit
-     * Body:  { answers: [{ question_id: X, answer: "..." }, ...] }
-     *
-     * FIX #3: Was returning { redirect: url } — now returns
-     *         { success, score, passed, question_results } for inline rendering.
-     * FIX #6: Converts the JS array format to the keyed format the model
-     *         expects before passing to the scoring service.
+     * Final exam: returns only { success, score, passed, next_attempt_at } — no question breakdown.
+     * Weekly:     returns full { success, score, passed, question_results }.
      */
     public function submit(Request $request, AssessmentAttempt $attempt)
     {
@@ -160,12 +94,9 @@ class AssessmentAttemptController extends Controller
             return response()->json(['success' => false, 'message' => 'Already submitted'], 400);
         }
 
-        // FIX #6: JS sends [{question_id, answer}, ...].
-        // Convert to the keyed format { "question_1": "answer" } that the
-        // scoring service and model helpers expect.
+        // Convert JS array [{question_id, answer}] to keyed format { "question_1": "answer" }
         $rawAnswers = $request->input('answers', []);
         $answers    = [];
-
         foreach ($rawAnswers as $item) {
             if (!empty($item['question_id'])) {
                 $answers['question_' . $item['question_id']] = $item['answer'] ?? null;
@@ -173,19 +104,26 @@ class AssessmentAttemptController extends Controller
         }
 
         try {
-            $this->scoringService->submitAttempt($attempt, $answers);
-
-            // Reload the attempt with fresh scored data.
+            $result = $this->scoringService->submitAttempt($attempt, $answers);
             $attempt->refresh();
-            $attempt->load('assessment.questions');
 
-            $assessment = $attempt->assessment;
+            $assessment = $attempt->assessment->load('questions');
 
-            // Build per-question result breakdown for the results screen.
+            // ── Final exam: score only, no question breakdown ─────────────────
+            if ($assessment->is_final) {
+                return response()->json([
+                    'success'         => true,
+                    'score'           => (float) $attempt->percentage,
+                    'passed'          => (bool)  $attempt->passed,
+                    'next_attempt_at' => $result['next_attempt_at'],
+                ]);
+            }
+
+            // ── Weekly assessment: full question breakdown ─────────────────────
             $questionResults = $assessment->questions->map(function ($question) use ($attempt) {
-                $key            = 'question_' . $question->id;
+                $key             = 'question_' . $question->id;
                 $submittedAnswer = $attempt->answers[$key] ?? null;
-                $isCorrect      = $question->checkAnswer($submittedAnswer);
+                $isCorrect       = $question->checkAnswer($submittedAnswer['answer'] ?? $submittedAnswer);
 
                 return [
                     'question_id'    => $question->id,
@@ -195,7 +133,6 @@ class AssessmentAttemptController extends Controller
                 ];
             })->values()->all();
 
-            // FIX #3: Return inline result data instead of a redirect URL.
             return response()->json([
                 'success'          => true,
                 'score'            => (float) $attempt->percentage,
@@ -206,47 +143,33 @@ class AssessmentAttemptController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to submit assessment: ' . $e->getMessage(),
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
     /**
-     * Show assessment results page — traditional full-page flow.
+     * Full-page results view (weekly assessments).
      */
     public function results(AssessmentAttempt $attempt)
     {
         $user = auth()->user();
-
-        if ($attempt->user_id !== $user->id) {
-            abort(403, 'Unauthorized');
-        }
+        if ($attempt->user_id !== $user->id) abort(403);
 
         if ($attempt->status !== 'submitted') {
             return redirect()->route('learner.attempts.show', $attempt->id);
         }
 
-        $assessment  = $attempt->assessment;
-        $week        = $assessment->moduleWeek;
-        $weekProgress = $week->getProgressFor($user, $attempt->enrollment);
-        $results     = $this->scoringService->getAttemptResults($attempt);
-
-        $allAttempts = $assessment->getUserAttempts($user)
-            ->where('status', 'submitted')
-            ->sortByDesc('submitted_at');
-
+        $assessment   = $attempt->assessment;
+        $week         = $assessment->moduleWeek;
+        $enrollment   = $attempt->enrollment;
+        $weekProgress = $week->getProgressFor($user, $enrollment);
+        $results      = $this->scoringService->getAttemptResults($attempt);
+        $allAttempts  = $assessment->getUserAttempts($user)->where('status', 'submitted')->sortByDesc('submitted_at');
         $weekComplete = $weekProgress->isWeekFullyComplete();
 
         return view('learner.assessments.results', compact(
-            'attempt',
-            'assessment',
-            'week',
-            'weekProgress',
-            'results',
-            'allAttempts',
-            'weekComplete'
+            'attempt', 'assessment', 'week', 'enrollment',
+            'weekProgress', 'results', 'allAttempts', 'weekComplete'
         ));
     }
 }

@@ -366,6 +366,7 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         // Graduation
         Route::post('/graduation/{enrollment}/request', [LearnerGraduationController::class, 'request'])->name('graduation.request');
         Route::get('/graduation/{enrollment}',          [LearnerGraduationController::class, 'status'])->name('graduation.status');
+        Route::get('/attempts/{attempt}/final-result', [LearnerGraduationController::class, 'finalResult'])->name('attempts.final-result');
 
         // Profile
         Route::get('/profile/edit', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -375,3 +376,5 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
     });
 
 });
+
+

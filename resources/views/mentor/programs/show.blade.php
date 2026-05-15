@@ -94,6 +94,7 @@
                 'pass_percentage'     => $week->assessment->pass_percentage,
                 'time_limit_minutes'  => $week->assessment->time_limit_minutes,
                 'randomize_questions' => (bool) $week->assessment->randomize_questions,
+                'is_final'            => (bool) $week->assessment->is_final,
                 'questions_count'     => $questionCount,
             ]) : 'null';
         @endphp
@@ -112,7 +113,8 @@
                     @if($week->has_assessment)
                     <span class="badge badge-blue" style="font-size: 0.7rem; cursor: pointer;"
                           onclick="openManageAssessment({{ $week->id }}, {{ $week->assessment?->id ?? 'null' }}, '{{ addslashes($week->title) }}', true, {!! $assessmentData !!})">
-                        ✓ Assessment
+                          {{ $week->assessment?->is_final ? '🎓 Final Exam' : '✓ Assessment' }}
+                        {{-- ✓ Assessment --}}
                         @if($questionCount > 0)
                         &nbsp;·&nbsp;{{ $questionCount }}Q
                         @else
@@ -318,6 +320,18 @@
                     <input type="checkbox" id="assessment-randomize" style="width:16px;height:16px;">
                     <label for="assessment-randomize" class="form-label" style="margin:0;">Randomise question order</label>
                 </div>
+                <div style="display:flex;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem;padding:14px 16px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;" id="is-final-row">
+                    <input type="checkbox" id="assessment-is-final" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:#7c3aed;">
+                    <div>
+                        <label for="assessment-is-final" class="form-label" style="margin:0;color:#4c1d95;cursor:pointer;">
+                            Mark as Final Examination
+                        </label>
+                        <p style="font-size:.75rem;color:#7c3aed;margin:3px 0 0;line-height:1.5;">
+                            Final exams have a 48-hour retry cooldown on fail and show score only (no answer review).
+                            Only one final exam is allowed per program.
+                        </p>
+                    </div>
+                </div>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                     <button type="submit" class="btn btn-primary" id="assessment-save-btn">Save Assessment</button>
                     {{-- Questions link — only visible when editing an existing assessment --}}
@@ -511,12 +525,14 @@ function openManageAssessment(weekId, assessmentId, weekTitle, hasAssessment, as
         document.getElementById('assessment-pass-pct').value      = assessmentData.pass_percentage ?? 70;
         document.getElementById('assessment-time').value          = assessmentData.time_limit_minutes || '';
         document.getElementById('assessment-randomize').checked   = !!assessmentData.randomize_questions;
+        document.getElementById('assessment-is-final').checked = !!assessmentData.is_final;
     } else {
         // Blank defaults for new assessments
         document.getElementById('assessment-title').value         = '';
         document.getElementById('assessment-pass-pct').value      = 70;
         document.getElementById('assessment-time').value          = '';
         document.getElementById('assessment-randomize').checked   = false;
+        document.getElementById('assessment-is-final').checked = false;
     }
 
     // Show "Manage Questions" link only when an assessment already exists
@@ -545,6 +561,7 @@ async function saveAssessment(e) {
         pass_percentage:     document.getElementById('assessment-pass-pct').value,
         time_limit_minutes:  document.getElementById('assessment-time').value || null,
         randomize_questions: document.getElementById('assessment-randomize').checked ? 1 : 0,
+        is_final: document.getElementById('assessment-is-final').checked ? 1 : 0,
     };
 
     // Save — create or update

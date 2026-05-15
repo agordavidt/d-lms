@@ -1,133 +1,135 @@
-@extends('layouts.admin')
-@section('title', 'Review Graduation')
+@extends('layouts.app')
+@section('title', 'Review — ' . $enrollment->user->full_name)
 
 @section('content')
+
 <div class="page-header">
     <div>
-        <div class="breadcrumb"><a href="{{ route('admin.graduations.index') }}">Graduations</a></div>
-        <h1>{{ $enrollment->user->first_name }} {{ $enrollment->user->last_name }}</h1>
+        <div class="breadcrumb">
+            <a href="{{ route('admin.graduations.index') }}">Graduation Approvals</a>
+        </div>
+        <h1>{{ $enrollment->user->full_name }}</h1>
+        <p class="text-muted text-small">{{ $enrollment->program->name }} · {{ $enrollment->enrollment_number }}</p>
     </div>
-    <div style="display: flex; gap: 0.5rem;">
-        <button onclick="openModal('approve-modal')" class="btn btn-primary">Approve</button>
-        <button onclick="openModal('reject-modal')" class="btn btn-danger">Reject</button>
+    <div style="display:flex;gap:.5rem;">
+        <form method="POST" action="{{ route('admin.graduations.approve', $enrollment->id) }}"
+              onsubmit="return confirm('Grant certificate to {{ addslashes($enrollment->user->full_name) }}?')">
+            @csrf
+            <button type="submit" class="btn-grant" style="font-size:13px;padding:9px 20px;">
+                Grant Certificate
+            </button>
+        </form>
+        <button onclick="openModal('reject-modal')" class="btn btn-ghost btn-sm">Reject</button>
     </div>
 </div>
 
-<div class="container section">
-<div style="display: grid; grid-template-columns: 1fr 280px; gap: 2rem; align-items: start;">
+<div style="max-width:900px;margin:0 auto;padding:24px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
 
-    {{-- Progress breakdown --}}
-    <div>
-        <h2 style="font-family: 'Source Serif 4', serif; font-size: 1.05rem; margin-bottom: 1rem;">Assessment Breakdown</h2>
-
-        @forelse($assessmentBreakdown as $wp)
-        <div class="card" style="margin-bottom: 0.6rem;">
-            <div class="card-body" style="padding: 0.85rem 1.1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-                <div>
-                    <div style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">Week {{ $wp->moduleWeek->week_number }}</div>
-                    <div style="font-weight: 500; font-size: 0.875rem;">{{ $wp->moduleWeek->title }}</div>
-                </div>
-                <div style="display: flex; gap: 1.5rem; text-align: center; flex-shrink: 0;">
-                    <div>
-                        <div style="font-weight: 600; font-size: 0.9rem;">{{ number_format($wp->assessment_score, 0) }}%</div>
-                        <div class="text-muted text-small">Best score</div>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600; font-size: 0.9rem;">{{ $wp->assessment_attempts }}</div>
-                        <div class="text-muted text-small">Attempts</div>
-                    </div>
-                    <div>
-                        <span class="badge {{ $wp->assessment_passed ? 'badge-green' : 'badge-red' }}">
-                            {{ $wp->assessment_passed ? 'Passed' : 'Failed' }}
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        @empty
-        <div class="card card-body" style="color: var(--muted); text-align: center;">No assessment data.</div>
-        @endforelse
-    </div>
-
-    {{-- Summary card --}}
-    <div>
-        <div class="card card-body" style="margin-bottom: 1rem;">
-            <div style="font-weight: 600; margin-bottom: 0.75rem; font-family: 'Source Serif 4', serif;">Eligibility</div>
-            <div style="display: grid; gap: 0.75rem; font-size: 0.875rem;">
+        {{-- Eligibility checklist --}}
+        <div class="card">
+            <div class="card-body">
+                <p class="text-muted text-small" style="font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">Eligibility</p>
                 @foreach([
-                    'all_content_complete'    => 'All content completed',
-                    'all_assessments_passed'  => 'All assessments passed',
-                    'meets_grade_requirement' => 'Meets grade requirement',
-                ] as $key => $label)
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>{{ $label }}</span>
-                    <span style="color: {{ $eligibility[$key] ? 'var(--success)' : 'var(--error)' }}; font-weight: 600;">
-                        {{ $eligibility[$key] ? '✓' : '✗' }}
+                    ['ok' => $eligibility['all_content_complete'],    'label' => 'All content completed'],
+                    ['ok' => $eligibility['all_assessments_passed'],  'label' => 'All assessments passed'],
+                    ['ok' => $eligibility['meets_grade_requirement'], 'label' => 'Grade requirement met'],
+                ] as $item)
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light);">
+                    <span style="color:{{ $item['ok'] ? 'var(--success)' : 'var(--danger)' }};font-size:1rem;">
+                        {{ $item['ok'] ? '✓' : '✗' }}
                     </span>
+                    <span style="font-size:.875rem;">{{ $item['label'] }}</span>
                 </div>
                 @endforeach
             </div>
         </div>
 
-        <div class="card card-body">
-            <div style="font-weight: 600; margin-bottom: 0.75rem; font-family: 'Source Serif 4', serif;">Summary</div>
-            <div style="display: grid; gap: 0.6rem; font-size: 0.875rem;">
-                <div style="display: flex; justify-content: space-between;">
+        {{-- Grade summary --}}
+        <div class="card">
+            <div class="card-body">
+                <p class="text-muted text-small" style="font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">Grade Summary</p>
+                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-light);font-size:.875rem;">
+                    <span class="text-muted">Weekly average</span>
+                    <strong>{{ $enrollment->weekly_assessment_avg ? number_format($enrollment->weekly_assessment_avg, 1) . '%' : '—' }}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-light);font-size:.875rem;">
+                    <span class="text-muted">Final grade avg</span>
+                    <strong>{{ $enrollment->final_grade_avg ? number_format($enrollment->final_grade_avg, 1) . '%' : '—' }}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:.875rem;">
                     <span class="text-muted">Weeks completed</span>
-                    <span>{{ $completedWeeks }} / {{ $totalWeeks }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Grade average</span>
-                    <span style="font-weight: 600;">{{ $enrollment->final_grade_avg ? number_format($enrollment->final_grade_avg, 1) . '%' : '—' }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Assessment avg</span>
-                    <span>{{ $enrollment->weekly_assessment_avg ? number_format($enrollment->weekly_assessment_avg, 1) . '%' : '—' }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="text-muted">Program</span>
-                    <span>{{ $enrollment->program->name }}</span>
+                    <strong>{{ $completedWeeks }} / {{ $totalWeeks }}</strong>
                 </div>
             </div>
         </div>
     </div>
 
-</div>
-</div>
-
-{{-- Approve modal --}}
-<div class="modal-overlay" id="approve-modal">
-    <div class="modal" style="max-width: 440px;">
-        <button class="modal-close" onclick="closeModal('approve-modal')">&#215;</button>
-        <h2>Approve Graduation</h2>
-        <p style="font-size: 0.875rem; color: var(--muted); margin-bottom: 1.25rem;">
-            A certificate key will be generated for {{ $enrollment->user->first_name }}.
-        </p>
-        <form method="POST" action="{{ route('admin.graduations.approve', $enrollment->id) }}">
-            @csrf
-            <div style="display: flex; gap: 0.5rem;">
-                <button type="submit" class="btn btn-primary">Confirm Approval</button>
-                <button type="button" onclick="closeModal('approve-modal')" class="btn btn-ghost">Cancel</button>
-            </div>
-        </form>
+    {{-- Final exam attempts --}}
+    @if($finalExamAttempts && $finalExamAttempts->count())
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-body">
+            <p class="text-muted text-small" style="font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">Final Examination Attempts</p>
+            <table style="width:100%;font-size:.875rem;border-collapse:collapse;">
+                <thead>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <th style="text-align:left;padding:6px 8px;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;">Attempt</th>
+                        <th style="text-align:left;padding:6px 8px;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;">Score</th>
+                        <th style="text-align:left;padding:6px 8px;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;">Result</th>
+                        <th style="text-align:left;padding:6px 8px;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;">Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($finalExamAttempts as $attempt)
+                    <tr style="border-bottom:1px solid var(--border-light);">
+                        <td style="padding:8px;">#{{ $attempt->attempt_number }}</td>
+                        <td style="padding:8px;">{{ number_format($attempt->percentage, 1) }}%</td>
+                        <td style="padding:8px;">
+                            <span style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:{{ $attempt->passed ? 'var(--success-bg)' : '#fef2f2' }};color:{{ $attempt->passed ? 'var(--success)' : '#dc2626' }};">
+                                {{ $attempt->passed ? 'Passed' : 'Failed' }}
+                            </span>
+                        </td>
+                        <td style="padding:8px;color:var(--muted);">{{ $attempt->submitted_at?->format('M d, Y H:i') }}</td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
     </div>
+    @endif
+
+    {{-- Assessment breakdown --}}
+    @if($assessmentBreakdown->count())
+    <div class="card">
+        <div class="card-body">
+            <p class="text-muted text-small" style="font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">Weekly Assessment Scores</p>
+            @foreach($assessmentBreakdown as $wp)
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-light);font-size:.875rem;">
+                <span>Week {{ $wp->moduleWeek->week_number }}: {{ $wp->moduleWeek->title }}</span>
+                <span class="score-badge {{ ($wp->assessment_score ?? 0) >= 80 ? 'high' : 'medium' }}">
+                    {{ number_format($wp->assessment_score, 0) }}%
+                </span>
+            </div>
+            @endforeach
+        </div>
+    </div>
+    @endif
 </div>
 
 {{-- Reject modal --}}
 <div class="modal-overlay" id="reject-modal">
-    <div class="modal" style="max-width: 440px;">
+    <div class="modal">
         <button class="modal-close" onclick="closeModal('reject-modal')">&#215;</button>
-        <h2>Reject Graduation</h2>
+        <h2>Reject Graduation Request</h2>
         <form method="POST" action="{{ route('admin.graduations.reject', $enrollment->id) }}">
             @csrf
             <div class="form-group">
-                <label class="form-label">Reason <span style="color:var(--error)">*</span></label>
-                <textarea name="reason" class="form-control" rows="4" required
-                          placeholder="Explain why this request is being rejected..."></textarea>
+                <label class="form-label">Reason</label>
+                <textarea name="reason" class="form-control" rows="3" required maxlength="1000" placeholder="Reason for rejection…"></textarea>
             </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <button type="submit" class="btn btn-danger">Reject</button>
-                <button type="button" onclick="closeModal('reject-modal')" class="btn btn-ghost">Cancel</button>
+            <div style="display:flex;gap:.5rem;">
+                <button type="submit" class="btn btn-danger btn-sm">Confirm</button>
+                <button type="button" onclick="closeModal('reject-modal')" class="btn btn-ghost btn-sm">Cancel</button>
             </div>
         </form>
     </div>
