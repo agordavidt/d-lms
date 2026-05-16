@@ -3,50 +3,67 @@
 namespace App\Http\Controllers\Mentor;
 
 use App\Http\Controllers\Controller;
-use App\Models\Program;
-use App\Models\ModuleWeek;
 use App\Models\Assessment;
 use App\Models\AssessmentQuestion;
+use App\Models\Program;
+use App\Models\ModuleWeek;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AssessmentController extends Controller
 {
+    // ── Store / Update ────────────────────────────────────────────────────────
+
+    /**
+     * Create or update an assessment for a week.
+     *
+     * Weekly assessments: no pass_percentage stored — always 100% in scoring service.
+     * Final exam: pass_percentage stored (default 75, min 75).
+     * Only one final exam allowed per program.
+     */
     public function store(Request $request, Program $program, ModuleWeek $week)
     {
         $this->authorise($program);
 
         $data = $request->validate([
             'title'               => 'required|string|max:200',
-            'pass_percentage'     => 'required|integer|min:1|max:100',
             'time_limit_minutes'  => 'nullable|integer|min:1|max:300',
             'randomize_questions' => 'boolean',
             'is_final'            => 'boolean',
+            'pass_percentage'     => 'nullable|integer|min:75|max:100',
         ]);
 
-        // Enforce: only one final exam per program
-        if (!empty($data['is_final'])) {
-            $alreadyHasFinal = Assessment::whereHas('moduleWeek.programModule', fn ($q) =>
-                $q->where('program_id', $program->id)
-            )->where('is_final', true)->where('module_week_id', '!=', $week->id)->exists();
+        if (! empty($data['is_final'])) {
+            $conflict = Assessment::whereHas('moduleWeek.programModule',
+                fn ($q) => $q->where('program_id', $program->id)
+            )->where('is_final', true)
+             ->where('module_week_id', '!=', $week->id)
+             ->exists();
 
-            if ($alreadyHasFinal) {
+            if ($conflict) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'This program already has a final examination. Only one is allowed per program.',
+                    'message' => 'This program already has a final examination. Only one is allowed.',
                 ], 422);
             }
         }
 
         $assessment = Assessment::updateOrCreate(
             ['module_week_id' => $week->id],
-            array_merge($data, ['created_by' => auth()->id()])
+            [
+                'title'               => $data['title'],
+                'time_limit_minutes'  => $data['time_limit_minutes'] ?? null,
+                'randomize_questions' => $data['randomize_questions'] ?? false,
+                'is_final'            => $data['is_final'] ?? false,
+                // pass_percentage only meaningful for final exam
+                'pass_percentage'     => ! empty($data['is_final'])
+                                            ? ($data['pass_percentage'] ?? Assessment::FINAL_PASS_PERCENTAGE)
+                                            : Assessment::FINAL_PASS_PERCENTAGE,
+                'created_by'          => auth()->id(),
+            ]
         );
 
-        $week->update([
-            'has_assessment'             => true,
-            'assessment_pass_percentage' => $data['pass_percentage'],
-        ]);
+        $week->update(['has_assessment' => true]);
 
         return response()->json(['success' => true, 'assessment' => $assessment]);
     }
@@ -57,18 +74,20 @@ class AssessmentController extends Controller
 
         $data = $request->validate([
             'title'               => 'required|string|max:200',
-            'pass_percentage'     => 'required|integer|min:1|max:100',
             'time_limit_minutes'  => 'nullable|integer|min:1|max:300',
             'randomize_questions' => 'boolean',
             'is_final'            => 'boolean',
+            'pass_percentage'     => 'nullable|integer|min:75|max:100',
         ]);
 
-        if (!empty($data['is_final'])) {
-            $alreadyHasFinal = Assessment::whereHas('moduleWeek.programModule', fn ($q) =>
-                $q->where('program_id', $program->id)
-            )->where('is_final', true)->where('id', '!=', $assessment->id)->exists();
+        if (! empty($data['is_final'])) {
+            $conflict = Assessment::whereHas('moduleWeek.programModule',
+                fn ($q) => $q->where('program_id', $program->id)
+            )->where('is_final', true)
+             ->where('id', '!=', $assessment->id)
+             ->exists();
 
-            if ($alreadyHasFinal) {
+            if ($conflict) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This program already has a final examination.',
@@ -76,8 +95,15 @@ class AssessmentController extends Controller
             }
         }
 
-        $assessment->update($data);
-        $assessment->moduleWeek->update(['assessment_pass_percentage' => $data['pass_percentage']]);
+        $assessment->update([
+            'title'               => $data['title'],
+            'time_limit_minutes'  => $data['time_limit_minutes'] ?? null,
+            'randomize_questions' => $data['randomize_questions'] ?? false,
+            'is_final'            => $data['is_final'] ?? false,
+            'pass_percentage'     => ! empty($data['is_final'])
+                                        ? ($data['pass_percentage'] ?? Assessment::FINAL_PASS_PERCENTAGE)
+                                        : Assessment::FINAL_PASS_PERCENTAGE,
+        ]);
 
         return response()->json(['success' => true]);
     }
@@ -118,13 +144,15 @@ class AssessmentController extends Controller
             'points'           => 'integer|min:1',
         ]);
 
-        $order    = $assessment->questions()->max('order') + 1;
-        $question = $assessment->questions()->create(array_merge($data, ['order' => $order]));
+        $question = $assessment->questions()->create(array_merge(
+            $data,
+            ['order' => $assessment->questions()->max('order') + 1]
+        ));
 
         return response()->json(['success' => true, 'question' => $question]);
     }
 
-    public function updateQuestion(Request $request, Program $program, AssessmentQuestion $question)
+    public function updateQuestion(Request $request, Program $program, Assessment $assessment, AssessmentQuestion $question)
     {
         $this->authorise($program);
 
@@ -177,7 +205,6 @@ class AssessmentController extends Controller
     public function importQuestions(Request $request, Program $program, Assessment $assessment)
     {
         $this->authorise($program);
-
         $request->validate(['csv_file' => 'required|file|mimes:csv,txt|max:2048']);
 
         $handle   = fopen($request->file('csv_file')->getRealPath(), 'r');
@@ -189,8 +216,12 @@ class AssessmentController extends Controller
         try {
             while (($row = fgetcsv($handle)) !== false) {
                 $rowNum++;
-                if ($rowNum === 1) continue;
-                if (count($row) < 7) { $errors[] = "Row {$rowNum}: too few columns."; continue; }
+                if ($rowNum === 1) continue; // skip header
+
+                if (count($row) < 7) {
+                    $errors[] = "Row {$rowNum}: too few columns.";
+                    continue;
+                }
 
                 [$type, $text, $optA, $optB, $optC, $optD, $rawCorrect, $points, $explanation]
                     = array_pad(array_map('trim', $row), 9, '');
@@ -203,18 +234,23 @@ class AssessmentController extends Controller
                 ]);
                 $options = array_values($optionMap);
 
-                if (count($options) < 2) { $errors[] = "Row {$rowNum}: need at least 2 options."; continue; }
+                if (count($options) < 2) {
+                    $errors[] = "Row {$rowNum}: need at least 2 options.";
+                    continue;
+                }
 
                 $correctAnswer = [];
                 foreach (array_map('trim', explode('|', $rawCorrect)) as $part) {
-                    if (array_key_exists($part, $optionMap))  $correctAnswer[] = $optionMap[$part];
-                    elseif (in_array($part, $options))         $correctAnswer[] = $part;
-                    else                                        $errors[] = "Row {$rowNum}: '{$part}' not in options.";
+                    if (array_key_exists($part, $optionMap))    $correctAnswer[] = $optionMap[$part];
+                    elseif (in_array($part, $options))           $correctAnswer[] = $part;
+                    else                                          $errors[] = "Row {$rowNum}: '{$part}' not in options.";
                 }
+
                 if (empty($correctAnswer)) continue;
 
-                if (!in_array($type, ['multiple_choice', 'true_false', 'multiple_select'])) {
-                    $errors[] = "Row {$rowNum}: unknown type '{$type}'."; continue;
+                if (! in_array($type, ['multiple_choice', 'true_false', 'multiple_select'])) {
+                    $errors[] = "Row {$rowNum}: unknown type '{$type}'.";
+                    continue;
                 }
 
                 $assessment->questions()->create([
@@ -228,8 +264,10 @@ class AssessmentController extends Controller
                 ]);
                 $imported++;
             }
+
             fclose($handle);
             DB::commit();
+
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with(['message' => 'Import failed: ' . $e->getMessage(), 'alert-type' => 'error']);
@@ -240,6 +278,8 @@ class AssessmentController extends Controller
 
         return back()->with(['message' => $msg, 'alert-type' => $errors ? 'warning' : 'success']);
     }
+
+    // ── Guard ─────────────────────────────────────────────────────────────────
 
     private function authorise(Program $program): void
     {

@@ -10,95 +10,90 @@ use Illuminate\Http\Request;
 
 class AssessmentAttemptController extends Controller
 {
-    protected $scoringService;
+    public function __construct(protected AssessmentScoringService $scoringService) {}
 
-    public function __construct(AssessmentScoringService $scoringService)
-    {
-        $this->scoringService = $scoringService;
-    }
+    // ── Create attempt ────────────────────────────────────────────────────────
 
     /**
-     * AJAX — Create a new attempt.
-     * Blocked if the learner is on a final-exam cooldown.
+     * AJAX — start a new attempt.
+     * Pre-conditions checked in AssessmentScoringService::createAttempt().
      */
     public function createAttempt(Request $request, Assessment $assessment)
     {
-        $user         = auth()->user();
-        $enrollmentId = $request->input('enrollment_id');
+        $user       = auth()->user();
+        $enrollment = $this->resolveEnrollment($user, $request->input('enrollment_id'), $assessment);
 
-        $enrollment = $user->enrollments()
-            ->where('id', $enrollmentId)
-            ->whereIn('status', ['active', 'completed'])
-            ->first()
-            ?? $user->enrollments()->where('status', 'active')->first();
-
-        if (!$enrollment) {
+        if (! $enrollment) {
             return response()->json(['success' => false, 'message' => 'No active enrollment found.'], 400);
         }
 
         try {
             $attempt = $this->scoringService->createAttempt($assessment, $user, $enrollment);
-
             return response()->json(['success' => true, 'attempt_id' => $attempt->id]);
-
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 400);
         }
     }
 
-    /**
-     * Show the assessment taking page (non-inline/full-page flow).
-     */
-   public function show(AssessmentAttempt $attempt)
+    // ── Show attempt (full-page take view) ────────────────────────────────────
+
+    public function show(AssessmentAttempt $attempt)
     {
         $user = auth()->user();
         if ($attempt->user_id !== $user->id) abort(403);
-    
+
         if ($attempt->status === 'submitted') {
-            // Final exam goes to score-only result page
-            if ($attempt->assessment->is_final) {
-                return redirect()->route('learner.attempts.final-result', $attempt->id);
-            }
-            return redirect()->route('learner.attempts.results', $attempt->id);
+            return $attempt->assessment->is_final
+                ? redirect()->route('learner.attempts.final-result', $attempt->id)
+                : redirect()->route('learner.attempts.results', $attempt->id);
         }
-    
+
         $assessment = $attempt->assessment;
-        $questions  = $assessment->getQuestionsForAttempt();
-    
+
+        // Auto-submit if time limit exceeded
         if ($assessment->time_limit_minutes && $attempt->isTimeLimitExceeded()) {
             $this->scoringService->submitAttempt($attempt, []);
             $attempt->refresh();
-            $route = $assessment->is_final ? 'learner.attempts.final-result' : 'learner.attempts.results';
-            return redirect()->route($route, $attempt->id)
-                ->with(['message' => 'Time limit exceeded. Auto-submitted.', 'alert-type' => 'warning']);
+            return $assessment->is_final
+                ? redirect()->route('learner.attempts.final-result', $attempt->id)
+                    ->with(['message' => 'Time limit exceeded. Auto-submitted.', 'alert-type' => 'warning'])
+                : redirect()->route('learner.attempts.results', $attempt->id)
+                    ->with(['message' => 'Time limit exceeded. Auto-submitted.', 'alert-type' => 'warning']);
         }
-    
+
+        $questions = $assessment->getQuestionsForAttempt();
+
         return view('learner.assessments.take', compact('attempt', 'assessment', 'questions'));
     }
 
+    // ── Submit ────────────────────────────────────────────────────────────────
+
     /**
-     * AJAX — Submit answers.
+     * AJAX — submit answers.
      *
-     * Final exam: returns only { success, score, passed, next_attempt_at } — no question breakdown.
-     * Weekly:     returns full { success, score, passed, question_results }.
+     * Both weekly and final return score + passed only.
+     * No question breakdown is ever returned (prevents answer-guessing on retry).
+     *
+     * Weekly fail  → immediate retry, no cooldown
+     * Final fail   → next_attempt_at returned so UI can show countdown
+     * Final pass   → graduation workflow triggered inside scoring service
      */
     public function submit(Request $request, AssessmentAttempt $attempt)
     {
         $user = auth()->user();
 
         if ($attempt->user_id !== $user->id) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
         }
 
         if ($attempt->status === 'submitted') {
-            return response()->json(['success' => false, 'message' => 'Already submitted'], 400);
+            return response()->json(['success' => false, 'message' => 'Already submitted.'], 400);
         }
 
-        // Convert JS array [{question_id, answer}] to keyed format { "question_1": "answer" }
-        $rawAnswers = $request->input('answers', []);
-        $answers    = [];
-        foreach ($rawAnswers as $item) {
-            if (!empty($item['question_id'])) {
+        // Normalise JS array [{question_id, answer}] → keyed ['question_N' => answer]
+        $answers = [];
+        foreach ($request->input('answers', []) as $item) {
+            if (! empty($item['question_id'])) {
                 $answers['question_' . $item['question_id']] = $item['answer'] ?? null;
             }
         }
@@ -107,39 +102,13 @@ class AssessmentAttemptController extends Controller
             $result = $this->scoringService->submitAttempt($attempt, $answers);
             $attempt->refresh();
 
-            $assessment = $attempt->assessment->load('questions');
-
-            // ── Final exam: score only, no question breakdown ─────────────────
-            if ($assessment->is_final) {
-                return response()->json([
-                    'success'         => true,
-                    'score'           => (float) $attempt->percentage,
-                    'passed'          => (bool)  $attempt->passed,
-                    'next_attempt_at' => $result['next_attempt_at'],
-                ]);
-            }
-
-            // ── Weekly assessment: full question breakdown ─────────────────────
-            $questionResults = $assessment->questions->map(function ($question) use ($attempt) {
-                $key             = 'question_' . $question->id;
-                $submittedAnswer = $attempt->answers[$key] ?? null;
-                $isCorrect       = $question->checkAnswer($submittedAnswer['answer'] ?? $submittedAnswer);
-
-                return [
-                    'question_id'    => $question->id,
-                    'question_text'  => $question->question_text,
-                    'is_correct'     => $isCorrect,
-                    'correct_answer' => $isCorrect ? null : $question->getCorrectAnswerDisplay(),
-                ];
-            })->values()->all();
-
+            // Score only — no question breakdown regardless of assessment type
             return response()->json([
-                'success'          => true,
-                'score'            => (float) $attempt->percentage,
-                'passed'           => (bool)  $attempt->passed,
-                'score_earned'     => $attempt->score_earned,
-                'total_points'     => $attempt->total_points,
-                'question_results' => $questionResults,
+                'success'         => true,
+                'score'           => (float) $attempt->percentage,
+                'passed'          => (bool)  $attempt->passed,
+                'is_final'        => $attempt->assessment->is_final,
+                'next_attempt_at' => $result['next_attempt_at'] ?? null,
             ]);
 
         } catch (\Exception $e) {
@@ -147,13 +116,17 @@ class AssessmentAttemptController extends Controller
         }
     }
 
+    // ── Results pages ─────────────────────────────────────────────────────────
+
     /**
-     * Full-page results view (weekly assessments).
+     * Weekly assessment results — shows score and pass/fail.
+     * No question breakdown shown (prevents guessing on retake).
      */
     public function results(AssessmentAttempt $attempt)
     {
         $user = auth()->user();
         if ($attempt->user_id !== $user->id) abort(403);
+        if ($attempt->assessment->is_final) abort(404); // final exam has its own page
 
         if ($attempt->status !== 'submitted') {
             return redirect()->route('learner.attempts.show', $attempt->id);
@@ -163,13 +136,35 @@ class AssessmentAttemptController extends Controller
         $week         = $assessment->moduleWeek;
         $enrollment   = $attempt->enrollment;
         $weekProgress = $week->getProgressFor($user, $enrollment);
-        $results      = $this->scoringService->getAttemptResults($attempt);
-        $allAttempts  = $assessment->getUserAttempts($user)->where('status', 'submitted')->sortByDesc('submitted_at');
-        $weekComplete = $weekProgress->isWeekFullyComplete();
+        $allAttempts  = $assessment->getUserAttempts($user)
+                            ->where('status', 'submitted')
+                            ->sortByDesc('submitted_at');
 
         return view('learner.assessments.results', compact(
             'attempt', 'assessment', 'week', 'enrollment',
-            'weekProgress', 'results', 'allAttempts', 'weekComplete'
+            'weekProgress', 'allAttempts'
         ));
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private function resolveEnrollment($user, $enrollmentId, Assessment $assessment)
+    {
+        // Try the provided enrollment ID first
+        if ($enrollmentId) {
+            $enrollment = $user->enrollments()
+                ->where('id', $enrollmentId)
+                ->whereIn('status', ['active', 'completed'])
+                ->first();
+            if ($enrollment) return $enrollment;
+        }
+
+        // Fall back to active enrollment for the program this assessment belongs to
+        $programId = $assessment->moduleWeek->programModule->program_id;
+
+        return $user->enrollments()
+            ->where('program_id', $programId)
+            ->whereIn('status', ['active', 'completed'])
+            ->first();
     }
 }
