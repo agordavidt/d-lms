@@ -31,20 +31,20 @@ class UserSeeder extends Seeder
         // Create Mentors (multiple for demo)
         $mentors = [
             [
-                'first_name' => 'John',
-                'last_name' => 'Smith',
+                'first_name' => 'Rapheal',
+                'last_name' => 'Ojo',
                 'email' => 'mentor@demo.com',
                 'phone' => '+1234567892',
             ],
             [
-                'first_name' => 'Sarah',
-                'last_name' => 'Johnson',
+                'first_name' => 'Samson',
+                'last_name' => 'Dodo',
                 'email' => 'mentor2@demo.com',
                 'phone' => '+1234567893',
             ],
             [
-                'first_name' => 'Michael',
-                'last_name' => 'Chen',
+                'first_name' => 'Grace',
+                'last_name' => 'Fagbeyi',
                 'email' => 'mentor3@demo.com',
                 'phone' => '+1234567894',
             ],
@@ -68,16 +68,16 @@ class UserSeeder extends Seeder
         $learners = [
             // Active verified learners
             [
-                'first_name' => 'Alice',
-                'last_name' => 'Williams',
+                'first_name' => 'Eneh',
+                'last_name' => 'Agbo',
                 'email' => 'learner1@demo.com',
                 'phone' => '+1234567895',
                 'status' => 'active',
                 'email_verified_at' => now(),
             ],
             [
-                'first_name' => 'Bob',
-                'last_name' => 'Brown',
+                'first_name' => 'Ademola',
+                'last_name' => 'Lookman',
                 'email' => 'learner2@demo.com',
                 'phone' => '+1234567896',
                 'status' => 'active',

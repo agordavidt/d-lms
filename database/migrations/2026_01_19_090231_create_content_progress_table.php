@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('enrollment_id')->constrained()->cascadeOnDelete();
 
             $table->boolean('is_completed')->default(false);
-            $table->integer('progress_percentage')->default(0);  // video watch progress
+            $table->integer('progress_percentage')->default(0); // for video watch tracking
             $table->integer('time_spent_seconds')->default(0);
             $table->timestamp('started_at')->nullable();
             $table->timestamp('completed_at')->nullable();
@@ -24,9 +24,10 @@ return new class extends Migration
 
             $table->timestamps();
 
+            // Scoped per enrollment so re-enrollment gets a clean slate
+            $table->unique(['user_id', 'week_content_id', 'enrollment_id']);
             $table->index(['user_id', 'enrollment_id']);
             $table->index(['week_content_id', 'is_completed']);
-            $table->unique(['user_id', 'week_content_id']);  // one record per learner per item
         });
     }
 

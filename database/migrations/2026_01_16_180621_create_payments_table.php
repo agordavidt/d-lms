@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->foreignId('enrollment_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('program_id')->constrained()->cascadeOnDelete();
-            $table->string('transaction_id')->unique();
+            $table->string('transaction_id')->nullable()->unique();
             $table->string('reference')->unique();   
 
             // Amounts

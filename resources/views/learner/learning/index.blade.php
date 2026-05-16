@@ -1,6 +1,13 @@
 @extends('layouts.learner')
 @section('title', $enrollment->program->name . ' — ' . $week->title)
 
+@php
+    // Defaults — overwritten below if the week has a final assessment
+    $lastAttempt = null;
+    $onCooldown  = false;
+    $cooldownEnd = null;
+@endphp
+
 @section('content')
 
 {{-- Server data for JS --}}
@@ -618,11 +625,14 @@ function showAssessmentForm() {
 }
 
 // ── Final exam ─────────────────────────────────────────────────────────────
+const FINAL_EXAM_ASSESSMENT_ID = {{ $week->assessment?->id ?? 0 }};
+const FINAL_EXAM_BTN_LABEL     = @json($lastAttempt ? 'Retry Examination' : 'Begin Examination');
+
 function beginFinalExam() {
     const btn = document.getElementById('begin-exam-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
 
-    fetch('/learner/assessments/{{ $week->assessment?->id ?? 0 }}/attempt', {
+    fetch('/learner/assessments/' + FINAL_EXAM_ASSESSMENT_ID + '/attempt', {
         method: 'POST',
         headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ enrollment_id: ENROLLMENT_ID }),
@@ -632,12 +642,12 @@ function beginFinalExam() {
         if (data.success && data.attempt_id) {
             window.location.href = '/learner/attempts/' + data.attempt_id;
         } else {
-            if (btn) { btn.disabled = false; btn.textContent = '{{ $lastAttempt ? "Retry Examination" : "Begin Examination" }}'; }
+            if (btn) { btn.disabled = false; btn.textContent = FINAL_EXAM_BTN_LABEL; }
             toastr.error(data.message || 'Could not start examination.');
         }
     })
     .catch(() => {
-        if (btn) { btn.disabled = false; btn.textContent = '{{ $lastAttempt ? "Retry Examination" : "Begin Examination" }}'; }
+        if (btn) { btn.disabled = false; btn.textContent = FINAL_EXAM_BTN_LABEL; }
         toastr.error('Network error. Please try again.');
     });
 }

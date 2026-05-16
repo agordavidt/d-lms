@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    
     public function up(): void
     {
         Schema::create('program_modules', function (Blueprint $table) {
@@ -14,16 +13,32 @@ return new class extends Migration
             $table->foreignId('program_id')->constrained()->cascadeOnDelete();
             $table->string('title');
             $table->integer('order')->default(0);
-            $table->integer('duration_weeks');    
+            $table->integer('duration_weeks');
             $table->timestamps();
             $table->softDeletes();
 
             $table->index(['program_id', 'order']);
         });
+
+        Schema::create('module_weeks', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('program_module_id')->constrained()->cascadeOnDelete();
+            $table->string('title');
+            $table->integer('week_number');
+            $table->integer('order')->default(0);
+            // Whether this week has a quiz — set automatically when mentor adds an assessment
+            $table->boolean('has_assessment')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+
+            $table->index(['program_module_id', 'order']);
+            $table->index('week_number');
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('module_weeks');
         Schema::dropIfExists('program_modules');
     }
 };

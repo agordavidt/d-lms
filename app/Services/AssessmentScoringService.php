@@ -4,39 +4,37 @@ namespace App\Services;
 
 use App\Models\Assessment;
 use App\Models\AssessmentAttempt;
-use App\Models\User;
 use App\Models\Enrollment;
+use App\Models\User;
 use App\Models\WeekProgress;
 use Illuminate\Support\Facades\DB;
 
 class AssessmentScoringService
 {
+    // ── Create attempt ────────────────────────────────────────────────────────
+
     /**
-     * Create a new attempt.
-     * Rejects if the learner is on a final-exam cooldown.
+     * Create a new attempt after validating all pre-conditions.
+     *
+     * Weekly assessment:
+     *   - Content for the week must be 100% complete
+     *   - No cooldown, unlimited retakes until 100% score
+     *
+     * Final exam:
+     *   - ALL course weeks (content + assessments) must be complete
+     *   - Must not be on a 48-hour cooldown from a previous failed attempt
      */
     public function createAttempt(Assessment $assessment, User $user, Enrollment $enrollment): AssessmentAttempt
     {
-        // Block new final-exam attempts during cooldown
         if ($assessment->is_final) {
-            $lastAttempt = $assessment->attempts()
-                ->where('user_id', $user->id)
-                ->where('enrollment_id', $enrollment->id)
-                ->where('status', 'submitted')
-                ->latest()
-                ->first();
-
-            if ($lastAttempt && $lastAttempt->isOnCooldown()) {
-                throw new \Exception(
-                    'You must wait until ' .
-                    $lastAttempt->next_attempt_at->format('M d, Y \a\t g:i A') .
-                    ' before retrying the final examination.'
-                );
-            }
+            $this->assertFinalExamEligible($assessment, $user, $enrollment);
+        } else {
+            $this->assertWeekContentComplete($assessment, $user, $enrollment);
         }
 
         $attemptNumber = $assessment->attempts()
             ->where('user_id', $user->id)
+            ->where('enrollment_id', $enrollment->id)
             ->max('attempt_number') + 1;
 
         return AssessmentAttempt::create([
@@ -51,13 +49,18 @@ class AssessmentScoringService
         ]);
     }
 
+    // ── Score and persist ─────────────────────────────────────────────────────
+
     /**
-     * Score and persist a submitted attempt.
+     * Score a submitted attempt.
      *
-     * Final exam differences:
-     *   - Fail: sets next_attempt_at = +48 hours on the attempt record
-     *   - Pass: graduation eligibility check fires automatically via
-     *            WeekProgress::markAsComplete() → recalculateGradeAverages()
+     * Pass threshold:
+     *   Weekly  → 100% (every question must be correct)
+     *   Final   → assessment->pass_percentage (default 75%)
+     *
+     * On weekly fail  → score returned, no cooldown, retake immediately
+     * On final fail   → next_attempt_at set to +48 hours
+     * On final pass   → enrollment.recordFinalExamPass() triggers graduation workflow
      */
     public function submitAttempt(AssessmentAttempt $attempt, array $answers): array
     {
@@ -86,12 +89,16 @@ class AssessmentScoringService
                 ];
             }
 
-            $percentage = $totalPoints > 0 ? ($earnedPoints / $totalPoints) * 100 : 0;
-            $passed     = $percentage >= $assessment->pass_percentage;
+            $percentage = $totalPoints > 0
+                ? round(($earnedPoints / $totalPoints) * 100, 2)
+                : 0;
 
-            // Set cooldown on failed final exam attempts
+            // Use the correct threshold for this assessment type
+            $passed = $percentage >= $assessment->getEffectivePassPercentage();
+
+            // Only final exam failed attempts get a cooldown
             $nextAttemptAt = null;
-            if ($assessment->is_final && !$passed) {
+            if ($assessment->is_final && ! $passed) {
                 $nextAttemptAt = now()->addHours(Assessment::FINAL_COOLDOWN_HOURS);
             }
 
@@ -102,21 +109,22 @@ class AssessmentScoringService
                 'total_questions'    => $questions->count(),
                 'total_points'       => $totalPoints,
                 'score_earned'       => $earnedPoints,
-                'percentage'         => round($percentage, 2),
+                'percentage'         => $percentage,
                 'passed'             => $passed,
                 'answers'            => $scored,
                 'status'             => 'submitted',
             ]);
 
-            $this->updateWeekProgress($attempt, $percentage, $passed);
+            // Update week progress and trigger downstream side-effects
+            $this->handlePostSubmission($attempt, $percentage, $passed);
 
             DB::commit();
 
             return [
-                'percentage'    => round($percentage, 2),
-                'score_earned'  => $earnedPoints,
-                'total_points'  => $totalPoints,
-                'passed'        => $passed,
+                'percentage'      => $percentage,
+                'score_earned'    => $earnedPoints,
+                'total_points'    => $totalPoints,
+                'passed'          => $passed,
                 'next_attempt_at' => $nextAttemptAt?->toIso8601String(),
             ];
 
@@ -126,50 +134,79 @@ class AssessmentScoringService
         }
     }
 
-    protected function updateWeekProgress(AssessmentAttempt $attempt, float $percentage, bool $passed): void
+    // ── Post-submission side-effects ──────────────────────────────────────────
+
+    protected function handlePostSubmission(AssessmentAttempt $attempt, float $percentage, bool $passed): void
     {
-        $week         = $attempt->assessment->moduleWeek;
+        $assessment   = $attempt->assessment;
+        $week         = $assessment->moduleWeek;
         $weekProgress = $week->getProgressFor($attempt->user, $attempt->enrollment);
 
-        $updates = [
-            'assessment_score'    => max($weekProgress->assessment_score ?? 0, $percentage),
-            'assessment_attempts' => $weekProgress->assessment_attempts + 1,
-            'last_assessment_at'  => now(),
-        ];
+        // Always increment attempt count and record time
+        $weekProgress->increment('assessment_attempts');
+        $weekProgress->update(['last_assessment_at' => now()]);
 
         if ($passed) {
-            $updates['assessment_passed'] = true;
+            $weekProgress->update(['assessment_passed' => true]);
+            $weekProgress->refresh();
+
+            // This will mark the week complete if content is also done,
+            // then unlock the next week automatically
+            $weekProgress->checkAndCompleteWeek();
+
+            // If this was the final exam, trigger graduation workflow
+            if ($assessment->is_final) {
+                $attempt->enrollment->recordFinalExamPass($percentage);
+            }
+
+            // Recalculate overall enrollment progress percentage
+            $attempt->enrollment->recalculateProgress();
         }
-
-        $weekProgress->update($updates);
-        $weekProgress->refresh();
-
-        $this->recalculateWeekCompletion($weekProgress);
-
-        // This triggers checkGraduationEligibility() → pending_review if all gates pass
-        $attempt->enrollment->recalculateGradeAverages();
+        // On fail: nothing changes — week stays locked, learner retries
     }
 
-    protected function recalculateWeekCompletion(WeekProgress $weekProgress): void
+    // ── Pre-condition assertions ──────────────────────────────────────────────
+
+    protected function assertWeekContentComplete(Assessment $assessment, User $user, Enrollment $enrollment): void
     {
-        if ($weekProgress->is_completed) return;
-        if ($weekProgress->progress_percentage < 100) return;
+        $week         = $assessment->moduleWeek;
+        $weekProgress = $week->getProgressFor($user, $enrollment);
 
-        $week = $weekProgress->moduleWeek;
-        if ($week->has_assessment && $week->assessment) {
-            if (!$weekProgress->assessment_passed) return;
+        if ((float) $weekProgress->progress_percentage < 100) {
+            throw new \Exception('You must complete all required content for this week before taking the assessment.');
         }
-
-        $weekProgress->markAsComplete();
     }
 
-    public function abandonAttempt(AssessmentAttempt $attempt): void
+    protected function assertFinalExamEligible(Assessment $assessment, User $user, Enrollment $enrollment): void
     {
-        if ($attempt->isInProgress()) {
-            $attempt->update(['status' => 'abandoned', 'submitted_at' => now()]);
+        // Gate 1: all course weeks must be complete
+        if (! $enrollment->hasCompletedAllWeeks()) {
+            throw new \Exception('You must complete all course modules before taking the final examination.');
+        }
+
+        // Gate 2: cooldown check
+        $lastAttempt = $assessment->attempts()
+            ->where('user_id', $user->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->where('status', 'submitted')
+            ->latest()
+            ->first();
+
+        if ($lastAttempt && $lastAttempt->next_attempt_at && $lastAttempt->next_attempt_at->isFuture()) {
+            throw new \Exception(
+                'You must wait until ' .
+                $lastAttempt->next_attempt_at->format('M d, Y \a\t g:i A') .
+                ' before retrying the final examination.'
+            );
         }
     }
 
+    // ── Results helper ────────────────────────────────────────────────────────
+
+    /**
+     * Build a detailed results array for weekly assessment result pages.
+     * NOT used for final exam (score only shown there).
+     */
     public function getAttemptResults(AssessmentAttempt $attempt): array
     {
         $results = [];
@@ -179,16 +216,23 @@ class AssessmentScoringService
             $answer = $attempt->answers[$key] ?? null;
 
             $results[] = [
-                'question'      => $question,
-                'user_answer'   => $answer['answer'] ?? null,
-                'correct_answer'=> $question->correct_answer,
-                'is_correct'    => $answer['is_correct'] ?? false,
-                'points_earned' => $answer['points_earned'] ?? 0,
-                'max_points'    => $question->points,
-                'explanation'   => $question->explanation,
+                'question'       => $question,
+                'user_answer'    => $answer['answer'] ?? null,
+                'correct_answer' => $question->correct_answer,
+                'is_correct'     => $answer['is_correct'] ?? false,
+                'points_earned'  => $answer['points_earned'] ?? 0,
+                'max_points'     => $question->points,
+                'explanation'    => $question->explanation,
             ];
         }
 
         return $results;
+    }
+
+    public function abandonAttempt(AssessmentAttempt $attempt): void
+    {
+        if ($attempt->status === 'in_progress') {
+            $attempt->update(['status' => 'abandoned', 'submitted_at' => now()]);
+        }
     }
 }

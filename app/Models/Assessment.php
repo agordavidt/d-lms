@@ -10,11 +10,14 @@ class Assessment extends Model
 {
     use HasFactory, SoftDeletes;
 
-    const FINAL_COOLDOWN_HOURS = 48;
+    // Weekly assessments: always 100% (all correct) — not stored, enforced in scoring service
+    // Final exam: configurable, defaults to this
+    const FINAL_PASS_PERCENTAGE  = 75;
+    const FINAL_COOLDOWN_HOURS   = 48;
 
     protected $fillable = [
         'module_week_id', 'created_by', 'title',
-        'time_limit_minutes', 'pass_percentage', 'randomize_questions', 'is_final',
+        'time_limit_minutes', 'randomize_questions', 'is_final', 'pass_percentage',
     ];
 
     protected $casts = [
@@ -22,46 +25,29 @@ class Assessment extends Model
         'is_final'            => 'boolean',
     ];
 
+    // ── Relationships ─────────────────────────────────────────────────────────
+
     public function moduleWeek() { return $this->belongsTo(ModuleWeek::class); }
     public function creator()    { return $this->belongsTo(User::class, 'created_by'); }
+    public function questions()  { return $this->hasMany(AssessmentQuestion::class)->orderBy('order'); }
+    public function attempts()   { return $this->hasMany(AssessmentAttempt::class); }
 
-    public function questions()
-    {
-        return $this->hasMany(AssessmentQuestion::class)->orderBy('order');
-    }
+    // ── Computed ──────────────────────────────────────────────────────────────
 
-    public function attempts()
-    {
-        return $this->hasMany(AssessmentAttempt::class);
-    }
-
-    public function getTotalQuestionsAttribute(): int
-    {
-        return $this->questions()->count();
-    }
-
-    public function getTotalPointsAttribute(): int
-    {
-        return $this->questions()->sum('points');
-    }
-
-    public function getUserAttempts(User $user)
-    {
-        return $this->attempts()->where('user_id', $user->id)->orderByDesc('attempt_number')->get();
-    }
-
-    public function getUserBestScore(User $user): ?float
-    {
-        return $this->attempts()
-            ->where('user_id', $user->id)
-            ->where('status', 'submitted')
-            ->max('percentage');
-    }
+    public function getTotalQuestionsAttribute(): int { return $this->questions()->count(); }
+    public function getTotalPointsAttribute(): int    { return $this->questions()->sum('points'); }
 
     /**
-     * Returns the latest submitted attempt for a user+enrollment,
-     * or null if none exists.
+     * The pass threshold actually used during scoring.
+     * Weekly → always 100. Final → stored pass_percentage (default 75).
      */
+    public function getEffectivePassPercentage(): int
+    {
+        return $this->is_final ? (int) $this->pass_percentage : 100;
+    }
+
+    // ── Attempt helpers ───────────────────────────────────────────────────────
+
     public function getLatestAttempt(User $user, int $enrollmentId): ?AssessmentAttempt
     {
         return $this->attempts()
@@ -72,24 +58,31 @@ class Assessment extends Model
             ->first();
     }
 
-    /**
-     * True if the learner must wait before retrying the final exam.
-     */
-    public function isOnCooldownFor(User $user, int $enrollmentId): bool
+    public function getUserAttempts(User $user)
     {
-        if (!$this->is_final) return false;
-
-        $latest = $this->getLatestAttempt($user, $enrollmentId);
-
-        return $latest && $latest->next_attempt_at && $latest->next_attempt_at->isFuture();
+        return $this->attempts()
+            ->where('user_id', $user->id)
+            ->orderByDesc('attempt_number')
+            ->get();
     }
 
     /**
-     * Carbon datetime when cooldown expires, or null.
+     * True when a failed final exam is still within the 48-hour cooldown window.
      */
+    public function isOnCooldownFor(User $user, int $enrollmentId): bool
+    {
+        if (! $this->is_final) return false;
+
+        $latest = $this->getLatestAttempt($user, $enrollmentId);
+
+        return $latest
+            && $latest->next_attempt_at
+            && $latest->next_attempt_at->isFuture();
+    }
+
     public function cooldownEndsAt(User $user, int $enrollmentId): ?\Carbon\Carbon
     {
-        if (!$this->is_final) return null;
+        if (! $this->is_final) return null;
 
         $latest = $this->getLatestAttempt($user, $enrollmentId);
 
@@ -98,6 +91,9 @@ class Assessment extends Model
             : null;
     }
 
+    /**
+     * Questions in display order, randomised if enabled.
+     */
     public function getQuestionsForAttempt()
     {
         $q = $this->questions();

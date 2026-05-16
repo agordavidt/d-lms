@@ -11,17 +11,16 @@ class WeekProgress extends Model
 
     protected $fillable = [
         'user_id', 'module_week_id', 'enrollment_id',
-        'is_unlocked', 'is_completed', 'progress_percentage',
-        'total_contents', 'contents_completed',
-        'assessment_score', 'assessment_passed', 'assessment_attempts',
-        'last_assessment_at', 'unlocked_at', 'completed_at',
+        'is_unlocked', 'is_completed',
+        'progress_percentage', 'total_contents', 'contents_completed',
+        'assessment_passed', 'assessment_attempts', 'last_assessment_at',
+        'unlocked_at', 'completed_at',
     ];
 
     protected $casts = [
         'is_unlocked'         => 'boolean',
         'is_completed'        => 'boolean',
         'progress_percentage' => 'decimal:2',
-        'assessment_score'    => 'decimal:2',
         'assessment_passed'   => 'boolean',
         'assessment_attempts' => 'integer',
         'unlocked_at'         => 'datetime',
@@ -35,11 +34,11 @@ class WeekProgress extends Model
     public function moduleWeek() { return $this->belongsTo(ModuleWeek::class); }
     public function enrollment() { return $this->belongsTo(Enrollment::class); }
 
-    // ── Core logic ────────────────────────────────────────────────────────────
+    // ── Core progression logic ────────────────────────────────────────────────
 
     /**
-     * Recalculate content completion percentage, then check if week can be marked done.
-     * Called after any content item is completed.
+     * Recalculate content completion percentage from the database.
+     * Called after any content item is marked complete.
      */
     public function recalculateCompletion(): void
     {
@@ -53,48 +52,49 @@ class WeekProgress extends Model
                 'total_contents'      => 0,
             ]);
         } else {
-            $completedContents = ContentProgress::where('user_id', $this->user_id)
+            $completedCount = ContentProgress::where('user_id', $this->user_id)
                 ->where('enrollment_id', $this->enrollment_id)
                 ->where('is_completed', true)
-                ->whereHas('weekContent', fn ($q) => $q
-                    ->where('module_week_id', $week->id)
-                    ->where('is_required', true)
+                ->whereHas('weekContent', fn ($q) =>
+                    $q->where('module_week_id', $week->id)->where('is_required', true)
                 )
                 ->count();
 
             $this->update([
-                'contents_completed'  => $completedContents,
+                'contents_completed'  => $completedCount,
                 'total_contents'      => $requiredContents,
-                'progress_percentage' => round(($completedContents / $requiredContents) * 100, 2),
+                'progress_percentage' => round(($completedCount / $requiredContents) * 100, 2),
             ]);
         }
 
-        // Reload to get latest values, then check if week is now completable
         $this->refresh();
         $this->checkAndCompleteWeek();
     }
 
     /**
-     * Check conditions and mark week complete if met.
-     * Called after content completion AND after assessment scoring.
+     * Check whether all gates are met and mark the week complete if so.
+     *
+     * Gates:
+     *   1. All required content consumed (progress_percentage = 100)
+     *   2. If week has an assessment → assessment_passed must be true
+     *      (weekly: score must be 100%; final: score must be ≥75% — enforced in scoring service)
      */
     public function checkAndCompleteWeek(): void
     {
         if ($this->is_completed) return;
-        if ($this->progress_percentage < 100) return;
+        if ((float) $this->progress_percentage < 100) return;
 
         $week = $this->moduleWeek;
 
-        // If week has an assessment, it must be PASSED (not merely attempted)
         if ($week->has_assessment && $week->assessment) {
-            if (!$this->assessment_passed) return;
+            if (! $this->assessment_passed) return;
         }
 
         $this->markAsComplete();
     }
 
     /**
-     * Mark week complete and unlock the next one.
+     * Mark this week complete and unlock the next sequential week.
      */
     public function markAsComplete(): void
     {
@@ -106,14 +106,11 @@ class WeekProgress extends Model
         ]);
 
         $this->unlockNextWeek();
-
-        // Recalculate enrollment grade averages (triggers graduation check)
-        $this->enrollment->recalculateGradeAverages();
     }
 
     /**
-     * Unlock the next sequential week in this program.
-     * FIXED: removed ->where('status','published') — no status column in new schema.
+     * Unlock the next week in program order.
+     * If no next week exists, all modules are done — the final exam becomes available.
      */
     protected function unlockNextWeek(): void
     {
@@ -122,7 +119,6 @@ class WeekProgress extends Model
 
         $allWeeks = ModuleWeek::whereHas('programModule', fn ($q) =>
             $q->where('program_id', $program->id)
-            // ← NO status filter: program_modules has no status column
         )
         ->with('programModule')
         ->get()
@@ -141,23 +137,24 @@ class WeekProgress extends Model
                     'enrollment_id'  => $this->enrollment_id,
                 ],
                 [
-                    'is_unlocked'   => true,
-                    'unlocked_at'   => now(),
-                    'total_contents' => $nextWeek->contents()
-                                          ->where('is_required', true)->count(),
+                    'is_unlocked'    => true,
+                    'unlocked_at'    => now(),
+                    'total_contents' => $nextWeek->contents()->where('is_required', true)->count(),
                 ]
             );
         }
+        // No else needed — final exam eligibility is checked dynamically
+        // in AssessmentAttemptController::createAttempt()
     }
 
     // ── Status helpers ────────────────────────────────────────────────────────
 
     /**
-     * FIXED: assessment must be PASSED (was checking attempts > 0).
+     * True only when both content and assessment gates are fully satisfied.
      */
-    public function isWeekFullyComplete(): bool
+    public function isFullyComplete(): bool
     {
-        if ($this->progress_percentage < 100) return false;
+        if ((float) $this->progress_percentage < 100) return false;
 
         $week = $this->moduleWeek;
         if ($week->has_assessment && $week->assessment) {
@@ -167,29 +164,32 @@ class WeekProgress extends Model
         return true;
     }
 
-    public function isContentCompleteAssessmentPending(): bool
+    /**
+     * Content done but learner hasn't attempted the assessment yet.
+     */
+    public function isAwaitingAssessment(): bool
     {
         $week = $this->moduleWeek;
-        return $this->progress_percentage >= 100
+        return (float) $this->progress_percentage >= 100
             && $week->has_assessment
             && $week->assessment
             && $this->assessment_attempts === 0;
     }
 
+    /**
+     * Learner can take the assessment (content complete, not yet passed).
+     * Weekly: unlimited retakes, no cooldown.
+     */
     public function canTakeAssessment(): bool
     {
-        if ($this->progress_percentage < 100) return false;
+        if ((float) $this->progress_percentage < 100) return false;
         $week = $this->moduleWeek;
-        return $week->has_assessment && $week->assessment;
-        // Unlimited attempts — no max check
+        return $week->has_assessment && $week->assessment && ! $this->assessment_passed;
     }
 
     // ── Scopes ────────────────────────────────────────────────────────────────
 
-    public function scopeUnlocked($query)  { return $query->where('is_unlocked', true); }
-    public function scopeCompleted($query) { return $query->where('is_completed', true); }
-    public function scopeInProgress($query)
-    {
-        return $query->where('is_unlocked', true)->where('is_completed', false);
-    }
+    public function scopeUnlocked($query)   { return $query->where('is_unlocked', true); }
+    public function scopeCompleted($query)  { return $query->where('is_completed', true); }
+    public function scopeInProgress($query) { return $query->where('is_unlocked', true)->where('is_completed', false); }
 }

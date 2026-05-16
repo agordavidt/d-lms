@@ -10,108 +10,54 @@ class ContentProgress extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id',
-        'week_content_id',
-        'enrollment_id',
-        'is_completed',
-        'progress_percentage',
-        'time_spent_seconds',
-        'last_accessed_at',
-        'completed_at',
+        'user_id', 'week_content_id', 'enrollment_id',
+        'is_completed', 'progress_percentage',
+        'time_spent_seconds', 'view_count',
+        'started_at', 'completed_at', 'last_accessed_at',
     ];
 
     protected $casts = [
-        'is_completed' => 'boolean',
+        'is_completed'        => 'boolean',
         'progress_percentage' => 'integer',
-        'time_spent_seconds' => 'integer',
-        'last_accessed_at' => 'datetime',
-        'completed_at' => 'datetime',
+        'time_spent_seconds'  => 'integer',
+        'view_count'          => 'integer',
+        'started_at'          => 'datetime',
+        'completed_at'        => 'datetime',
+        'last_accessed_at'    => 'datetime',
     ];
 
-    // Relationships
-    
-    /**
-     * The user who is making progress
-     */
-    public function user()
+    // ── Relationships ─────────────────────────────────────────────────────────
+
+    public function user()       { return $this->belongsTo(User::class); }
+    public function weekContent(){ return $this->belongsTo(WeekContent::class, 'week_content_id'); }
+    public function enrollment() { return $this->belongsTo(Enrollment::class); }
+
+    // ── Scopes ────────────────────────────────────────────────────────────────
+
+    public function scopeCompleted($query)  { return $query->where('is_completed', true); }
+    public function scopeInProgress($query) { return $query->where('is_completed', false)->where('progress_percentage', '>', 0); }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    public function markAsCompleted(): void
     {
-        return $this->belongsTo(User::class);
-    }
+        if ($this->is_completed) return;
 
-    /**
-     * The week content being progressed through
-     * Note: This is the correct relationship name based on the foreign key
-     */
-    public function weekContent()
-    {
-        return $this->belongsTo(WeekContent::class, 'week_content_id');
-    }
-
-    /**
-     * Alias for weekContent to support both naming conventions
-     */
-    public function content()
-    {
-        return $this->weekContent();
-    }
-
-    /**
-     * The enrollment this progress is associated with
-     */
-    public function enrollment()
-    {
-        return $this->belongsTo(Enrollment::class);
-    }
-
-    // Scopes
-
-    /**
-     * Scope to get completed progress
-     */
-    public function scopeCompleted($query)
-    {
-        return $query->where('is_completed', true);
-    }
-
-    /**
-     * Scope to get in-progress items
-     */
-    public function scopeInProgress($query)
-    {
-        return $query->where('is_completed', false)
-                     ->where('progress_percentage', '>', 0);
-    }
-
-    /**
-     * Scope to get not started items
-     */
-    public function scopeNotStarted($query)
-    {
-        return $query->where('progress_percentage', 0);
-    }
-
-    // Helper Methods
-
-    /**
-     * Mark content as completed
-     */
-    public function markAsCompleted()
-    {
         $this->update([
-            'is_completed' => true,
+            'is_completed'        => true,
             'progress_percentage' => 100,
-            'completed_at' => now(),
+            'completed_at'        => now(),
+            'last_accessed_at'    => now(),
         ]);
     }
 
-    /**
-     * Update progress percentage
-     */
-    public function updateProgress(int $percentage)
+    public function updateProgress(int $percentage): void
     {
+        $percentage = min(100, max(0, $percentage));
+
         $this->update([
-            'progress_percentage' => min(100, max(0, $percentage)),
-            'last_accessed_at' => now(),
+            'progress_percentage' => $percentage,
+            'last_accessed_at'    => now(),
         ]);
 
         if ($percentage >= 100) {
@@ -119,43 +65,20 @@ class ContentProgress extends Model
         }
     }
 
-    /**
-     * Add time spent
-     */
-    public function addTimeSpent(int $seconds)
+    public function addTimeSpent(int $seconds): void
     {
         $this->increment('time_spent_seconds', $seconds);
+        $this->increment('view_count');
         $this->update(['last_accessed_at' => now()]);
     }
 
-    /**
-     * Get formatted time spent
-     */
-    public function getFormattedTimeSpentAttribute()
+    public function getFormattedTimeSpentAttribute(): string
     {
-        $hours = floor($this->time_spent_seconds / 3600);
+        $hours   = floor($this->time_spent_seconds / 3600);
         $minutes = floor(($this->time_spent_seconds % 3600) / 60);
-        
-        if ($hours > 0) {
-            return sprintf('%d hr %d min', $hours, $minutes);
-        }
-        
-        return sprintf('%d min', $minutes);
-    }
 
-    /**
-     * Check if content is in progress
-     */
-    public function isInProgress()
-    {
-        return !$this->is_completed && $this->progress_percentage > 0;
-    }
-
-    /**
-     * Check if content is not started
-     */
-    public function isNotStarted()
-    {
-        return $this->progress_percentage === 0;
+        return $hours > 0
+            ? sprintf('%dh %dm', $hours, $minutes)
+            : sprintf('%dm', $minutes);
     }
 }

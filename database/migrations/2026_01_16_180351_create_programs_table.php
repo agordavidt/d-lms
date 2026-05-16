@@ -10,28 +10,24 @@ return new class extends Migration
     {
         Schema::create('programs', function (Blueprint $table) {
             $table->id();
-
-            // Ownership
             $table->foreignId('mentor_id')->nullable()->constrained('users')->nullOnDelete();
 
-            // Core info
             $table->string('name');
             $table->string('slug')->unique();
-            $table->text('description');         
+            $table->text('description');
             $table->string('cover_image')->nullable();
-            $table->string('duration');            
+            $table->string('duration');
 
             // Pricing
             $table->decimal('price', 10, 2);
             $table->decimal('discount_percentage', 5, 2)->default(0);
-            // Graduation requirement
-            $table->decimal('min_passing_average', 5, 2)->default(70.00);
+
             // Status flow: draft → under_review → active → inactive
             $table->enum('status', ['draft', 'under_review', 'active', 'inactive'])->default('draft');
-            $table->timestamp('submitted_at')->nullable();   
-            $table->timestamp('reviewed_at')->nullable();    
+            $table->timestamp('submitted_at')->nullable();
+            $table->timestamp('reviewed_at')->nullable();
             $table->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->text('review_notes')->nullable();        // Admin feedback to mentor
+            $table->text('review_notes')->nullable();
 
             $table->timestamps();
             $table->softDeletes();
