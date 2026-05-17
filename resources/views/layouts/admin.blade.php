@@ -39,7 +39,7 @@
         .nav-badge { display: inline-block; background: var(--error); color: #fff; font-size: 0.65rem; font-weight: 700; border-radius: 10px; padding: 0.05rem 0.4rem; margin-left: 0.3rem; vertical-align: middle; line-height: 1.6; }
         .nav-right { display: flex; align-items: center; gap: 1rem; margin-left: auto; }
         .nav-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--text); color: var(--white); font-size: 0.8rem; font-weight: 600; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
-        .avatar-dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0; background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0; min-width: 180px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); z-index: 200; }
+        .avatar-dropdown { display: none; position: absolute; top: calc(100% + 6px); right: 0; background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0; min-width: 180px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); z-index: 200; }
         .nav-avatar:hover .avatar-dropdown { display: block; }
         .avatar-dropdown a, .avatar-dropdown button { display: block; width: 100%; padding: 0.5rem 1rem; font-size: 0.875rem; color: var(--text); text-decoration: none; text-align: left; background: none; border: none; cursor: pointer; font-family: inherit; }
         .avatar-dropdown a:hover, .avatar-dropdown button:hover { background: var(--bg); }
