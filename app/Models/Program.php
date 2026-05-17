@@ -19,8 +19,7 @@ class Program extends Model
         'cover_image',
         'duration',
         'price',
-        'discount_percentage',
-        'min_passing_average',
+        'discount_percentage',       
         'status',
         'submitted_at',
         'reviewed_at',
@@ -30,8 +29,7 @@ class Program extends Model
 
     protected $casts = [
         'price'               => 'decimal:2',
-        'discount_percentage' => 'decimal:2',
-        'min_passing_average' => 'decimal:2',
+        'discount_percentage' => 'decimal:2',      
         'submitted_at'        => 'datetime',
         'reviewed_at'         => 'datetime',
     ];

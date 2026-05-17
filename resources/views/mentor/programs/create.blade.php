@@ -33,7 +33,8 @@
                     @error('description') <div class="invalid-feedback">{{ $message }}</div> @enderror
                 </div>
 
-                <div class="grid-2">
+                <!-- Redesigned Grid: Combined into an optimized 3-column layouts row -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem;">
                     <div class="form-group">
                         <label class="form-label">Duration <span style="color:var(--error)">*</span></label>
                         <input type="text" name="duration" class="form-control @error('duration') is-invalid @enderror"
@@ -48,25 +49,17 @@
                                value="{{ old('price') }}" placeholder="50000" required>
                         @error('price') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
-                </div>
 
-                <div class="grid-2">
                     <div class="form-group">
                         <label class="form-label">Discount (%)</label>
                         <input type="number" name="discount_percentage" step="0.01" min="0" max="100"
-                               class="form-control" value="{{ old('discount_percentage', 0) }}" placeholder="0">
-                        <div class="form-hint">Leave 0 for no discount</div>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Minimum Passing Average (%)</label>
-                        <input type="number" name="min_passing_average" min="0" max="100"
-                               class="form-control" value="{{ old('min_passing_average', 70) }}">
-                        <div class="form-hint">Required average to graduate</div>
+                               class="form-control @error('discount_percentage') is-invalid @enderror" 
+                               value="{{ old('discount_percentage', 0) }}" placeholder="0">
+                        @error('discount_percentage') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-top: 0.5rem;">
                     <label class="form-label">Cover Image</label>
                     <input type="file" name="cover_image" accept="image/jpg,image/jpeg,image/png,image/webp"
                            class="form-control @error('cover_image') is-invalid @enderror">

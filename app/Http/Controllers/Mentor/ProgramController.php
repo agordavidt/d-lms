@@ -43,8 +43,7 @@ class ProgramController extends Controller
             'description'         => 'required|string|max:1000',
             'duration'            => 'required|string|max:50',
             'price'               => 'required|numeric|min:0',
-            'discount_percentage' => 'nullable|numeric|min:0|max:100',
-            'min_passing_average' => 'nullable|numeric|min:0|max:100',
+            'discount_percentage' => 'nullable|numeric|min:0|max:100',           
             'cover_image'         => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
         ]);
 
@@ -113,8 +112,7 @@ class ProgramController extends Controller
             'description'         => 'required|string|max:1000',
             'duration'            => 'required|string|max:50',
             'price'               => 'required|numeric|min:0',
-            'discount_percentage' => 'nullable|numeric|min:0|max:100',
-            'min_passing_average' => 'nullable|numeric|min:0|max:100',
+            'discount_percentage' => 'nullable|numeric|min:0|max:100',            
             'cover_image'         => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
         ]);
 
