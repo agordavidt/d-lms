@@ -301,6 +301,13 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::put('/programs/{program}/assessments/{assessment}',    [MentorAssessmentController::class, 'update'])->name('assessments.update');
         Route::delete('/programs/{program}/assessments/{assessment}', [MentorAssessmentController::class, 'destroy'])->name('assessments.destroy');
 
+        // Final examination (program-level, not week-level)
+        Route::post('/programs/{program}/final-exam',            [MentorAssessmentController::class, 'storeFinalExam'])->name('assessments.final.store');
+        
+        // Week reorder (up/down)
+        Route::post('/programs/{program}/weeks/reorder',         [MentorCurriculumController::class, 'reorderWeeks'])->name('curriculum.weeks.reorder');
+        
+
         // Questions
         Route::get('/programs/{program}/assessments/{assessment}/questions',            [MentorAssessmentController::class, 'questions'])->name('assessments.questions');
         Route::post('/programs/{program}/assessments/{assessment}/questions',           [MentorAssessmentController::class, 'storeQuestion'])->name('assessments.questions.store');

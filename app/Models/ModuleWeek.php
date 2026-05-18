@@ -11,11 +11,12 @@ class ModuleWeek extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'program_module_id', 'title', 'week_number', 'order', 'has_assessment',
+        'program_module_id', 'title', 'week_number', 'order', 'has_assessment', 'is_final_week',
     ];
 
     protected $casts = [
         'has_assessment' => 'boolean',
+        'is_final_week'  => 'boolean',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────

@@ -32,7 +32,7 @@
     </div>
     <a href="{{ route('learner.certifications') }}"
        style="display:inline-flex;align-items:center;gap:8px;background:#16a34a;color:#fff;padding:13px 24px;border-radius:10px;font-size:.9rem;font-weight:700;text-decoration:none;box-shadow:0 4px 14px rgba(22,163,74,.2);">
-        View Certificate →
+        View &amp; Download Certificate →
     </a>
 
     {{-- ── PENDING REVIEW ── --}}

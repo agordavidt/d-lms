@@ -273,7 +273,6 @@ function doSubmit() {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            // Both weekly and final redirect — weekly to results, final to final-result
             if (IS_FINAL) {
                 window.location.href = '{{ route("learner.attempts.final-result", $attempt->id) }}';
             } else {

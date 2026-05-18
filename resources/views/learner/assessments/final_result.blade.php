@@ -46,8 +46,8 @@
             <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:1.1rem 1.25rem;margin-bottom:1.75rem;text-align:left;">
                 <p style="font-size:.9rem;font-weight:700;color:#14532d;margin:0 0 .3rem;">Certificate pending approval</p>
                 <p style="font-size:.82rem;color:#166534;margin:0;line-height:1.6;">
-                    Your completion has been submitted for review.
-                    Once an administrator approves, your certificate will appear in Certifications.
+                    Your result has been submitted for review.
+                    An administrator will issue your certificate — check your Graduation Status for updates.
                 </p>
             </div>
 

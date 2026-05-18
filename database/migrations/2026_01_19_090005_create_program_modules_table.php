@@ -28,6 +28,9 @@ return new class extends Migration
             $table->integer('order')->default(0);
             // Whether this week has a quiz — set automatically when mentor adds an assessment
             $table->boolean('has_assessment')->default(false);
+            // Marks the system-generated week that houses the final examination.
+            // Hidden from curriculum sidebar and week count shown to learners.
+            $table->boolean('is_final_week')->default(false);
             $table->timestamps();
             $table->softDeletes();
 

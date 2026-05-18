@@ -80,23 +80,15 @@ class Enrollment extends Model
      */
     public function hasCompletedAllWeeks(): bool
     {
-        $allWeeks = $this->program->getPublishedWeeks();
-
-        if ($allWeeks->isEmpty()) return false;
-
-        // Exclude the final exam week — completion of that is the exam itself
-        $courseWeeks = $allWeeks->filter(fn ($w) =>
-            ! ($w->assessment && $w->assessment->is_final)
-        );
-
+        $courseWeeks = $this->program->getCourseWeeks();
         if ($courseWeeks->isEmpty()) return false;
 
-        $completedCount = WeekProgress::where('enrollment_id', $this->id)
+        $completed = WeekProgress::where('enrollment_id', $this->id)
             ->whereIn('module_week_id', $courseWeeks->pluck('id'))
             ->where('is_completed', true)
             ->count();
 
-        return $completedCount === $courseWeeks->count();
+        return $completed === $courseWeeks->count();
     }
 
     /**

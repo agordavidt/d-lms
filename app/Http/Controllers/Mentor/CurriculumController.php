@@ -225,6 +225,28 @@ class CurriculumController extends Controller
         return response()->json(['success' => true]);
     }
 
+    /**
+     * Reorder weeks — called by up/down buttons in the curriculum builder.
+     * Accepts an ordered array of week IDs and renumbers week_number + order sequentially.
+     */
+    public function reorderWeeks(Request $request, Program $program)
+    {
+        $this->authorise($program);
+        $request->validate(['order' => 'required|array', 'order.*' => 'integer']);
+
+        $allWeekIds = $request->order;
+        foreach ($allWeekIds as $position => $weekId) {
+            ModuleWeek::where('id', $weekId)
+                ->whereHas('programModule', fn($q) => $q->where('program_id', $program->id))
+                ->update([
+                    'order'       => $position + 1,
+                    'week_number' => $position + 1,
+                ]);
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     // ── Guards ────────────────────────────────────────────────────────────────
 
     private function authorise(Program $program): void

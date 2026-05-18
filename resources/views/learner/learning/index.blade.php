@@ -4,19 +4,21 @@
 @section('content')
 
 {{-- Pass server data to JS cleanly --}}
-<script id="js-data" type="application/json">@json([
-    'enrollmentId'      => $enrollmentId,
-    'weekId'            => $week->id,
-    'hasAssessment'     => (bool) $week->assessment,
-    'isFinal'           => (bool) ($week->assessment?->is_final),
-    'assessmentId'      => $week->assessment?->id,
-    'assessmentPassed'  => $assessmentPassed,
-    'passMark'          => $week->assessment?->getEffectivePassPercentage() ?? 100,
-    'contentIds'        => $contents->pluck('id'),
-    'contentCompletion' => $contents->mapWithKeys(fn($c) => [
-        $c->id => (bool)($c->contentProgress->first()?->is_completed ?? false)
-    ]),
-])</script>
+<script id="js-data" type="application/json">
+    {!! json_encode([
+        'enrollmentId'      => $enrollmentId,
+        'weekId'            => $week->id,
+        'hasAssessment'     => (bool) $week->assessment,
+        'isFinal'           => (bool) ($week->assessment?->is_final),
+        'assessmentId'      => $week->assessment?->id,
+        'assessmentPassed'  => $assessmentPassed,
+        'passMark'          => $week->assessment?->getEffectivePassPercentage() ?? 100,
+        'contentIds'        => $contents->pluck('id'),
+        'contentCompletion' => $contents->mapWithKeys(fn($c) => [
+            $c->id => (bool)($c->contentProgress->first()?->is_completed ?? false)
+        ])->all(),
+    ]) !!}
+</script>
 
 <div class="learn-wrap">
 
