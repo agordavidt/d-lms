@@ -38,35 +38,35 @@ class ProgramController extends Controller
 
     public function store(Request $request)
     {
-        $data = $request->validate([
-            'name'                => 'required|string|max:150',
-            'description'         => 'required|string|max:1000',
-            'duration'            => 'required|string|max:50',
-            'price'               => 'required|numeric|min:0',
-            'discount_percentage' => 'nullable|numeric|min:0|max:100',           
-            'cover_image'         => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+        $validatedData = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'required|string',
+            'duration' => 'required|string',
+            'price' => 'required|numeric|min:0',
+            'discount_percentage' => 'nullable|numeric|min:0|max:100',
+            'cover_image' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
 
+        
+        if (array_key_exists('discount_percentage', $validatedData) && is_null($validatedData['discount_percentage'])) {
+            unset($validatedData['discount_percentage']);
+        }
+
+        // Handle file uploads safely
         if ($request->hasFile('cover_image')) {
-            $data['cover_image'] = $request->file('cover_image')
-                ->store('program-covers', 'public');
+            $path = $request->file('cover_image')->store('program-covers', 'public');
+            $validatedData['cover_image'] = $path;
         }
 
-        $data['mentor_id'] = auth()->id();
-        $data['status']    = 'draft';
-        $data['slug']      = Str::slug($data['name']);
+        // Build remaining required program fields
+        $validatedData['mentor_id'] = auth()->id();
+        $validatedData['slug'] = Str::slug($validatedData['name']);
+        $validatedData['status'] = 'draft';
 
-        $baseSlug = $data['slug'];
-        $i = 1;
-        while (Program::where('slug', $data['slug'])->exists()) {
-            $data['slug'] = $baseSlug . '-' . $i++;
-        }
+        $program = Program::create($validatedData);
 
-        $program = Program::create($data);
-
-        return redirect()
-            ->route('mentor.programs.show', $program)
-            ->with(['message' => 'Program created. Start building your curriculum.', 'alert-type' => 'success']);
+        return redirect()->route('mentor.programs.show', $program->id)
+            ->with('success', 'Program draft created successfully.');
     }
 
     public function show(Program $program)
@@ -102,33 +102,31 @@ class ProgramController extends Controller
 
     public function update(Request $request, Program $program)
     {
-        $this->authorise($program);
-
-        abort_if(in_array($program->status, ['under_review', 'active']), 403,
-            'Program cannot be edited while under review or active.');
-
-        $data = $request->validate([
-            'name'                => 'required|string|max:150',
-            'description'         => 'required|string|max:1000',
-            'duration'            => 'required|string|max:50',
-            'price'               => 'required|numeric|min:0',
-            'discount_percentage' => 'nullable|numeric|min:0|max:100',            
-            'cover_image'         => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+        $validatedData = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'required|string',
+            'duration' => 'required|string',
+            'price' => 'required|numeric|min:0',
+            'discount_percentage' => 'nullable|numeric|min:0|max:100',
+            'cover_image' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
 
-        if ($request->hasFile('cover_image')) {
-            if ($program->cover_image) {
-                Storage::disk('public')->delete($program->cover_image);
-            }
-            $data['cover_image'] = $request->file('cover_image')
-                ->store('program-covers', 'public');
+        
+        if (array_key_exists('discount_percentage', $validatedData) && is_null($validatedData['discount_percentage'])) {
+            $validatedData['discount_percentage'] = 0;
         }
 
-        $program->update($data);
+        if ($request->hasFile('cover_image')) {
+            $path = $request->file('cover_image')->store('program-covers', 'public');
+            $validatedData['cover_image'] = $path;
+        }
 
-        return redirect()
-            ->route('mentor.programs.show', $program)
-            ->with(['message' => 'Program updated.', 'alert-type' => 'success']);
+        $validatedData['slug'] = Str::slug($validatedData['name']);
+
+        $program->update($validatedData);
+
+        return redirect()->route('mentor.programs.show', $program->id)
+            ->with('success', 'Program updated successfully.');
     }
 
     public function submitForReview(Program $program)
@@ -183,3 +181,6 @@ class ProgramController extends Controller
         abort_if($program->mentor_id !== auth()->id(), 403);
     }
 }
+
+
+
