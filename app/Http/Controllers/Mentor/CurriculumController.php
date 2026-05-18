@@ -76,19 +76,19 @@ class CurriculumController extends Controller
             'has_assessment' => 'boolean',
         ]);
 
-        // Sequential week number across all modules in this program
+        // Sequential week number — exclude the final exam week from the count
         $weekNumber = ModuleWeek::whereHas('programModule',
             fn ($q) => $q->where('program_id', $program->id)
-        )->count() + 1;
+        )->where('is_final_week', false)->count() + 1;
 
         $week = $module->weeks()->create([
             'title'          => $data['title'],
             'week_number'    => $weekNumber,
-            'order'          => $module->weeks()->max('order') + 1,
+            'order'          => $module->weeks()->where('is_final_week', false)->max('order') + 1,
             'has_assessment' => $data['has_assessment'] ?? false,
         ]);
 
-        $module->update(['duration_weeks' => $module->weeks()->count()]);
+        $module->update(['duration_weeks' => $module->weeks()->where('is_final_week', false)->count()]);
 
         return response()->json(['success' => true, 'week' => $week]);
     }
@@ -111,18 +111,23 @@ class CurriculumController extends Controller
     {
         $this->authorise($program);
 
+        if ($week->is_final_week) {
+            return response()->json(['success' => false, 'message' => 'Use the Final Examination tab to remove the final exam.'], 422);
+        }
+
         $module = $week->programModule;
         $week->delete();
 
-        $module->update(['duration_weeks' => $module->weeks()->count()]);
+        $module->update(['duration_weeks' => $module->weeks()->where('is_final_week', false)->count()]);
 
-        // Renumber all weeks in the program sequentially
-        ModuleWeek::whereHas('programModule', fn ($q) => $q->where('program_id', $program->id))
+        // Renumber course weeks only — final week stays at 9999
+        ModuleWeek::whereHas('programModule', fn($q) => $q->where('program_id', $program->id))
+            ->where('is_final_week', false)
             ->with('programModule')
             ->get()
-            ->sortBy(fn ($w) => [$w->programModule->order, $w->order])
+            ->sortBy(fn($w) => [$w->programModule->order, $w->order])
             ->values()
-            ->each(fn ($w, $i) => $w->update(['week_number' => $i + 1]));
+            ->each(fn($w, $i) => $w->update(['week_number' => $i + 1, 'order' => $i + 1]));
 
         return response()->json(['success' => true]);
     }
@@ -234,14 +239,19 @@ class CurriculumController extends Controller
         $this->authorise($program);
         $request->validate(['order' => 'required|array', 'order.*' => 'integer']);
 
-        $allWeekIds = $request->order;
-        foreach ($allWeekIds as $position => $weekId) {
-            ModuleWeek::where('id', $weekId)
+        // Final exam week (is_final_week = true) is excluded from reorder entirely.
+        // It always retains week_number/order = 9999 so it sorts last.
+        $position = 1;
+        foreach ($request->order as $weekId) {
+            $week = ModuleWeek::where('id', $weekId)
                 ->whereHas('programModule', fn($q) => $q->where('program_id', $program->id))
-                ->update([
-                    'order'       => $position + 1,
-                    'week_number' => $position + 1,
-                ]);
+                ->where('is_final_week', false) // guard: skip final exam week
+                ->first();
+
+            if ($week) {
+                $week->update(['order' => $position, 'week_number' => $position]);
+                $position++;
+            }
         }
 
         return response()->json(['success' => true]);

@@ -96,8 +96,8 @@ class AssessmentController extends Controller
 
             $finalWeek = $lastModule->weeks()->create([
                 'title'          => 'Final Examination',
-                'week_number'    => $totalWeeks + 1,
-                'order'          => $lastModule->weeks()->max('order') + 1,
+                'week_number'    => 9999, // sentinel — always sorts after all course weeks
+                'order'          => 9999,
                 'has_assessment' => true,
                 'is_final_week'  => true,
             ]);
