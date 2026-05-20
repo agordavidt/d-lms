@@ -5,18 +5,19 @@
 
 {{-- Pass server data to JS cleanly --}}
 <script id="js-data" type="application/json">
-    {!! json_encode([
-        'enrollmentId'      => $enrollmentId,
-        'weekId'            => $week->id,
-        'hasAssessment'     => (bool) $week->assessment,
-        'isFinal'           => (bool) ($week->assessment?->is_final),
-        'assessmentId'      => $week->assessment?->id,
-        'assessmentPassed'  => $assessmentPassed,
-        'passMark'          => $week->assessment?->getEffectivePassPercentage() ?? 100,
-        'contentIds'        => $contents->pluck('id'),
-        'contentCompletion' => $contents->mapWithKeys(fn($c) => [
+        {!! json_encode([
+        'enrollmentId'       => $enrollmentId,
+        'weekId'             => $week->id,
+        'hasAssessment'      => (bool) $week->assessment,
+        'isFinal'            => (bool) ($week->assessment?->is_final),
+        'assessmentId'       => $week->assessment?->id,
+        'assessmentPassed'   => $assessmentPassed,
+        'passMark'           => $week->assessment?->getEffectivePassPercentage() ?? 100,
+        'contentIds'         => $contents->pluck('id'),
+        'contentCompletion'  => $contents->mapWithKeys(fn($c) => [
             $c->id => (bool)($c->contentProgress->first()?->is_completed ?? false)
         ])->all(),
+        'nextWeekIsFinalExam' => $nextWeekIsFinalExam,   // ← added
     ]) !!}
 </script>
 
@@ -399,6 +400,7 @@
         </section>
         @endif
 
+  
         {{-- ════ WEEK FOOTER ════ --}}
         <div class="week-footer">
             <div>
@@ -408,14 +410,35 @@
             </div>
             <div id="next-container" style="{{ ($week->assessment && !$assessmentPassed) ? 'display:none;' : '' }}">
                 @if($nextWeekId)
-                <a href="{{ route('learner.learning.week', [$enrollmentId, $nextWeekId]) }}" class="nav-btn nav-btn-primary" id="next-week-btn">
-                    Next Week →
-                </a>
+                    @if($nextWeekIsFinalExam)
+                    {{-- ── FIX: explicit "Final Exam" CTA so learner knows what comes next ── --}}
+                    <a href="{{ route('learner.learning.week', [$enrollmentId, $nextWeekId]) }}"
+                    id="next-week-btn"
+                    class="nav-btn nav-btn-primary"
+                    style="background:#7c3aed;border-color:#7c3aed;">
+                        Proceed to Final Exam →
+                    </a>
+                    @else
+                    <a href="{{ route('learner.learning.week', [$enrollmentId, $nextWeekId]) }}"
+                    id="next-week-btn"
+                    class="nav-btn nav-btn-primary">
+                        Next Week →
+                    </a>
+                    @endif
+                @elseif($week->assessment?->is_final && $assessmentPassed)
+                    {{-- Final exam passed — only now show graduation ──────────────── --}}
+                    <a href="{{ route('learner.graduation.status', $enrollment->id) }}"
+                    class="nav-btn nav-btn-primary"
+                    style="background:#16a34a;border-color:#16a34a;">
+                        View Graduation Status →
+                    </a>
                 @elseif(!$week->assessment?->is_final)
-                {{-- All content weeks done, no final exam week — should not normally happen --}}
-                <a href="{{ route('learner.graduation.status', $enrollment->id) }}" class="nav-btn nav-btn-primary" style="background:#16a34a;border-color:#16a34a;">
-                    View Graduation Status →
-                </a>
+                    {{-- All content weeks done, no final exam in program ──────────── --}}
+                    <a href="{{ route('learner.graduation.status', $enrollment->id) }}"
+                    class="nav-btn nav-btn-primary"
+                    style="background:#16a34a;border-color:#16a34a;">
+                        View Graduation Status →
+                    </a>
                 @endif
             </div>
         </div>
@@ -436,6 +459,7 @@ const PASS_MARK      = D.passMark;
 const CSRF           = document.querySelector('meta[name="csrf-token"]').content;
 const CONTENT_IDS    = D.contentIds;
 const PAGE_LOAD_TIME = Date.now();
+const NEXT_IS_FINAL = D.nextWeekIsFinalExam;
 
 const completed      = Object.assign({}, D.contentCompletion);
 let   assessmentPassed = D.assessmentPassed;
@@ -700,7 +724,15 @@ function showQuizResult(score, passed) {
         const nc = document.getElementById('next-container');
         if (nc) nc.style.display = '';
 
-        banner.className = 'result-banner pass';
+        // ── FIX: relabel the Next button when destination is the final exam ──────
+        const nextBtn = document.getElementById('next-week-btn');
+        if (nextBtn && NEXT_IS_FINAL) {
+            nextBtn.textContent = 'Proceed to Final Exam →';
+            nextBtn.style.background    = '#7c3aed';
+            nextBtn.style.borderColor   = '#7c3aed';
+        }
+
+        banner.className = 'result-banner pass';      
         banner.style.display = '';
         banner.innerHTML = `
             <div style="width:32px;height:32px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center;flex-shrink:0;">

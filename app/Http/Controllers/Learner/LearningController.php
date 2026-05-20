@@ -55,99 +55,116 @@ class LearningController extends Controller
     /**
      * Primary learning view — full week page with all content and inline assessment.
      */
-    public function showWeek($enrollmentId, $weekId)
-    {
-        try {
-            $user       = auth()->user();
-            $enrollment = $this->resolveEnrollment($user, $enrollmentId);
+public function showWeek($enrollmentId, $weekId)
+{
+    try {
+        $user       = auth()->user();
+        $enrollment = $this->resolveEnrollment($user, $enrollmentId);
 
-            $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
-                ->where('module_week_id', $weekId)
-                ->firstOrFail();
+        $weekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+            ->where('module_week_id', $weekId)
+            ->firstOrFail();
 
-            if (! $weekProgress->is_unlocked) {
-                return redirect()->route('learner.learning.index', $enrollmentId)
-                    ->with(['message' => 'This week is not yet available.', 'alert-type' => 'warning']);
-            }
-
-            $week = $weekProgress->moduleWeek;
-            $week->load(['programModule', 'assessment.questions']);
-
-            // Contents with per-item progress
-            $contents = $week->contents()
-                ->with(['contentProgress' => fn ($q) =>
-                    $q->where('user_id', $user->id)->where('enrollment_id', $enrollment->id)
-                ])
-                ->orderBy('order')
-                ->get();
-
-            // Sidebar — all week progress for this enrollment ordered correctly
-            $allWeekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
-                ->with('moduleWeek.programModule')
-                ->get()
-                ->sortBy(fn ($wp) => [
-                    $wp->moduleWeek->programModule->order ?? 0,
-                    $wp->moduleWeek->week_number,
-                ])
-                ->values();
-
-            // Prev / Next week IDs
-            $allWeeks   = $enrollment->program->getPublishedWeeks();
-            $currentIdx = $allWeeks->search(fn ($w) => $w->id == $weekId);
-            $prevWeekId = $currentIdx > 0 ? $allWeeks[$currentIdx - 1]->id : null;
-            $nextWeekId = ($currentIdx !== false && $currentIdx < $allWeeks->count() - 1)
-                ? $allWeeks[$currentIdx + 1]->id
-                : null;
-
-            // Assessment state for this week
-            $assessmentPassed = false;
-            $latestAttempt    = null;
-
-            if ($week->assessment) {
-                $latestAttempt = $week->assessment->attempts()
-                    ->where('user_id', $user->id)
-                    ->where('enrollment_id', $enrollment->id)
-                    ->where('status', 'submitted')
-                    ->latest()
-                    ->first();
-
-                // Weekly: passed = 100%. Final: passed = percentage >= pass_percentage.
-                // Both are already recorded correctly on the attempt->passed field.
-                $assessmentPassed = $latestAttempt && $latestAttempt->passed;
-            }
-
-            // Final exam eligibility (used in blade to gate the begin-exam button)
-            $allWeeksComplete = $week->assessment?->is_final
-                ? $enrollment->hasCompletedAllWeeks()
-                : false;
-
-            // Cooldown state for final exam
-            $onCooldown  = false;
-            $cooldownEnd = null;
-            if ($week->assessment?->is_final) {
-                $onCooldown  = $week->assessment->isOnCooldownFor($user, $enrollment->id);
-                $cooldownEnd = $week->assessment->cooldownEndsAt($user, $enrollment->id);
-            }
-
-            $stats = $this->calculateStats($user, $enrollment);
-
-            return view('learner.learning.index', compact(
-                'enrollment', 'week', 'weekProgress', 'contents',
-                'allWeekProgress', 'stats',
-                'assessmentPassed', 'latestAttempt',
-                'prevWeekId', 'nextWeekId', 'enrollmentId',
-                'allWeeksComplete', 'onCooldown', 'cooldownEnd'
-            ));
-
-        } catch (\Illuminate\Auth\Access\AuthorizationException) {
-            return redirect()->route('learner.my-learning')
-                ->with(['message' => 'Access denied.', 'alert-type' => 'error']);
-        } catch (\Exception) {
-            return redirect()->route('learner.my-learning')
-                ->with(['message' => 'Could not load week. Please try again.', 'alert-type' => 'error']);
+        if (! $weekProgress->is_unlocked) {
+            return redirect()->route('learner.learning.index', $enrollmentId)
+                ->with(['message' => 'This week is not yet available.', 'alert-type' => 'warning']);
         }
-    }
 
+        $week = $weekProgress->moduleWeek;
+        $week->load(['programModule', 'assessment.questions']);
+
+        // Contents with per-item progress
+        $contents = $week->contents()
+            ->with(['contentProgress' => fn ($q) =>
+                $q->where('user_id', $user->id)->where('enrollment_id', $enrollment->id)
+            ])
+            ->orderBy('order')
+            ->get();
+
+        // Sidebar — all week progress for this enrollment ordered correctly
+        $allWeekProgress = WeekProgress::where('enrollment_id', $enrollment->id)
+            ->with('moduleWeek.programModule')
+            ->get()
+            ->sortBy(fn ($wp) => [
+                $wp->moduleWeek->programModule->order ?? 0,
+                $wp->moduleWeek->week_number,
+            ])
+            ->values();
+
+        // Prev / Next week IDs
+        $allWeeks   = $enrollment->program->getPublishedWeeks();
+        $currentIdx = $allWeeks->search(fn ($w) => $w->id == $weekId);
+        $prevWeekId = $currentIdx > 0 ? $allWeeks[$currentIdx - 1]->id : null;
+        $nextWeekId = ($currentIdx !== false && $currentIdx < $allWeeks->count() - 1)
+            ? $allWeeks[$currentIdx + 1]->id
+            : null;
+
+        // ── NEW: flag so the blade can render the correct CTA label ──────────
+        $nextWeekIsFinalExam = false;
+        if ($nextWeekId) {
+            $nextWk              = $allWeeks->firstWhere('id', $nextWeekId);
+            $nextWeekIsFinalExam = (bool) ($nextWk?->assessment?->is_final);
+        }
+
+        // Assessment state for this week
+        $assessmentPassed = false;
+        $latestAttempt    = null;
+
+        if ($week->assessment) {
+            $latestAttempt = $week->assessment->attempts()
+                ->where('user_id', $user->id)
+                ->where('enrollment_id', $enrollment->id)
+                ->where('status', 'submitted')
+                ->latest()
+                ->first();
+
+            $assessmentPassed = $latestAttempt && $latestAttempt->passed;
+        }
+
+        // ── NEW: final exam gate — exclude the final exam week itself ─────────
+        $allWeeksComplete = false;
+        if ($week->assessment?->is_final) {
+            $regularWeekIds = \App\Models\ModuleWeek::whereHas('programModule', fn ($q) =>
+                    $q->where('program_id', $enrollment->program_id)
+                )
+                ->whereDoesntHave('assessment', fn ($q) => $q->where('is_final', true))
+                ->pluck('id');
+
+            $allWeeksComplete = $regularWeekIds->isNotEmpty()
+                && WeekProgress::where('enrollment_id', $enrollment->id)
+                    ->whereIn('module_week_id', $regularWeekIds)
+                    ->where('is_completed', false)
+                    ->doesntExist();
+        }
+
+        // Cooldown state for final exam
+        $onCooldown  = false;
+        $cooldownEnd = null;
+        if ($week->assessment?->is_final) {
+            $onCooldown  = $week->assessment->isOnCooldownFor($user, $enrollment->id);
+            $cooldownEnd = $week->assessment->cooldownEndsAt($user, $enrollment->id);
+        }
+
+        $stats = $this->calculateStats($user, $enrollment);
+
+        // ── Single return — all variables now defined above ───────────────────
+        return view('learner.learning.index', compact(
+            'enrollment', 'week', 'weekProgress', 'contents',
+            'allWeekProgress', 'stats',
+            'assessmentPassed', 'latestAttempt',
+            'prevWeekId', 'nextWeekId', 'nextWeekIsFinalExam',
+            'enrollmentId',
+            'allWeeksComplete', 'onCooldown', 'cooldownEnd'
+        ));
+
+    } catch (\Illuminate\Auth\Access\AuthorizationException) {
+        return redirect()->route('learner.my-learning')
+            ->with(['message' => 'Access denied.', 'alert-type' => 'error']);
+    } catch (\Exception) {
+        return redirect()->route('learner.my-learning')
+            ->with(['message' => 'Could not load week. Please try again.', 'alert-type' => 'error']);
+    }
+}
     // ── AJAX: mark content complete ───────────────────────────────────────────
 
     public function markContentComplete(Request $request, $contentId)

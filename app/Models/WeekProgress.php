@@ -130,6 +130,9 @@ class WeekProgress extends Model
         if ($currentIndex !== false && $currentIndex + 1 < $allWeeks->count()) {
             $nextWeek = $allWeeks[$currentIndex + 1];
 
+            // ── FIX: count required contents BEFORE creating the record ──────────
+            $requiredContents = $nextWeek->contents()->where('is_required', true)->count();
+
             WeekProgress::updateOrCreate(
                 [
                     'user_id'        => $this->user_id,
@@ -139,12 +142,12 @@ class WeekProgress extends Model
                 [
                     'is_unlocked'    => true,
                     'unlocked_at'    => now(),
-                    'total_contents' => $nextWeek->contents()->where('is_required', true)->count(),
+                    'total_contents' => $requiredContents,
+                    // ── FIX: content-free weeks (final exam) start at 100% ────────
+                    'progress_percentage' => $requiredContents === 0 ? 100 : 0,
                 ]
             );
         }
-        // No else needed — final exam eligibility is checked dynamically
-        // in AssessmentAttemptController::createAttempt()
     }
 
     // ── Status helpers ────────────────────────────────────────────────────────
