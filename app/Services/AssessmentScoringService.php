@@ -179,12 +179,26 @@ class AssessmentScoringService
 
     protected function assertFinalExamEligible(Assessment $assessment, User $user, Enrollment $enrollment): void
     {
-        // Gate 1: all course weeks must be complete
-        if (! $enrollment->hasCompletedAllWeeks()) {
+        // Gate 1: all REGULAR (non-final) weeks must be complete.
+        // We deliberately exclude the final exam week's own WeekProgress from this
+        // check — it can never be complete before the exam is taken.
+        $regularWeekIds = \App\Models\ModuleWeek::whereHas('programModule', fn ($q) =>
+                $q->where('program_id', $enrollment->program_id)
+            )
+            ->whereDoesntHave('assessment', fn ($q) => $q->where('is_final', true))
+            ->pluck('id');
+
+        $allRegularWeeksComplete = $regularWeekIds->isNotEmpty()
+            && \App\Models\WeekProgress::where('enrollment_id', $enrollment->id)
+                ->whereIn('module_week_id', $regularWeekIds)
+                ->where('is_completed', false)
+                ->doesntExist();
+
+        if (! $allRegularWeeksComplete) {
             throw new \Exception('You must complete all course modules before taking the final examination.');
         }
 
-        // Gate 2: cooldown check
+        // Gate 2: 48-hour cooldown on a previous failed attempt
         $lastAttempt = $assessment->attempts()
             ->where('user_id', $user->id)
             ->where('enrollment_id', $enrollment->id)

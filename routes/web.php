@@ -9,7 +9,7 @@ use App\Http\Controllers\Admin\SessionController as AdminSessionController;
 use App\Http\Controllers\Admin\GraduationController;
 use App\Http\Controllers\Admin\PaymentController as AdminPaymentController;
 use App\Http\Controllers\ExploreController;
-use App\Http\Controllers\Learner\CertificationsController;
+use App\Http\Controllers\Learner\CertificateController;
 use App\Http\Controllers\Learner\MyLearningController;
 use App\Http\Controllers\Learner\ProgramController as LearnerProgramController;
 use App\Http\Controllers\Learner\ProfileController;
@@ -348,7 +348,7 @@ Route::middleware(['auth', 'check.user.status', 'no.cache'])->group(function () 
         Route::get('/my-learning/events', [MyLearningController::class, 'events'])->name('my-learning.events');
 
         // Certifications
-        Route::get('/certifications', [CertificationsController::class, 'index'])->name('certifications');
+        Route::get('/certifications', [CertificateController::class, 'index'])->name('certifications');
 
         // Enroll (AJAX from Explore page — index lives at public /explore)
         Route::post('/programs/{program}/enroll', [LearnerProgramController::class, 'enroll'])->name('programs.enroll');

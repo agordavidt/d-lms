@@ -1,66 +1,93 @@
 @extends('layouts.learner')
-
 @section('title', 'My Certifications')
 
 @section('content')
-<div class="max-w-7xl mx-auto px-5 py-8">
+<div style="max-width:900px;margin:0 auto;padding:2.5rem 2rem 5rem;font-family:'DM Sans',sans-serif;">
 
-    <div class="mb-7">
-        <h1 class="text-2xl font-bold text-slate-900">Certifications</h1>
-        <p class="text-sm text-slate-500 mt-1">Programs you've successfully completed.</p>
+    <div style="margin-bottom:2rem;">
+        <h1 style="font-size:1.45rem;font-weight:800;color:#0f172a;margin:0 0 .25rem;">Certifications</h1>
+        <p style="font-size:.875rem;color:#64748b;margin:0;">Programs you have successfully completed.</p>
     </div>
 
     @if($certifications->isEmpty())
-    <div class="flex flex-col items-center justify-center py-24 text-center">
-        <div class="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-5 text-3xl">🏅</div>
-        <h3 class="text-lg font-bold text-slate-800 mb-2">No certifications yet</h3>
-        <p class="text-slate-500 text-sm mb-6 max-w-xs">
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5rem 2rem;text-align:center;">
+        {{-- <div style="width:64px;height:64px;background:#fffbeb;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:2rem;margin-bottom:1.25rem;">🏅</div> --}}
+        <h3 style="font-size:1.05rem;font-weight:700;color:#0f172a;margin-bottom:.4rem;">No certifications yet</h3>
+        <p style="font-size:.875rem;color:#64748b;max-width:280px;line-height:1.6;margin-bottom:1.5rem;">
             Complete a program and get your certificate approved to see it here.
         </p>
         <a href="{{ route('learner.my-learning') }}"
-           class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-6 py-3 rounded-xl transition-colors">
+           style="background:#2563eb;color:#fff;font-size:.875rem;font-weight:700;padding:10px 22px;border-radius:10px;text-decoration:none;">
             Go to My Learning
         </a>
     </div>
     @else
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.25rem;">
         @foreach($certifications as $enrollment)
-        <div class="bg-white border border-slate-100 rounded-2xl overflow-hidden hover:shadow-lg transition-shadow">
-            {{-- Gold accent band --}}
-            <div class="h-2 bg-gradient-to-r from-amber-400 to-yellow-500"></div>
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;transition:box-shadow .15s;"
+             onmouseover="this.style.boxShadow='0 8px 24px rgba(0,0,0,.08)'"
+             onmouseout="this.style.boxShadow='none'">     
+           
 
-            <div class="p-6">
-                <div class="flex items-start gap-3 mb-5">
-                    <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-xl flex-shrink-0">
-                        🎓
-                    </div>
-                    <div>
-                        <h3 class="text-sm font-bold text-slate-900 leading-snug">
+            <div style="padding:1.5rem;">
+                {{-- Program info --}}
+                <div style="display:flex;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem;">
+                    <div style="width:40px;height:40px;border-radius:10px;background:#fffbeb;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0;">🎓</div>
+                    <div style="min-width:0;">
+                        <div style="font-size:.9rem;font-weight:700;color:#0f172a;line-height:1.35;margin-bottom:.2rem;">
                             {{ $enrollment->program->name }}
-                        </h3>
-                        <p class="text-xs text-slate-400 mt-0.5">
-                            {{ $enrollment->cohort->name ?? 'Cohort' }}
-                        </p>
+                        </div>
+                        <div style="font-size:.75rem;color:#94a3b8;">
+                            {{ $enrollment->cohort->name ?? '' }}
+                        </div>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-2 mb-5">
-                    <span class="inline-flex items-center gap-1 bg-green-50 text-green-700 text-[11px] font-bold px-2.5 py-1 rounded-full">
-                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                {{-- Meta --}}
+                <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:1.25rem;font-size:.8rem;color:#64748b;">
+                    @if($enrollment->final_exam_score !== null)
+                    <div style="display:flex;justify-content:space-between;">
+                        <span>Final exam score</span>
+                        <span style="font-weight:700;color:#0f172a;">{{ number_format($enrollment->final_exam_score,0) }}%</span>
+                    </div>
+                    @endif
+                    @if($enrollment->graduation_approved_at)
+                    <div style="display:flex;justify-content:space-between;">
+                        <span>Issued</span>
+                        <span style="font-weight:600;color:#0f172a;">{{ $enrollment->graduation_approved_at->format('M j, Y') }}</span>
+                    </div>
+                    @endif
+                    <div style="display:flex;justify-content:space-between;">
+                        <span>Certificate no.</span>
+                        <span style="font-family:monospace;font-size:.72rem;color:#0f172a;font-weight:600;">{{ $enrollment->certificate_key }}</span>
+                    </div>
+                </div>
+
+                {{-- Status badge --}}
+                <div style="margin-bottom:1rem;">
+                    <span style="display:inline-flex;align-items:center;gap:5px;background:#f0fdf4;color:#166534;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:99px;">
+                        <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
                         </svg>
                         Graduated
                     </span>
                 </div>
 
-                <a href="{{ route('learner.certificate.download', $enrollment->certificate_key) }}"
-                   class="flex items-center justify-center gap-2 w-full bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold py-2.5 rounded-xl transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    Download Certificate
-                </a>
+                {{-- Actions --}}
+                <div style="display:flex;flex-direction:column;gap:.5rem;">
+                    <a href="{{ route('learner.certificate.download', $enrollment->certificate_key) }}"
+                       style="display:flex;align-items:center;justify-content:center;gap:8px;background:#0f172a;color:#fff;font-size:.82rem;font-weight:700;padding:10px;border-radius:10px;text-decoration:none;transition:background .15s;"
+                       onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#0f172a'">                      
+                        Download Certificate
+                    </a>
+                    <a href="{{ route('certificate.verify', $enrollment->certificate_key) }}"
+                       target="_blank"
+                       style="display:flex;align-items:center;justify-content:center;gap:6px;background:transparent;color:#64748b;font-size:.78rem;font-weight:600;padding:8px;border-radius:10px;text-decoration:none;border:1.5px solid #e2e8f0;transition:border-color .15s;"
+                       onmouseover="this.style.borderColor='#94a3b8'" onmouseout="this.style.borderColor='#e2e8f0'">
+                        Verify Certificate ↗
+                    </a>
+                </div>
             </div>
         </div>
         @endforeach

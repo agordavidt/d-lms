@@ -789,7 +789,18 @@ function showQuizRetake() {
 // ── Final exam ────────────────────────────────────────────────────────────────
 function beginFinalExam() {
     const btn = document.getElementById('begin-exam-btn');
+    const originalLabel = btn ? btn.textContent : 'Begin Examination';
     if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+
+    const resetBtn = (msg) => {
+        if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+        // Use toastr if available, otherwise fall back to a plain alert
+        if (typeof toastr !== 'undefined') {
+            toastr.error(msg);
+        } else {
+            alert(msg);
+        }
+    };
 
     fetch('/learner/assessments/' + ASSESSMENT_ID + '/attempt', {
         method: 'POST',
@@ -801,13 +812,11 @@ function beginFinalExam() {
         if (data.success && data.attempt_id) {
             window.location.href = '/learner/attempts/' + data.attempt_id;
         } else {
-            if (btn) { btn.disabled = false; btn.textContent = '{{ $latestAttempt ? "Retry Examination" : "Begin Examination" }}'; }
-            toastr.error(data.message || 'Could not start examination.');
+            resetBtn(data.message || 'Could not start examination.');
         }
     })
     .catch(() => {
-        if (btn) { btn.disabled = false; btn.textContent = '{{ $latestAttempt ? "Retry Examination" : "Begin Examination" }}'; }
-        toastr.error('Network error. Please try again.');
+        resetBtn('Network error. Please try again.');
     });
 }
 
