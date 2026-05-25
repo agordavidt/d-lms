@@ -167,10 +167,6 @@
             </div>
 
             @else
-            {{-- ── ACTIVE — completed but graduation not yet auto-triggered
-                 (safety fallback — should rarely be seen in normal flow,
-                  since checkGraduationEligibility() fires automatically
-                  after the last assessment is scored) ───────────────── --}}
             <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 mb-6 text-left">
                 <p class="text-indigo-900 font-bold text-sm mb-1">Ready to graduate?</p>
                 <p class="text-indigo-700 text-sm mb-4">

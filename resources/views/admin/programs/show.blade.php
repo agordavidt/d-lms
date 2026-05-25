@@ -238,7 +238,7 @@
         @php $finalExam = $program->modules->flatMap->weeks->map->assessment->firstWhere('is_final', true); @endphp
         <div style="margin-top:2rem;">
             <h2 style="font-family:'Source Serif 4',serif;font-size:1.05rem;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem;">
-                <span style="display:inline-flex;align-items:center;gap:4px;background:#7c3aed;color:#fff;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;">🎓 Final Exam</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;background:#7c3aed;color:#fff;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;">Final Exam</span>
                 {{ $finalExam->title }}
             </h2>
             <div class="card">
