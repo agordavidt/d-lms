@@ -89,21 +89,18 @@ class AssessmentController extends Controller
                 return response()->json(['success' => false, 'message' => 'Add at least one module before creating the final examination.'], 422);
             }
 
-            // Sequential week number across ALL weeks including this new one
-            $totalWeeks = ModuleWeek::whereHas('programModule',
-                fn($q) => $q->where('program_id', $program->id)
-            )->count();
-
-            $finalWeek = $lastModule->weeks()->create([
-                'title'          => 'Final Examination',
-                'week_number'    => 9999, // sentinel — always sorts after all course weeks
-                'order'          => 9999,
-                'has_assessment' => true,
-                'is_final_week'  => true,
+            // $totalWeeks removed — no longer needed now that we use sentinel 9999
+            $finalExamWeek = ModuleWeek::create([
+                'program_module_id' => $lastModule->id,    // ← was $module->id (undefined)
+                'title'             => 'Final Examination',
+                'week_number'       => 9999,
+                'order'             => 9999,
+                'is_final_week'     => true,
+                'has_assessment'    => true,
             ]);
 
             $assessment = Assessment::create([
-                'module_week_id'      => $finalWeek->id,
+                'module_week_id'      => $finalExamWeek->id,  // ← was $finalWeek->id (undefined)
                 'title'               => $data['title'],
                 'time_limit_minutes'  => $data['time_limit_minutes'] ?? null,
                 'randomize_questions' => $data['randomize_questions'] ?? false,

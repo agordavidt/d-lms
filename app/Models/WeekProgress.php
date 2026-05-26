@@ -113,42 +113,43 @@ class WeekProgress extends Model
      * If no next week exists, all modules are done — the final exam becomes available.
      */
     protected function unlockNextWeek(): void
-    {
-        $currentWeek = $this->moduleWeek;
-        $program     = $currentWeek->programModule->program;
+{
+    $currentWeek = $this->moduleWeek;
+    $program     = $currentWeek->programModule->program;
 
-        $allWeeks = ModuleWeek::whereHas('programModule', fn ($q) =>
-            $q->where('program_id', $program->id)
-        )
-        ->with('programModule')
-        ->get()
-        ->sortBy(fn ($w) => [$w->programModule->order, $w->week_number])
-        ->values();
+    $allWeeks = ModuleWeek::whereHas('programModule', fn ($q) =>
+        $q->where('program_id', $program->id)
+    )
+    ->with('programModule')
+    ->get()
+    ->sortBy(fn ($w) => [
+        (int) $w->is_final_week,          // final exam week always sorts last
+        $w->programModule->order,
+        $w->order,                         // use `order` (reorder-aware), not `week_number`
+    ])
+    ->values();
 
-        $currentIndex = $allWeeks->search(fn ($w) => $w->id === $currentWeek->id);
+    $currentIndex = $allWeeks->search(fn ($w) => $w->id === $currentWeek->id);
 
-        if ($currentIndex !== false && $currentIndex + 1 < $allWeeks->count()) {
-            $nextWeek = $allWeeks[$currentIndex + 1];
+    if ($currentIndex !== false && $currentIndex + 1 < $allWeeks->count()) {
+        $nextWeek         = $allWeeks[$currentIndex + 1];
+        $requiredContents = $nextWeek->contents()->where('is_required', true)->count();
 
-            // ── FIX: count required contents BEFORE creating the record ──────────
-            $requiredContents = $nextWeek->contents()->where('is_required', true)->count();
-
-            WeekProgress::updateOrCreate(
-                [
-                    'user_id'        => $this->user_id,
-                    'module_week_id' => $nextWeek->id,
-                    'enrollment_id'  => $this->enrollment_id,
-                ],
-                [
-                    'is_unlocked'    => true,
-                    'unlocked_at'    => now(),
-                    'total_contents' => $requiredContents,
-                    // ── FIX: content-free weeks (final exam) start at 100% ────────
-                    'progress_percentage' => $requiredContents === 0 ? 100 : 0,
-                ]
-            );
-        }
+        WeekProgress::updateOrCreate(
+            [
+                'user_id'        => $this->user_id,
+                'module_week_id' => $nextWeek->id,
+                'enrollment_id'  => $this->enrollment_id,
+            ],
+            [
+                'is_unlocked'         => true,
+                'unlocked_at'         => now(),
+                'total_contents'      => $requiredContents,
+                'progress_percentage' => $requiredContents === 0 ? 100 : 0,
+            ]
+        );
     }
+}
 
     // ── Status helpers ────────────────────────────────────────────────────────
 

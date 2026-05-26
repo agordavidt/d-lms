@@ -19,26 +19,25 @@ class LearningController extends Controller
         try {
             $enrollment = $this->resolveEnrollment(auth()->user(), $enrollmentId);
 
-            // First unlocked, incomplete week
-            $current = WeekProgress::where('enrollment_id', $enrollment->id)
+            $weeksSorted = WeekProgress::where('enrollment_id', $enrollment->id)
                 ->where('is_unlocked', true)
-                ->where('is_completed', false)
                 ->with('moduleWeek.programModule')
                 ->get()
-                ->sortBy(fn ($wp) => [$wp->moduleWeek->programModule->order, $wp->moduleWeek->week_number])
-                ->first();
+                ->sortBy(fn ($wp) => [
+                    (int) $wp->moduleWeek->is_final_week,
+                    $wp->moduleWeek->programModule->order,
+                    $wp->moduleWeek->order,
+                ]);
+
+            // First unlocked, incomplete week
+            $current = $weeksSorted->firstWhere('is_completed', false);
 
             if ($current) {
                 return redirect()->route('learner.learning.week', [$enrollmentId, $current->module_week_id]);
             }
 
             // All weeks complete — land on last week
-            $last = WeekProgress::where('enrollment_id', $enrollment->id)
-                ->where('is_unlocked', true)
-                ->with('moduleWeek.programModule')
-                ->get()
-                ->sortBy(fn ($wp) => [$wp->moduleWeek->programModule->order, $wp->moduleWeek->week_number])
-                ->last();
+            $last = $weeksSorted->last();
 
             if ($last) {
                 return redirect()->route('learner.learning.week', [$enrollmentId, $last->module_week_id]);
@@ -86,13 +85,14 @@ public function showWeek($enrollmentId, $weekId)
             ->with('moduleWeek.programModule')
             ->get()
             ->sortBy(fn ($wp) => [
+                (int) $wp->moduleWeek->is_final_week,
                 $wp->moduleWeek->programModule->order ?? 0,
-                $wp->moduleWeek->week_number,
+                $wp->moduleWeek->order,
             ])
             ->values();
 
         // Prev / Next week IDs
-        $allWeeks   = $enrollment->program->getPublishedWeeks();
+        $allWeeks   = $enrollment->program->getPublishedWeeks();   // see Fix 3 below
         $currentIdx = $allWeeks->search(fn ($w) => $w->id == $weekId);
         $prevWeekId = $currentIdx > 0 ? $allWeeks[$currentIdx - 1]->id : null;
         $nextWeekId = ($currentIdx !== false && $currentIdx < $allWeeks->count() - 1)

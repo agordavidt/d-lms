@@ -134,15 +134,18 @@ class Program extends Model
      * All weeks across all modules, ordered by module order then week number.
      * Used by LearningController, Enrollment::initializeWeekProgress(), etc.
      */
-    public function getPublishedWeeks()
+    public function getPublishedWeeks(): \Illuminate\Support\Collection
     {
-        return ModuleWeek::whereHas('programModule', function ($q) {
-            $q->where('program_id', $this->id);
-        })
-        ->with('programModule')
-        ->get()
-        ->sortBy(fn ($w) => [$w->programModule->order, $w->week_number])
-        ->values();
+        return $this->modules()
+            ->with(['weeks' => fn ($q) => $q->with(['assessment', 'contents'])])
+            ->get()
+            ->flatMap(fn ($module) => $module->weeks->map(fn ($week) => $week->setRelation('programModule', $module)))
+            ->sortBy(fn ($w) => [
+                (int) $w->is_final_week,      // final exam week always last
+                $w->programModule->order,
+                $w->order,
+            ])
+            ->values();
     }
 
     /**
@@ -161,6 +164,19 @@ class Program extends Model
         // Returns the same as modules() for backward compatibility.
         return $this->hasMany(ProgramModule::class)->orderBy('order');
     }
+
+    /**
+     * All weeks excluding the final exam week.
+     * Used for progress gates — the final exam week is never counted
+     * as a "course week" the learner must complete before the exam.
+     */
+    public function getCourseWeeks(): \Illuminate\Support\Collection
+    {
+        return $this->getPublishedWeeks()
+            ->filter(fn ($w) => ! $w->is_final_week)
+            ->values();
+    }
+
 
     // ── Default cohort ────────────────────────────────────────────────────────
 

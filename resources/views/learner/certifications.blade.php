@@ -10,8 +10,7 @@
     </div>
 
     @if($certifications->isEmpty())
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5rem 2rem;text-align:center;">
-        {{-- <div style="width:64px;height:64px;background:#fffbeb;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:2rem;margin-bottom:1.25rem;">🏅</div> --}}
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5rem 2rem;text-align:center;">       
         <h3 style="font-size:1.05rem;font-weight:700;color:#0f172a;margin-bottom:.4rem;">No certifications yet</h3>
         <p style="font-size:.875rem;color:#64748b;max-width:280px;line-height:1.6;margin-bottom:1.5rem;">
             Complete a program and get your certificate approved to see it here.
